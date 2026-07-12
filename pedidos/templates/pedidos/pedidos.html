@@ -1,0 +1,94 @@
+{% extends "pedidos/base.html" %}
+{% load static %}
+
+{% block title %}Nuevo pedido | Los Tocayos{% endblock %}
+{% block body_class %}order-page{% endblock %}
+
+{% block content %}
+<main class="order-shell">
+    <section class="product-panel" aria-label="Productos">
+        <div class="panel-heading">
+            <span>Productos</span>
+            <small>{{ sucursal.nombre }}</small>
+        </div>
+        <div class="product-list" id="productList">
+            {% for producto in productos %}
+            <button class="product-button" type="button" data-product-id="{{ producto.id }}">
+                <span>{{ producto.nombre }}</span>
+                <small data-price-for="{{ producto.id }}">$0.00</small>
+            </button>
+            {% endfor %}
+        </div>
+    </section>
+
+    <section class="focus-panel" aria-label="Producto seleccionado">
+        <img src="{% static 'img/mainlogo.webp' %}" alt="Los Tocayos">
+        <div>
+            <span class="eyebrow">Producto seleccionado</span>
+            <h1 id="focusProduct">Selecciona producto</h1>
+            <p id="focusPrice">$0.00</p>
+        </div>
+    </section>
+
+    <aside class="summary-panel" aria-label="Resumen del pedido">
+        <div class="summary-header">
+            <div>
+                <span class="eyebrow">Resumen</span>
+                <h2>Pedido actual</h2>
+            </div>
+            <span class="item-count" id="itemCount">0</span>
+        </div>
+
+        <div class="notice" id="notice" hidden></div>
+        <div class="empty-state" id="emptyState">Sin productos</div>
+        <div class="items-list" id="itemsList"></div>
+
+        <div class="summary-footer">
+            <div class="total-row">
+                <span>Total</span>
+                <strong id="totalAmount">$0.00</strong>
+            </div>
+            <button class="primary-button success" type="button" id="confirmOrder">Confirmar pedido</button>
+            <button class="secondary-button" type="button" id="clearOrder">Limpiar pedido</button>
+        </div>
+    </aside>
+
+    <section class="calculator-panel" aria-label="Calculadora">
+        <div class="calculator-display">
+            <span id="selectedName">Producto</span>
+            <strong id="quantityDisplay">0</strong>
+        </div>
+        <div class="keypad" id="keypad">
+            <button type="button" data-key="1">1</button>
+            <button type="button" data-key="2">2</button>
+            <button type="button" data-key="3">3</button>
+            <button type="button" data-key="4">4</button>
+            <button type="button" data-key="5">5</button>
+            <button type="button" data-key="6">6</button>
+            <button type="button" data-key="7">7</button>
+            <button type="button" data-key="8">8</button>
+            <button type="button" data-key="9">9</button>
+            <button type="button" data-key=".">.</button>
+            <button type="button" data-key="0">0</button>
+            <button type="button" data-key="DEL">DEL</button>
+        </div>
+        <div class="calculator-actions">
+            <button class="arrow-button add" type="button" id="addItem" aria-label="Agregar cantidad">-&gt;</button>
+            <button class="arrow-button remove" type="button" id="deleteSelected" aria-label="Eliminar producto seleccionado">&lt;-</button>
+        </div>
+    </section>
+</main>
+
+<div class="modal-backdrop" id="successModal" hidden>
+    <div class="modal" role="dialog" aria-modal="true" aria-labelledby="successTitle">
+        <h2 id="successTitle">Pedido confirmado</h2>
+        <p id="successText"></p>
+        <button class="primary-button" type="button" id="closeSuccess">Listo</button>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+{{ initial_data|json_script:"initial-data" }}
+<script src="{% static 'js/pedidos.js' %}" defer></script>
+{% endblock %}

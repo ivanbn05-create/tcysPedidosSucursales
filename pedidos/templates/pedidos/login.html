@@ -1,0 +1,29 @@
+{% extends "pedidos/base.html" %}
+{% load static %}
+
+{% block title %}Login | Los Tocayos{% endblock %}
+{% block body_class %}login-page{% endblock %}
+
+{% block content %}
+<main class="login-shell">
+    <section class="login-panel">
+        <img class="login-logo" src="{% static 'img/mainlogo.webp' %}" alt="Los Tocayos">
+        <form method="post" class="login-form" novalidate>
+            {% csrf_token %}
+            <label for="username">Usuario</label>
+            <input id="username" name="username" type="text" autocomplete="username" required autofocus>
+
+            <label for="password">Contraseña</label>
+            <input id="password" name="password" type="password" autocomplete="current-password" required>
+
+            <button class="primary-button" type="submit">Entrar</button>
+        </form>
+        <div class="demo-credentials">
+            <strong>Demo</strong>
+            <span>Aguilas, Fortin, Estancia</span>
+            <span>Brot Nueva Galicia, Brot CAT, Rakebela</span>
+            <span>Admin: admin / admin123</span>
+        </div>
+    </section>
+</main>
+{% endblock %}

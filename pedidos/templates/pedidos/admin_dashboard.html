@@ -1,0 +1,124 @@
+{% extends "pedidos/base.html" %}
+{% load static %}
+
+{% block title %}Admin | Los Tocayos{% endblock %}
+{% block body_class %}admin-page{% endblock %}
+
+{% block content %}
+<main class="admin-shell">
+    <section class="admin-header">
+        <div>
+            <span class="eyebrow">Matriz</span>
+            <h1>Pedidos</h1>
+        </div>
+        <div class="stats-grid">
+            <div class="stat-card">
+                <span>Por enviar</span>
+                <strong>{{ stats.pendientes }}</strong>
+            </div>
+            <div class="stat-card">
+                <span>Pedidos hoy</span>
+                <strong>{{ stats.pedidos_hoy }}</strong>
+            </div>
+            <div class="stat-card">
+                <span>Total hoy</span>
+                <strong>${{ stats.total_hoy|floatformat:2 }}</strong>
+            </div>
+        </div>
+    </section>
+
+    <form class="filters" method="get">
+        <input name="q" type="search" placeholder="Buscar ID o cliente" value="{{ filters.q }}">
+        <select name="estado" aria-label="Estado">
+            <option value="">Todos los estados</option>
+            {% for value, label in estados %}
+            <option value="{{ value }}" {% if filters.estado == value %}selected{% endif %}>{{ label }}</option>
+            {% endfor %}
+        </select>
+        <select name="sucursal" aria-label="Sucursal o cliente">
+            <option value="">Todos</option>
+            {% for sucursal in sucursales %}
+            <option value="{{ sucursal.id }}" {% if filters.sucursal == sucursal.id|stringformat:"s" %}selected{% endif %}>{{ sucursal.nombre }}</option>
+            {% endfor %}
+        </select>
+        <input name="desde" type="date" value="{{ filters.desde }}" aria-label="Desde">
+        <input name="hasta" type="date" value="{{ filters.hasta }}" aria-label="Hasta">
+        <button class="primary-button compact" type="submit">Filtrar</button>
+        <a class="secondary-link" href="{% url 'admin_dashboard' %}">Limpiar</a>
+    </form>
+
+    <section class="table-wrap">
+        <table class="orders-table">
+            <thead>
+                <tr>
+                    <th>ID</th>
+                    <th>Sucursal/Cliente</th>
+                    <th>Fecha</th>
+                    <th>Items</th>
+                    <th>Total</th>
+                    <th>Estado</th>
+                    <th>Acciones</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for pedido in pedidos %}
+                <tr>
+                    <td>#{{ pedido.id }}</td>
+                    <td>{{ pedido.sucursal_cliente.nombre }}</td>
+                    <td>{{ pedido.fecha_creacion|date:"d/m/Y H:i" }}</td>
+                    <td>{{ pedido.cantidad_items }}</td>
+                    <td>${{ pedido.total|floatformat:2 }}</td>
+                    <td><span class="status-pill {{ pedido.estado }}">{{ pedido.get_estado_display }}</span></td>
+                    <td class="actions-cell">
+                        <button
+                            class="secondary-button compact"
+                            type="button"
+                            data-detail
+                            data-id="{{ pedido.id }}"
+                            data-sucursal="{{ pedido.sucursal_cliente.nombre }}"
+                            data-fecha="{{ pedido.fecha_creacion|date:'d/m/Y H:i' }}"
+                            data-total="{{ pedido.total|floatformat:2 }}"
+                            data-items="{{ pedido.items_json|escape }}"
+                        >Ver detalle</button>
+                        <a class="primary-link" href="{% url 'descargar_y_marcar' pedido.id %}">Excel</a>
+                        <form method="post" action="{% url 'marcar_enviado' pedido.id %}">
+                            {% csrf_token %}
+                            <button class="secondary-button compact" type="submit">Enviado</button>
+                        </form>
+                        <form method="post" action="{% url 'eliminar_pedido' pedido.id %}" data-confirm-delete>
+                            {% csrf_token %}
+                            <button class="danger-button compact" type="submit">Eliminar</button>
+                        </form>
+                    </td>
+                </tr>
+                {% empty %}
+                <tr>
+                    <td colspan="7" class="table-empty">Sin pedidos con esos filtros</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </section>
+</main>
+
+<div class="modal-backdrop" id="detailModal" hidden>
+    <div class="modal wide" role="dialog" aria-modal="true" aria-labelledby="detailTitle">
+        <div class="modal-header">
+            <div>
+                <span class="eyebrow" id="detailSubtitle"></span>
+                <h2 id="detailTitle">Pedido</h2>
+            </div>
+            <button class="icon-button" type="button" id="closeDetail" aria-label="Cerrar">×</button>
+        </div>
+        <div class="detail-list" id="detailList"></div>
+        <div class="total-row">
+            <span>Total</span>
+            <strong id="detailTotal">$0.00</strong>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="{% static 'js/admin.js' %}" defer></script>
+{% endblock %}

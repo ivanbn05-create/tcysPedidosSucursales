@@ -1,0 +1,40 @@
+{% load static %}
+<!doctype html>
+<html lang="es">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>{% block title %}Los Tocayos Pedidos{% endblock %}</title>
+    <link rel="icon" href="{% static 'img/mainlogo.webp' %}">
+    <link rel="stylesheet" href="{% static 'css/styles.css' %}">
+    <link rel="stylesheet" href="{% static 'css/responsive.css' %}">
+</head>
+<body class="{% block body_class %}{% endblock %}">
+    {% if request.user.is_authenticated %}
+    <header class="topbar">
+        <a class="brand" href="{% url 'home' %}" aria-label="Los Tocayos">
+            <img src="{% static 'img/mainlogo.webp' %}" alt="Los Tocayos">
+            <span>Pedidos</span>
+        </a>
+        <div class="topbar-user">
+            <span>Usuario: {{ request.user.first_name|default:request.user.username }}</span>
+            <form method="post" action="{% url 'logout' %}">
+                {% csrf_token %}
+                <button class="ghost-button" type="submit">Salir</button>
+            </form>
+        </div>
+    </header>
+    {% endif %}
+
+    {% if messages %}
+    <div class="messages" role="status" aria-live="polite">
+        {% for message in messages %}
+        <div class="message {{ message.tags }}">{{ message }}</div>
+        {% endfor %}
+    </div>
+    {% endif %}
+
+    {% block content %}{% endblock %}
+    {% block scripts %}{% endblock %}
+</body>
+</html>
