@@ -115,7 +115,6 @@ def pedido_pendiente(sucursal, crear=False):
             estado=Pedido.Estado.PENDIENTE,
             eliminado=False,
         )
-        .prefetch_related("items__producto")
         .order_by("-fecha_creacion")
         .first()
     )
@@ -131,22 +130,29 @@ def decimal_to_str(value, places="0.01"):
     return str(Decimal(value).quantize(Decimal(places)))
 
 
-def serializar_item(item):
-    return {
+def serializar_item(item, incluir_precios=False):
+    data = {
         "id": item.id,
         "producto_id": item.producto_id,
         "producto": item.producto.nombre,
         "cantidad": decimal_to_str(item.cantidad, "0.001"),
-        "precio_unitario": decimal_to_str(item.precio_unitario),
-        "subtotal": decimal_to_str(item.subtotal),
     }
+    if incluir_precios:
+        data.update(
+            {
+                "precio_unitario": decimal_to_str(item.precio_unitario),
+                "subtotal": decimal_to_str(item.subtotal),
+            }
+        )
+    return data
 
 
-def serializar_pedido(pedido):
+def serializar_pedido(pedido, incluir_precios=False):
     if not pedido:
         return {"items": [], "total": "0.00"}
+    items = pedido.items.select_related("producto").all()
     return {
-        "items": [serializar_item(item) for item in pedido.items.all()],
+        "items": [serializar_item(item, incluir_precios=incluir_precios) for item in items],
         "total": decimal_to_str(pedido.total),
     }
 
@@ -181,13 +187,11 @@ def pedidos_view(request):
     productos = list(Producto.objects.all())
     productos_data = []
     for producto in productos:
-        precio = precio_vigente(producto, sucursal)
         productos_data.append(
             {
                 "id": producto.id,
                 "nombre": producto.nombre,
                 "descripcion": producto.descripcion,
-                "precio": decimal_to_str(precio.precio_unitario if precio else Decimal("0.00")),
             }
         )
 
@@ -237,7 +241,7 @@ def crear_item(request):
             },
         )
         if not created:
-            nueva_cantidad = item.cantidad + cantidad
+            nueva_cantidad = cantidad
             if nueva_cantidad > Decimal("999.999"):
                 return JsonResponse(
                     {"success": False, "mensaje": "La cantidad máxima es 999.999."},
@@ -251,9 +255,8 @@ def crear_item(request):
     return JsonResponse(
         {
             "success": True,
-            "mensaje": "Producto agregado.",
+            "mensaje": "Cantidad guardada.",
             "item_id": item.id,
-            "subtotal": decimal_to_str(item.subtotal),
             "total_pedido": decimal_to_str(pedido.total),
             "pedido": serializar_pedido(pedido),
         }
@@ -386,7 +389,9 @@ def admin_dashboard(request):
 
     pedidos_list = list(pedidos)
     for pedido in pedidos_list:
-        pedido.items_json = json.dumps([serializar_item(item) for item in pedido.items.all()])
+        pedido.items_json = json.dumps(
+            [serializar_item(item, incluir_precios=True) for item in pedido.items.all()]
+        )
 
     hoy = timezone.localdate()
     stats_base = Pedido.objects.filter(eliminado=False)

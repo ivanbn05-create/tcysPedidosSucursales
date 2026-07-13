@@ -3,14 +3,15 @@ document.addEventListener("DOMContentLoaded", () => {
     const products = initialData.productos || [];
     let order = initialData.pedido || { items: [], total: "0.00" };
     let selectedProduct = products[0] || null;
+    let selectedItemId = null;
     let quantityInput = "";
+    let replaceOnNextKey = false;
     let noticeTimer = null;
 
     const productButtons = [...document.querySelectorAll(".product-button")];
     const selectedName = document.getElementById("selectedName");
     const quantityDisplay = document.getElementById("quantityDisplay");
     const focusProduct = document.getElementById("focusProduct");
-    const focusPrice = document.getElementById("focusPrice");
     const itemsList = document.getElementById("itemsList");
     const emptyState = document.getElementById("emptyState");
     const totalAmount = document.getElementById("totalAmount");
@@ -37,6 +38,23 @@ document.addEventListener("DOMContentLoaded", () => {
         });
     }
 
+    function editableQuantity(value) {
+        const numberValue = Number(value || 0);
+        return Number.isFinite(numberValue) && numberValue > 0 ? String(numberValue) : "";
+    }
+
+    function productById(productId) {
+        return products.find((product) => Number(product.id) === Number(productId)) || null;
+    }
+
+    function itemById(itemId) {
+        return (order.items || []).find((item) => Number(item.id) === Number(itemId)) || null;
+    }
+
+    function itemForProduct(productId) {
+        return (order.items || []).find((item) => Number(item.producto_id) === Number(productId)) || null;
+    }
+
     function csrfToken() {
         const token = document.cookie
             .split("; ")
@@ -55,7 +73,7 @@ document.addEventListener("DOMContentLoaded", () => {
         });
         const data = await response.json().catch(() => ({
             success: false,
-            mensaje: "Respuesta inválida del servidor.",
+            mensaje: "Respuesta invalida del servidor.",
         }));
         if (!response.ok || !data.success) {
             throw new Error(data.mensaje || `Error ${response.status}`);
@@ -80,54 +98,101 @@ document.addEventListener("DOMContentLoaded", () => {
         deleteSelectedButton.disabled = isBusy;
     }
 
-    function selectProduct(productId) {
-        selectedProduct = products.find((product) => Number(product.id) === Number(productId)) || products[0] || null;
-        productButtons.forEach((button) => {
-            button.classList.toggle("active", Number(button.dataset.productId) === Number(selectedProduct?.id));
-        });
-        selectedName.textContent = selectedProduct ? selectedProduct.nombre : "Producto";
-        focusProduct.textContent = selectedProduct ? selectedProduct.nombre : "Selecciona producto";
-        focusPrice.textContent = selectedProduct ? money(selectedProduct.precio) : "$0.00";
-        renderQuantity();
-    }
-
     function renderQuantity() {
         quantityDisplay.textContent = quantityInput || "0";
     }
 
-    function renderPrices() {
-        products.forEach((product) => {
-            const label = document.querySelector(`[data-price-for="${product.id}"]`);
-            if (label) label.textContent = money(product.precio);
+    function refreshSelectedState() {
+        productButtons.forEach((button) => {
+            button.classList.toggle(
+                "active",
+                Number(button.dataset.productId) === Number(selectedProduct?.id),
+            );
         });
+
+        itemsList.querySelectorAll("[data-item-id]").forEach((row) => {
+            row.classList.toggle("active", Number(row.dataset.itemId) === Number(selectedItemId));
+            row.setAttribute("aria-pressed", String(Number(row.dataset.itemId) === Number(selectedItemId)));
+        });
+
+        selectedName.textContent = selectedProduct ? selectedProduct.nombre : "Producto";
+        focusProduct.textContent = selectedProduct ? selectedProduct.nombre : "Selecciona producto";
+        renderQuantity();
+    }
+
+    function selectProduct(productId, syncExisting = true) {
+        selectedProduct = productById(productId) || products[0] || null;
+        const existingItem = selectedProduct ? itemForProduct(selectedProduct.id) : null;
+        selectedItemId = existingItem ? existingItem.id : null;
+
+        if (syncExisting && existingItem) {
+            quantityInput = editableQuantity(existingItem.cantidad);
+            replaceOnNextKey = true;
+        } else if (!existingItem) {
+            quantityInput = "";
+            replaceOnNextKey = false;
+        }
+
+        refreshSelectedState();
+    }
+
+    function selectItem(itemId) {
+        const item = itemById(itemId);
+        if (!item) return;
+
+        selectedItemId = item.id;
+        selectedProduct = productById(item.producto_id) || selectedProduct;
+        quantityInput = editableQuantity(item.cantidad);
+        replaceOnNextKey = true;
+        refreshSelectedState();
     }
 
     function renderOrder() {
         const items = order.items || [];
+        if (selectedItemId && !items.some((item) => Number(item.id) === Number(selectedItemId))) {
+            selectedItemId = null;
+        }
+
         itemsList.innerHTML = "";
         emptyState.hidden = items.length > 0;
         itemCount.textContent = String(items.length);
         totalAmount.textContent = money(order.total);
 
         items.forEach((item) => {
-            const row = document.createElement("article");
+            const row = document.createElement("button");
+            row.type = "button";
             row.className = "order-item";
-            row.innerHTML = `
-                <div>
-                    <strong>${item.producto}</strong>
-                    <div class="item-meta">${quantity(item.cantidad)} × ${money(item.precio_unitario)}</div>
-                    <div class="item-meta">Subtotal: ${money(item.subtotal)}</div>
-                </div>
-                <button class="item-remove" type="button" aria-label="Eliminar ${item.producto}" data-remove-item="${item.id}">×</button>
-            `;
+            row.dataset.itemId = item.id;
+            row.setAttribute("aria-label", `Seleccionar ${item.producto}`);
+
+            const content = document.createElement("div");
+            const name = document.createElement("strong");
+            const meta = document.createElement("div");
+            name.textContent = item.producto;
+            meta.className = "item-meta";
+            meta.textContent = `Cantidad: ${quantity(item.cantidad)}`;
+            content.append(name, meta);
+            row.append(content);
             itemsList.appendChild(row);
         });
+
+        refreshSelectedState();
     }
 
     function pressKey(key) {
         if (key === "DEL") {
-            quantityInput = quantityInput.slice(0, -1);
-        } else if (key === ".") {
+            quantityInput = replaceOnNextKey ? "" : quantityInput.slice(0, -1);
+            replaceOnNextKey = false;
+            renderQuantity();
+            return;
+        }
+
+        if (replaceOnNextKey) {
+            quantityInput = "";
+            replaceOnNextKey = false;
+        }
+
+        if (key === ".") {
             if (!quantityInput.includes(".")) quantityInput = quantityInput ? `${quantityInput}.` : "0.";
         } else if (/^\d$/.test(key)) {
             const candidate = quantityInput === "0" ? key : `${quantityInput}${key}`;
@@ -154,8 +219,10 @@ document.addEventListener("DOMContentLoaded", () => {
                 cantidad: quantityInput,
             });
             order = data.pedido;
-            quantityInput = "";
-            renderQuantity();
+            const savedItem = itemForProduct(selectedProduct.id);
+            selectedItemId = savedItem ? savedItem.id : null;
+            quantityInput = savedItem ? editableQuantity(savedItem.cantidad) : "";
+            replaceOnNextKey = true;
             renderOrder();
             showNotice(data.mensaje);
         } catch (error) {
@@ -170,6 +237,9 @@ document.addEventListener("DOMContentLoaded", () => {
             setBusy(true);
             const data = await postJson("/api/pedidos/eliminar-item/", { item_id: itemId });
             order = data.pedido;
+            selectedItemId = null;
+            quantityInput = "";
+            replaceOnNextKey = false;
             renderOrder();
             showNotice("Producto eliminado.");
         } catch (error) {
@@ -181,9 +251,9 @@ document.addEventListener("DOMContentLoaded", () => {
 
     async function removeSelectedProduct() {
         if (!selectedProduct) return;
-        const item = (order.items || []).find((current) => Number(current.producto_id) === Number(selectedProduct.id));
+        const item = selectedItemId ? itemById(selectedItemId) : itemForProduct(selectedProduct.id);
         if (!item) {
-            showNotice("Ese producto no está en el pedido.", "error");
+            showNotice("Ese producto no esta en el pedido.", "error");
             return;
         }
         await removeItem(item.id);
@@ -191,14 +261,17 @@ document.addEventListener("DOMContentLoaded", () => {
 
     async function clearOrder() {
         if (!(order.items || []).length) {
-            showNotice("El pedido ya está vacío.", "error");
+            showNotice("El pedido ya esta vacio.", "error");
             return;
         }
-        if (!window.confirm("¿Limpiar el pedido actual?")) return;
+        if (!window.confirm("Limpiar el pedido actual?")) return;
         try {
             setBusy(true);
             const data = await postJson("/api/pedidos/limpiar/");
             order = data.pedido;
+            selectedItemId = null;
+            quantityInput = "";
+            replaceOnNextKey = false;
             renderOrder();
             showNotice("Pedido limpio.");
         } catch (error) {
@@ -213,11 +286,14 @@ document.addEventListener("DOMContentLoaded", () => {
             showNotice("Agrega al menos un producto.", "error");
             return;
         }
-        if (!window.confirm(`¿Confirmar pedido por ${money(order.total)}?`)) return;
+        if (!window.confirm(`Confirmar pedido por ${money(order.total)}?`)) return;
         try {
             setBusy(true);
             const data = await postJson("/api/pedidos/confirmar/");
             order = { items: [], total: "0.00" };
+            selectedItemId = null;
+            quantityInput = "";
+            replaceOnNextKey = false;
             renderOrder();
             successText.textContent = `Pedido #${data.pedido_id} por ${money(data.total)}.`;
             modal.hidden = false;
@@ -241,8 +317,8 @@ document.addEventListener("DOMContentLoaded", () => {
     });
 
     itemsList.addEventListener("click", (event) => {
-        const button = event.target.closest("[data-remove-item]");
-        if (button) removeItem(button.dataset.removeItem);
+        const row = event.target.closest("[data-item-id]");
+        if (row) selectItem(row.dataset.itemId);
     });
 
     addButton.addEventListener("click", addSelected);
@@ -253,7 +329,6 @@ document.addEventListener("DOMContentLoaded", () => {
         modal.hidden = true;
     });
 
-    renderPrices();
     selectProduct(selectedProduct?.id);
     renderOrder();
 });

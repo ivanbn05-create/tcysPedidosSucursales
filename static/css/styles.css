@@ -1,17 +1,17 @@
 :root {
-    --red: #e63946;
-    --red-dark: #bf1d2b;
-    --blue: #1d3557;
-    --blue-soft: #457b9d;
-    --green: #06a77d;
-    --green-dark: #048865;
+    --red: #e21b23;
+    --red-dark: #c9151d;
+    --blue: #242424;
+    --blue-soft: #249b45;
+    --green: #249b45;
+    --green-dark: #197c35;
     --yellow: #ffe600;
-    --warm: #f8faf6;
-    --line: #d9e2e8;
-    --text: #172033;
-    --muted: #617085;
+    --warm: #ffffff;
+    --line: #e6e0d2;
+    --text: #242424;
+    --muted: #6b665d;
     --panel: #ffffff;
-    --shadow: 0 2px 10px rgba(23, 32, 51, 0.08);
+    --shadow: 0 2px 10px rgba(36, 36, 36, 0.08);
 }
 
 * {
@@ -49,13 +49,13 @@ a {
     align-items: center;
     justify-content: space-between;
     gap: 16px;
-    background: var(--blue);
-    color: #fff;
+    background: var(--yellow);
+    color: var(--text);
     box-shadow: var(--shadow);
 }
 
 .brand {
-    color: #fff;
+    color: var(--red);
     display: inline-flex;
     align-items: center;
     gap: 12px;
@@ -101,7 +101,7 @@ a {
 
 .ghost-button {
     color: #fff;
-    background: rgba(255, 255, 255, 0.16);
+    background: var(--red);
 }
 
 .primary-button,
@@ -150,7 +150,7 @@ a {
     padding: 12px 14px;
     border-radius: 8px;
     background: #fff;
-    border-left: 4px solid var(--blue-soft);
+    border-left: 4px solid var(--green);
     box-shadow: var(--shadow);
 }
 
@@ -163,7 +163,7 @@ a {
 }
 
 .login-page {
-    background: linear-gradient(135deg, var(--yellow) 0%, #fff27a 42%, var(--warm) 42%);
+    background: #fff;
 }
 
 .login-shell {
@@ -178,7 +178,7 @@ a {
     padding: 24px;
     background: #fff;
     border-radius: 8px;
-    box-shadow: 0 14px 34px rgba(23, 32, 51, 0.18);
+    box-shadow: 0 14px 34px rgba(36, 36, 36, 0.12);
 }
 
 .login-logo {
@@ -293,7 +293,7 @@ a {
     color: var(--blue);
     display: flex;
     align-items: center;
-    justify-content: space-between;
+    justify-content: center;
     gap: 10px;
     padding: 12px;
     font-weight: 900;
@@ -308,11 +308,6 @@ a {
     color: #fff;
     background: var(--green);
     border-color: var(--green-dark);
-}
-
-.product-button small {
-    color: inherit;
-    opacity: 0.82;
 }
 
 .focus-panel {
@@ -337,13 +332,6 @@ a {
     margin: 8px 0;
     color: var(--blue);
     font-size: 32px;
-}
-
-.focus-panel p {
-    margin: 0;
-    color: var(--red);
-    font-size: 24px;
-    font-weight: 900;
 }
 
 .summary-panel {
@@ -398,12 +386,27 @@ a {
 .order-item,
 .detail-item {
     display: grid;
-    grid-template-columns: 1fr auto;
+    grid-template-columns: 1fr;
     gap: 8px 12px;
     padding: 12px;
     border: 1px solid var(--line);
     border-radius: 8px;
     background: #fbfcfd;
+    color: var(--text);
+    font: inherit;
+    text-align: left;
+    cursor: pointer;
+}
+
+.order-item:hover {
+    border-color: var(--green);
+    background: #f7fff8;
+}
+
+.order-item.active {
+    border-color: var(--green);
+    background: #ebffef;
+    box-shadow: inset 4px 0 0 var(--green);
 }
 
 .order-item strong,
@@ -416,19 +419,18 @@ a {
     font-size: 14px;
 }
 
-.item-remove {
-    width: 36px;
-    height: 36px;
-    min-height: 36px;
-    padding: 0;
-    border-radius: 999px;
-    color: #fff;
-    background: var(--red-dark);
-}
-
 .summary-footer {
     display: grid;
     gap: 10px;
+    align-content: end;
+    grid-auto-rows: max-content;
+}
+
+.summary-footer .primary-button,
+.summary-footer .secondary-button {
+    min-height: 42px;
+    padding: 9px 12px;
+    font-size: 14px;
 }
 
 .total-row {
@@ -450,29 +452,32 @@ a {
     grid-area: calculator;
     padding: 16px;
     display: grid;
-    grid-template-columns: minmax(220px, 340px) 1fr;
-    gap: 16px;
+    grid-template-columns: 1fr;
+    gap: 12px;
     align-items: stretch;
 }
 
 .calculator-display {
     border-radius: 8px;
-    padding: 16px;
-    background: var(--blue);
+    padding: 12px 16px;
+    background: var(--green);
     color: #fff;
-    display: grid;
-    align-content: center;
-    gap: 10px;
-    min-height: 164px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    min-height: 76px;
 }
 
 .calculator-display span {
-    color: #bdd2e0;
+    color: #fff;
     font-weight: 800;
 }
 
 .calculator-display strong {
-    font-size: 42px;
+    font-size: 36px;
+    line-height: 1;
+    white-space: nowrap;
 }
 
 .keypad {
@@ -501,6 +506,11 @@ a {
     display: grid;
     grid-template-columns: repeat(2, minmax(88px, 1fr));
     gap: 8px;
+}
+
+.calculator-actions .arrow-button {
+    min-height: 54px;
+    font-size: 30px;
 }
 
 .arrow-button.add {

@@ -3,6 +3,7 @@ from decimal import Decimal
 from django.contrib.auth.models import User
 from django.core.validators import MaxValueValidator, MinValueValidator
 from django.db import models
+from django.db.models import Sum
 from django.utils import timezone
 
 
@@ -108,7 +109,10 @@ class Pedido(models.Model):
         return self.items.count()
 
     def recalcular_total(self):
-        total = sum((item.subtotal for item in self.items.all()), Decimal("0.00"))
+        total = (
+            self.items.model.objects.filter(pedido_id=self.pk).aggregate(total=Sum("subtotal"))["total"]
+            or Decimal("0.00")
+        )
         self.total = total.quantize(Decimal("0.01"))
         self.save(update_fields=["total"])
         return self.total

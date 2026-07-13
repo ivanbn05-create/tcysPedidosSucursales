@@ -2,6 +2,8 @@
 *.sqlite3
 db.sqlite3
 staticfiles/
+runserver.out.log
+runserver.err.log
 __pycache__/
 *.py[cod]
 .pytest_cache/

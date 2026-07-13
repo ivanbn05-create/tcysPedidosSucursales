@@ -56,6 +56,55 @@ class PedidoFlowTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json()["total_pedido"], "6.00")
 
+    def test_agregar_producto_existente_reemplaza_cantidad(self):
+        self.assertTrue(self.client.login(username="aguilas", password="Aguilas"))
+        producto = Producto.objects.get(nombre="Barbacoa")
+
+        first = self.client.post(
+            "/api/pedidos/crear-item/",
+            data=json.dumps({"producto_id": producto.id, "cantidad": "5"}),
+            content_type="application/json",
+        )
+        second = self.client.post(
+            "/api/pedidos/crear-item/",
+            data=json.dumps({"producto_id": producto.id, "cantidad": "3"}),
+            content_type="application/json",
+        )
+
+        self.assertEqual(first.status_code, 200)
+        self.assertEqual(second.status_code, 200)
+        data = second.json()
+        self.assertEqual(data["total_pedido"], "3.00")
+        self.assertEqual(len(data["pedido"]["items"]), 1)
+        self.assertEqual(data["pedido"]["items"][0]["cantidad"], "3.000")
+
+    def test_primer_item_se_muestra_si_habia_pedido_pendiente_vacio(self):
+        self.assertTrue(self.client.login(username="aguilas", password="Aguilas"))
+        sucursal = SucursalCliente.objects.get(nombre="Aguilas")
+        Pedido.objects.create(sucursal_cliente=sucursal, usuario_nombre=sucursal.nombre)
+        producto = Producto.objects.get(nombre="Salsa Verde")
+
+        response = self.client.post(
+            "/api/pedidos/crear-item/",
+            data=json.dumps({"producto_id": producto.id, "cantidad": "1"}),
+            content_type="application/json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertEqual(data["total_pedido"], "1.00")
+        self.assertEqual(len(data["pedido"]["items"]), 1)
+        self.assertEqual(data["pedido"]["items"][0]["producto"], "Salsa Verde")
+        self.assertEqual(data["pedido"]["items"][0]["cantidad"], "1.000")
+
+    def test_pantalla_pedidos_no_muestra_precios_unitarios(self):
+        self.assertTrue(self.client.login(username="aguilas", password="Aguilas"))
+        response = self.client.get("/pedidos/")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertNotContains(response, "$1.00")
+        self.assertNotContains(response, "precio_unitario")
+
     def test_usuario_no_admin_no_puede_ver_dashboard(self):
         self.assertTrue(self.client.login(username="fortin", password="Fortin"))
         response = self.client.get("/admin/")

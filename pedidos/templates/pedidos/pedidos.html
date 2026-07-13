@@ -15,7 +15,6 @@
             {% for producto in productos %}
             <button class="product-button" type="button" data-product-id="{{ producto.id }}">
                 <span>{{ producto.nombre }}</span>
-                <small data-price-for="{{ producto.id }}">$0.00</small>
             </button>
             {% endfor %}
         </div>
@@ -26,7 +25,6 @@
         <div>
             <span class="eyebrow">Producto seleccionado</span>
             <h1 id="focusProduct">Selecciona producto</h1>
-            <p id="focusPrice">$0.00</p>
         </div>
     </section>
 
@@ -73,8 +71,8 @@
             <button type="button" data-key="DEL">DEL</button>
         </div>
         <div class="calculator-actions">
-            <button class="arrow-button add" type="button" id="addItem" aria-label="Agregar cantidad">-&gt;</button>
-            <button class="arrow-button remove" type="button" id="deleteSelected" aria-label="Eliminar producto seleccionado">&lt;-</button>
+            <button class="arrow-button add" type="button" id="addItem" aria-label="Guardar cantidad" title="Guardar cantidad">&#10003;</button>
+            <button class="arrow-button remove" type="button" id="deleteSelected" aria-label="Eliminar producto seleccionado" title="Eliminar producto seleccionado">&times;</button>
         </div>
     </section>
 </main>
@@ -90,5 +88,5 @@
 
 {% block scripts %}
 {{ initial_data|json_script:"initial-data" }}
-<script src="{% static 'js/pedidos.js' %}" defer></script>
+<script src="{% static 'js/pedidos.js' %}?v=20260712-3" defer></script>
 {% endblock %}
