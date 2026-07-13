@@ -129,6 +129,16 @@ a {
     background: #e9f0f4;
 }
 
+.print-link {
+    color: var(--red);
+    background: var(--yellow);
+}
+
+.print-link:hover {
+    color: #fff;
+    background: var(--red);
+}
+
 .danger-button {
     color: #fff;
     background: var(--red-dark);

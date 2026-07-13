@@ -3,7 +3,6 @@ import logging
 from datetime import timedelta
 from decimal import Decimal, InvalidOperation
 from functools import wraps
-from io import BytesIO
 
 from django.contrib import messages
 from django.contrib.auth import authenticate, login, logout
@@ -16,10 +15,9 @@ from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
 from django.utils import timezone
 from django.views.decorators.http import require_http_methods, require_POST
-from openpyxl import Workbook
-from openpyxl.styles import Alignment, Border, Side
 
 from .models import ItemPedido, Pedido, Precio, Producto, SucursalCliente
+from .tickets import build_ticket_workbook, ticket_context
 
 logger = logging.getLogger(__name__)
 
@@ -419,28 +417,7 @@ def admin_dashboard(request):
 
 
 def excel_response_for_pedido(pedido):
-    wb = Workbook()
-    ws = wb.active
-    ws.title = f"Pedido {pedido.id}"
-    thin = Side(style="thin", color="D9E2E8")
-    border = Border(left=thin, right=thin, top=thin, bottom=thin)
-
-    for row_idx, item in enumerate(pedido.items.select_related("producto").all(), start=1):
-        ws.cell(row=row_idx, column=1, value=item.producto.nombre)
-        ws.cell(row=row_idx, column=2, value=float(item.cantidad))
-        ws.cell(row=row_idx, column=3, value="")
-        for col_idx in range(1, 4):
-            cell = ws.cell(row=row_idx, column=col_idx)
-            cell.border = border
-            cell.alignment = Alignment(vertical="center")
-
-    ws.column_dimensions["A"].width = 24
-    ws.column_dimensions["B"].width = 14
-    ws.column_dimensions["C"].width = 8
-
-    output = BytesIO()
-    wb.save(output)
-    output.seek(0)
+    output = build_ticket_workbook(pedido)
     fecha = timezone.localtime(pedido.fecha_creacion).strftime("%Y%m%d")
     filename = f"pedido_{pedido.id}_{fecha}.xlsx"
     response = HttpResponse(
@@ -454,7 +431,7 @@ def excel_response_for_pedido(pedido):
 @admin_required
 def descargar_excel(request, pedido_id):
     pedido = get_object_or_404(
-        Pedido.objects.prefetch_related("items__producto"),
+        Pedido.objects.select_related("sucursal_cliente").prefetch_related("items__producto"),
         pk=pedido_id,
         eliminado=False,
     )
@@ -464,12 +441,27 @@ def descargar_excel(request, pedido_id):
 
 @admin_required
 def descargar_y_marcar(request, pedido_id):
-    pedido = get_object_or_404(Pedido, pk=pedido_id, eliminado=False)
+    pedido = get_object_or_404(
+        Pedido.objects.select_related("sucursal_cliente").prefetch_related("items__producto"),
+        pk=pedido_id,
+        eliminado=False,
+    )
     if pedido.estado == Pedido.Estado.CONFIRMADO:
         pedido.estado = Pedido.Estado.ENVIADO
         pedido.save(update_fields=["estado"])
         logger.info("Pedido #%s marcado enviado por descarga de %s", pedido.id, request.user.username)
     return excel_response_for_pedido(pedido)
+
+
+@admin_required
+def imprimir_pedido(request, pedido_id):
+    pedido = get_object_or_404(
+        Pedido.objects.select_related("sucursal_cliente").prefetch_related("items__producto"),
+        pk=pedido_id,
+        eliminado=False,
+    )
+    logger.info("Admin %s abrio impresion de pedido #%s", request.user.username, pedido.id)
+    return render(request, "pedidos/ticket_print.html", ticket_context(pedido))
 
 
 @require_POST

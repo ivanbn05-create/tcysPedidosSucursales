@@ -19,6 +19,11 @@ urlpatterns = [
         name="descargar_y_marcar",
     ),
     path(
+        "admin/pedidos/<int:pedido_id>/imprimir/",
+        views.imprimir_pedido,
+        name="imprimir_pedido",
+    ),
+    path(
         "admin/pedidos/<int:pedido_id>/marcar-enviado/",
         views.marcar_enviado,
         name="marcar_enviado",

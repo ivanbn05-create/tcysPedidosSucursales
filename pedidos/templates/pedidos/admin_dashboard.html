@@ -80,6 +80,12 @@
                             data-total="{{ pedido.total|floatformat:2 }}"
                             data-items="{{ pedido.items_json|escape }}"
                         >Ver detalle</button>
+                        <a
+                            class="secondary-link compact print-link"
+                            href="{% url 'imprimir_pedido' pedido.id %}"
+                            target="_blank"
+                            rel="noopener"
+                        >Imprimir</a>
                         <a class="primary-link" href="{% url 'descargar_y_marcar' pedido.id %}">Excel</a>
                         <form method="post" action="{% url 'marcar_enviado' pedido.id %}">
                             {% csrf_token %}
