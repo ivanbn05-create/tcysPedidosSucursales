@@ -2,10 +2,11 @@ import json
 from decimal import Decimal
 from io import BytesIO
 
+from django.contrib.auth.models import User
 from django.test import TestCase
 from openpyxl import load_workbook
 
-from .models import Pedido, Producto, SucursalCliente
+from .models import Pedido, Precio, Producto, SucursalCliente
 from .seed import seed_demo_data
 
 
@@ -136,6 +137,151 @@ class PedidoFlowTests(TestCase):
         response = self.client.get("/admin/")
         self.assertEqual(response.status_code, 302)
         self.assertEqual(response.url, "/pedidos/")
+
+        response = self.client.get("/admin/configuracion/")
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(response.url, "/pedidos/")
+
+    def test_admin_configura_ticket_precio_y_password(self):
+        self.assertTrue(self.client.login(username="admin", password="admin123"))
+        producto = Producto.objects.get(nombre="Barbacoa")
+        sucursal = SucursalCliente.objects.get(nombre="Aguilas")
+
+        response = self.client.get("/admin/configuracion/")
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Base de datos")
+        self.assertNotContains(response, "pbkdf2_")
+
+        response = self.client.post(
+            "/admin/configuracion/",
+            data={
+                "action": "actualizar_productos",
+                f"producto_{producto.id}_present": "1",
+                f"producto_{producto.id}_nombre": "Barbacoa",
+                f"producto_{producto.id}_ticket": "BARBA",
+                f"producto_{producto.id}_descripcion": producto.descripcion,
+                f"producto_{producto.id}_orden": str(producto.orden),
+                f"producto_{producto.id}_activo": "on",
+            },
+        )
+        self.assertRedirects(response, "/admin/configuracion/")
+
+        response = self.client.post(
+            "/admin/configuracion/",
+            data={
+                "action": "actualizar_precios",
+                f"precio_{producto.id}_{sucursal.id}": "12.50",
+            },
+        )
+        self.assertRedirects(response, "/admin/configuracion/")
+        precio = Precio.objects.get(
+            producto=producto,
+            sucursal_cliente=sucursal,
+            fecha_vigencia__isnull=False,
+        )
+        self.assertEqual(precio.precio_unitario, Decimal("12.50"))
+
+        response = self.client.post(
+            "/admin/configuracion/",
+            data={
+                "action": "actualizar_sucursales",
+                f"sucursal_{sucursal.id}_present": "1",
+                f"sucursal_{sucursal.id}_nombre": sucursal.nombre,
+                f"sucursal_{sucursal.id}_tipo": sucursal.tipo,
+                f"sucursal_{sucursal.id}_username": sucursal.usuario.username,
+                f"sucursal_{sucursal.id}_password": "NuevaClave123",
+                f"sucursal_{sucursal.id}_activa": "on",
+            },
+        )
+        self.assertRedirects(response, "/admin/configuracion/")
+
+        self.client.logout()
+        self.assertFalse(self.client.login(username="aguilas", password="Aguilas"))
+        self.assertTrue(self.client.login(username="aguilas", password="NuevaClave123"))
+        response = self.client.post(
+            "/api/pedidos/crear-item/",
+            data=json.dumps({"producto_id": producto.id, "cantidad": "2"}),
+            content_type="application/json",
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["total_pedido"], "25.00")
+        response = self.client.post("/api/pedidos/confirmar/", content_type="application/json")
+        pedido_id = response.json()["pedido_id"]
+
+        self.client.logout()
+        self.assertTrue(self.client.login(username="admin", password="admin123"))
+        response = self.client.get(f"/admin/pedidos/{pedido_id}/excel/")
+        workbook = load_workbook(BytesIO(response.content))
+        self.assertEqual(workbook.active["A3"].value, "BARBA")
+
+    def test_admin_puede_crear_producto_y_usuario(self):
+        self.assertTrue(self.client.login(username="admin", password="admin123"))
+        response = self.client.post(
+            "/admin/configuracion/",
+            data={
+                "action": "crear_producto",
+                "nuevo_nombre": "Consome",
+                "nuevo_ticket": "CONSOME",
+                "nuevo_descripcion": "Consome para servicio.",
+                "nuevo_orden": "7",
+            },
+        )
+        self.assertRedirects(response, "/admin/configuracion/")
+        self.assertTrue(
+            Producto.objects.filter(nombre="Consome", nombre_ticket="CONSOME", activo=True).exists()
+        )
+
+        response = self.client.post(
+            "/admin/configuracion/",
+            data={
+                "action": "crear_sucursal",
+                "nuevo_sucursal_nombre": "Sucursal Prueba",
+                "nuevo_sucursal_tipo": SucursalCliente.Tipo.SUCURSAL,
+                "nuevo_sucursal_username": "sucursal_prueba",
+                "nuevo_sucursal_password": "ClavePrueba123",
+            },
+        )
+        self.assertRedirects(response, "/admin/configuracion/")
+        created_user = User.objects.get(username="sucursal_prueba")
+        self.assertTrue(created_user.check_password("ClavePrueba123"))
+        self.assertTrue(
+            SucursalCliente.objects.filter(nombre="Sucursal Prueba", usuario=created_user).exists()
+        )
+
+    def test_producto_inactivo_solo_permanece_en_pedido_pendiente(self):
+        producto = Producto.objects.get(nombre="Barbacoa")
+        self.assertTrue(self.client.login(username="aguilas", password="Aguilas"))
+        response = self.client.post(
+            "/api/pedidos/crear-item/",
+            data=json.dumps({"producto_id": producto.id, "cantidad": "1"}),
+            content_type="application/json",
+        )
+        self.assertEqual(response.status_code, 200)
+
+        self.client.logout()
+        self.assertTrue(self.client.login(username="admin", password="admin123"))
+        response = self.client.post(
+            "/admin/configuracion/",
+            data={
+                "action": "actualizar_productos",
+                f"producto_{producto.id}_present": "1",
+                f"producto_{producto.id}_nombre": producto.nombre,
+                f"producto_{producto.id}_ticket": producto.nombre_ticket,
+                f"producto_{producto.id}_descripcion": producto.descripcion,
+                f"producto_{producto.id}_orden": str(producto.orden),
+            },
+        )
+        self.assertRedirects(response, "/admin/configuracion/")
+
+        self.client.logout()
+        self.assertTrue(self.client.login(username="aguilas", password="Aguilas"))
+        response = self.client.get("/pedidos/")
+        self.assertContains(response, f'data-product-id="{producto.id}"')
+
+        self.client.logout()
+        self.assertTrue(self.client.login(username="fortin", password="Fortin"))
+        response = self.client.get("/pedidos/")
+        self.assertNotContains(response, f'data-product-id="{producto.id}"')
 
     def test_seed_crea_seis_clientes_demo(self):
         self.assertEqual(SucursalCliente.objects.count(), 6)

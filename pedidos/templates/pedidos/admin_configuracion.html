@@ -1,0 +1,212 @@
+{% extends "pedidos/base.html" %}
+{% load l10n %}
+
+{% block title %}Configuraci&oacute;n | Los Tocayos{% endblock %}
+{% block body_class %}admin-page settings-page{% endblock %}
+
+{% block content %}
+<main class="admin-shell settings-shell">
+    <section class="admin-header settings-header">
+        <div>
+            <span class="eyebrow">Base de datos</span>
+            <h1>Configuraci&oacute;n</h1>
+        </div>
+        <a class="secondary-link" href="{% url 'admin_dashboard' %}">Volver a pedidos</a>
+    </section>
+
+    <nav class="settings-nav" aria-label="Secciones de configuraci&oacute;n">
+        <a href="#productos">Productos</a>
+        <a href="#precios">Precios</a>
+        <a href="#usuarios">Usuarios</a>
+        <a href="#administrador">Administrador</a>
+    </nav>
+
+    <section class="settings-section" id="productos">
+        <div class="settings-section-heading">
+            <div>
+                <span class="eyebrow">Cat&aacute;logo</span>
+                <h2>Productos</h2>
+            </div>
+        </div>
+
+        <form method="post" class="settings-form">
+            {% csrf_token %}
+            <input type="hidden" name="action" value="actualizar_productos">
+            <div class="settings-table-wrap">
+                <table class="settings-table product-settings-table">
+                    <thead>
+                        <tr>
+                            <th>Nombre en pedidos</th>
+                            <th>Nombre en ticket</th>
+                            <th>Descripci&oacute;n</th>
+                            <th>Orden</th>
+                            <th>Activo</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for producto in productos %}
+                        <tr>
+                            <td>
+                                <input type="hidden" name="producto_{{ producto.id }}_present" value="1">
+                                <input name="producto_{{ producto.id }}_nombre" value="{{ producto.nombre }}" maxlength="80" required aria-label="Nombre de {{ producto.nombre }}">
+                            </td>
+                            <td><input name="producto_{{ producto.id }}_ticket" value="{{ producto.nombre_ticket }}" maxlength="24" aria-label="Nombre de ticket de {{ producto.nombre }}"></td>
+                            <td><input name="producto_{{ producto.id }}_descripcion" value="{{ producto.descripcion }}" aria-label="Descripcion de {{ producto.nombre }}"></td>
+                            <td><input class="short-input" name="producto_{{ producto.id }}_orden" type="number" min="0" max="32767" value="{{ producto.orden }}" required aria-label="Orden de {{ producto.nombre }}"></td>
+                            <td class="toggle-cell"><input name="producto_{{ producto.id }}_activo" type="checkbox" {% if producto.activo %}checked{% endif %} aria-label="Producto {{ producto.nombre }} activo"></td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            <div class="settings-actions">
+                <button class="primary-button success" type="submit">Guardar productos</button>
+            </div>
+        </form>
+
+        <form method="post" class="create-form product-create-form">
+            {% csrf_token %}
+            <input type="hidden" name="action" value="crear_producto">
+            <input name="nuevo_nombre" maxlength="80" placeholder="Nombre en pedidos" required aria-label="Nombre del nuevo producto">
+            <input name="nuevo_ticket" maxlength="24" placeholder="Nombre en ticket" aria-label="Nombre de ticket del nuevo producto">
+            <input name="nuevo_descripcion" placeholder="Descripci&oacute;n" aria-label="Descripci&oacute;n del nuevo producto">
+            <input class="short-input" name="nuevo_orden" type="number" min="0" max="32767" value="0" required aria-label="Orden del nuevo producto">
+            <button class="secondary-button" type="submit">Agregar producto</button>
+        </form>
+    </section>
+
+    <section class="settings-section" id="precios">
+        <div class="settings-section-heading">
+            <div>
+                <span class="eyebrow">Matriz vigente</span>
+                <h2>Precios</h2>
+            </div>
+        </div>
+
+        <form method="post" class="settings-form">
+            {% csrf_token %}
+            <input type="hidden" name="action" value="actualizar_precios">
+            <div class="settings-table-wrap price-table-wrap">
+                <table class="settings-table price-settings-table">
+                    <thead>
+                        <tr>
+                            <th>Producto</th>
+                            {% for sucursal in sucursales %}
+                            <th>{{ sucursal.nombre }}</th>
+                            {% endfor %}
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for row in price_rows %}
+                        <tr>
+                            <th scope="row">{{ row.product.nombre }}</th>
+                            {% for price in row.prices %}
+                            <td>
+                                <label class="currency-input">
+                                    <span>$</span>
+                                    <input
+                                        name="precio_{{ row.product.id }}_{{ price.branch.id }}"
+                                        type="number"
+                                        min="0.01"
+                                        max="9999.99"
+                                        step="0.01"
+                                        value="{% if price.value is not None %}{{ price.value|unlocalize }}{% endif %}"
+                                        required
+                                        aria-label="Precio de {{ row.product.nombre }} para {{ price.branch.nombre }}"
+                                    >
+                                </label>
+                            </td>
+                            {% endfor %}
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            <div class="settings-actions">
+                <button class="primary-button success" type="submit">Guardar precios</button>
+            </div>
+        </form>
+    </section>
+
+    <section class="settings-section" id="usuarios">
+        <div class="settings-section-heading">
+            <div>
+                <span class="eyebrow">Accesos</span>
+                <h2>Sucursales y clientes</h2>
+            </div>
+        </div>
+
+        <form method="post" class="settings-form">
+            {% csrf_token %}
+            <input type="hidden" name="action" value="actualizar_sucursales">
+            <div class="settings-table-wrap">
+                <table class="settings-table user-settings-table">
+                    <thead>
+                        <tr>
+                            <th>Nombre</th>
+                            <th>Tipo</th>
+                            <th>Usuario</th>
+                            <th>Nueva contrase&ntilde;a</th>
+                            <th>Activo</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for sucursal in sucursales %}
+                        <tr>
+                            <td>
+                                <input type="hidden" name="sucursal_{{ sucursal.id }}_present" value="1">
+                                <input name="sucursal_{{ sucursal.id }}_nombre" value="{{ sucursal.nombre }}" maxlength="120" required aria-label="Nombre de {{ sucursal.nombre }}">
+                            </td>
+                            <td>
+                                <select name="sucursal_{{ sucursal.id }}_tipo" aria-label="Tipo de {{ sucursal.nombre }}">
+                                    {% for value, label in tipos_sucursal %}
+                                    <option value="{{ value }}" {% if sucursal.tipo == value %}selected{% endif %}>{{ label }}</option>
+                                    {% endfor %}
+                                </select>
+                            </td>
+                            <td><input name="sucursal_{{ sucursal.id }}_username" value="{{ sucursal.usuario.username|default:'' }}" maxlength="150" required autocomplete="off" aria-label="Usuario de {{ sucursal.nombre }}"></td>
+                            <td><input name="sucursal_{{ sucursal.id }}_password" type="password" placeholder="Sin cambio" autocomplete="new-password" aria-label="Nueva contrase&ntilde;a de {{ sucursal.nombre }}"></td>
+                            <td class="toggle-cell"><input name="sucursal_{{ sucursal.id }}_activa" type="checkbox" {% if sucursal.activa %}checked{% endif %} aria-label="Usuario {{ sucursal.nombre }} activo"></td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            <div class="settings-actions">
+                <button class="primary-button success" type="submit">Guardar usuarios</button>
+            </div>
+        </form>
+
+        <form method="post" class="create-form user-create-form">
+            {% csrf_token %}
+            <input type="hidden" name="action" value="crear_sucursal">
+            <input name="nuevo_sucursal_nombre" maxlength="120" placeholder="Nombre" required aria-label="Nombre de la nueva sucursal o cliente">
+            <select name="nuevo_sucursal_tipo" required aria-label="Tipo de la nueva sucursal o cliente">
+                {% for value, label in tipos_sucursal %}
+                <option value="{{ value }}">{{ label }}</option>
+                {% endfor %}
+            </select>
+            <input name="nuevo_sucursal_username" maxlength="150" placeholder="Usuario" required autocomplete="off" aria-label="Nuevo usuario">
+            <input name="nuevo_sucursal_password" type="password" placeholder="Contrase&ntilde;a" required autocomplete="new-password" aria-label="Contrase&ntilde;a del nuevo usuario">
+            <button class="secondary-button" type="submit">Agregar usuario</button>
+        </form>
+    </section>
+
+    <section class="settings-section" id="administrador">
+        <div class="settings-section-heading">
+            <div>
+                <span class="eyebrow">Cuenta</span>
+                <h2>Administrador</h2>
+            </div>
+        </div>
+        <form method="post" class="create-form admin-account-form">
+            {% csrf_token %}
+            <input type="hidden" name="action" value="actualizar_admin">
+            <input name="admin_display_name" value="{{ admin_user.first_name }}" maxlength="150" placeholder="Nombre visible" aria-label="Nombre visible del administrador">
+            <input name="admin_username" value="{{ admin_user.username }}" maxlength="150" required autocomplete="off" aria-label="Usuario administrador">
+            <input name="admin_password" type="password" placeholder="Nueva contrase&ntilde;a" autocomplete="new-password" aria-label="Nueva contrase&ntilde;a del administrador">
+            <button class="primary-button success" type="submit">Guardar administrador</button>
+        </form>
+    </section>
+</main>
+{% endblock %}

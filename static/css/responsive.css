@@ -122,10 +122,18 @@
         font-weight: 900;
         font-size: clamp(13px, 3.5vw, 16px);
         line-height: 1;
-        text-orientation: upright;
         white-space: nowrap;
-        writing-mode: vertical-rl;
         cursor: pointer;
+    }
+
+    .mobile-panel-tab span {
+        display: block;
+        white-space: nowrap;
+        transform: rotate(90deg);
+    }
+
+    .mobile-panel-tab:hover {
+        background: #fff26b;
     }
 
     .order-shell.summary-open .product-panel .mobile-panel-tab,
@@ -275,6 +283,111 @@
 
     .stats-grid,
     .filters {
+        grid-template-columns: 1fr;
+    }
+
+    .table-wrap {
+        overflow: visible;
+        border: 0;
+        background: transparent;
+        box-shadow: none;
+    }
+
+    .orders-table {
+        min-width: 0;
+        display: block;
+        background: transparent;
+    }
+
+    .orders-table thead {
+        display: none;
+    }
+
+    .orders-table tbody {
+        display: grid;
+        gap: 12px;
+    }
+
+    .orders-table tr {
+        padding: 12px;
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 10px 14px;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        background: #fff;
+        box-shadow: var(--shadow);
+    }
+
+    .orders-table td {
+        min-width: 0;
+        padding: 0;
+        display: grid;
+        gap: 4px;
+        border: 0;
+        overflow-wrap: anywhere;
+    }
+
+    .orders-table td::before {
+        content: attr(data-label);
+        color: var(--muted);
+        font-size: 11px;
+        font-weight: 900;
+        text-transform: uppercase;
+    }
+
+    .orders-table td[data-label="Sucursal/Cliente"],
+    .orders-table .actions-cell,
+    .orders-table .table-empty {
+        grid-column: 1 / -1;
+    }
+
+    .orders-table .actions-cell {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 8px;
+        padding-top: 8px;
+        border-top: 1px solid var(--line);
+    }
+
+    .orders-table .actions-cell::before {
+        grid-column: 1 / -1;
+    }
+
+    .actions-cell > *,
+    .actions-cell form button {
+        width: 100%;
+    }
+
+    .settings-header {
+        gap: 12px;
+    }
+
+    .settings-header .secondary-link {
+        width: 100%;
+    }
+
+    .settings-nav {
+        margin: 0 -12px;
+        padding: 0 12px 2px;
+    }
+
+    .settings-section-heading {
+        padding: 12px;
+    }
+
+    .settings-actions {
+        padding: 10px 12px;
+    }
+
+    .settings-actions .primary-button {
+        width: 100%;
+    }
+
+    .create-form,
+    .user-create-form,
+    .admin-account-form {
+        padding: 12px;
         grid-template-columns: 1fr;
     }
 

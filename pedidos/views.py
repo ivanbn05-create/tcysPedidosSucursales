@@ -5,10 +5,11 @@ from decimal import Decimal, InvalidOperation
 from functools import wraps
 
 from django.contrib import messages
-from django.contrib.auth import authenticate, login, logout
+from django.contrib.auth import authenticate, login, logout, update_session_auth_hash
 from django.contrib.auth.decorators import login_required
 from django.contrib.auth.models import User
-from django.db import transaction
+from django.core.exceptions import ValidationError
+from django.db import IntegrityError, transaction
 from django.db.models import Q, Sum
 from django.http import HttpResponse, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
@@ -182,7 +183,13 @@ def pedidos_view(request):
         messages.error(request, "Tu usuario no tiene una sucursal o cliente activo.")
         return redirect("login")
 
-    productos = list(Producto.objects.all())
+    pedido = pedido_pendiente(sucursal)
+    productos_query = Producto.objects.filter(activo=True)
+    if pedido is not None:
+        productos_query = Producto.objects.filter(
+            Q(activo=True) | Q(items_pedido__pedido=pedido)
+        ).distinct()
+    productos = list(productos_query)
     productos_data = []
     for producto in productos:
         productos_data.append(
@@ -193,7 +200,6 @@ def pedidos_view(request):
             }
         )
 
-    pedido = pedido_pendiente(sucursal)
     context = {
         "sucursal": sucursal,
         "productos": productos,
@@ -353,6 +359,267 @@ def confirmar_pedido(request):
             "total": decimal_to_str(pedido.total),
             "mensaje": f"Pedido confirmado #{pedido.id}.",
         }
+    )
+
+
+def parse_admin_price(value):
+    try:
+        price = Decimal(str(value)).quantize(Decimal("0.01"))
+    except (InvalidOperation, TypeError, ValueError):
+        raise ValidationError("Captura precios validos con hasta dos decimales.")
+    if price <= 0 or price > Decimal("9999.99"):
+        raise ValidationError("Cada precio debe estar entre 0.01 y 9999.99.")
+    return price
+
+
+def parse_admin_order(value):
+    try:
+        order = int(value)
+    except (TypeError, ValueError):
+        raise ValidationError("El orden de los productos debe ser un numero entero.")
+    if order < 0 or order > 32767:
+        raise ValidationError("El orden debe estar entre 0 y 32767.")
+    return order
+
+
+def validation_error_text(error):
+    if hasattr(error, "message_dict"):
+        return " ".join(
+            message
+            for messages_list in error.message_dict.values()
+            for message in messages_list
+        )
+    return " ".join(error.messages)
+
+
+def update_products_from_post(request):
+    updated = 0
+    for producto in Producto.objects.all():
+        prefix = f"producto_{producto.id}_"
+        if f"{prefix}present" not in request.POST:
+            continue
+
+        nombre = request.POST.get(f"{prefix}nombre", "").strip()
+        if not nombre:
+            raise ValidationError("Todos los productos deben tener nombre.")
+
+        producto.nombre = nombre
+        producto.nombre_ticket = request.POST.get(f"{prefix}ticket", "").strip()
+        producto.descripcion = request.POST.get(f"{prefix}descripcion", "").strip()
+        producto.orden = parse_admin_order(request.POST.get(f"{prefix}orden"))
+        producto.activo = f"{prefix}activo" in request.POST
+        producto.full_clean()
+        producto.save()
+        updated += 1
+    return f"{updated} productos actualizados."
+
+
+def create_product_from_post(request):
+    nombre = request.POST.get("nuevo_nombre", "").strip()
+    if not nombre:
+        raise ValidationError("El nuevo producto necesita un nombre.")
+    producto = Producto(
+        nombre=nombre,
+        nombre_ticket=request.POST.get("nuevo_ticket", "").strip(),
+        descripcion=request.POST.get("nuevo_descripcion", "").strip(),
+        orden=parse_admin_order(request.POST.get("nuevo_orden", "0")),
+        activo=True,
+    )
+    producto.full_clean()
+    producto.save()
+    return f"Producto {producto.nombre} creado. Ahora asigna sus precios."
+
+
+def update_prices_from_post(request):
+    today = timezone.localdate()
+    updated = 0
+    products = Producto.objects.all()
+    branches = SucursalCliente.objects.all()
+    for producto in products:
+        for branch in branches:
+            field_name = f"precio_{producto.id}_{branch.id}"
+            if field_name not in request.POST:
+                continue
+            raw_value = request.POST.get(field_name, "").strip()
+            if not raw_value:
+                raise ValidationError(
+                    f"Falta el precio de {producto.nombre} para {branch.nombre}."
+                )
+            Precio.objects.update_or_create(
+                producto=producto,
+                sucursal_cliente=branch,
+                fecha_vigencia=today,
+                defaults={"precio_unitario": parse_admin_price(raw_value)},
+            )
+            updated += 1
+    return f"{updated} precios vigentes actualizados."
+
+
+def update_branches_from_post(request):
+    updated = 0
+    valid_types = {value for value, _ in SucursalCliente.Tipo.choices}
+    for branch in SucursalCliente.objects.select_related("usuario"):
+        prefix = f"sucursal_{branch.id}_"
+        if f"{prefix}present" not in request.POST:
+            continue
+
+        nombre = request.POST.get(f"{prefix}nombre", "").strip()
+        username = request.POST.get(f"{prefix}username", "").strip()
+        branch_type = request.POST.get(f"{prefix}tipo", "")
+        active = f"{prefix}activa" in request.POST
+        password = request.POST.get(f"{prefix}password", "")
+        if not nombre or not username:
+            raise ValidationError("Cada sucursal o cliente necesita nombre y usuario.")
+        if branch_type not in valid_types:
+            raise ValidationError("Selecciona un tipo de cliente valido.")
+
+        user = branch.usuario or User()
+        if not user.pk and not password:
+            raise ValidationError(f"Captura una contrasena para el usuario {username}.")
+        user.username = username
+        user.first_name = nombre
+        user.is_staff = False
+        user.is_superuser = False
+        user.is_active = active
+        if password:
+            user.set_password(password)
+        user.full_clean()
+        user.save()
+
+        branch.nombre = nombre
+        branch.tipo = branch_type
+        branch.activa = active
+        branch.usuario = user
+        branch.full_clean()
+        branch.save()
+        updated += 1
+    return f"{updated} usuarios y sucursales actualizados."
+
+
+def create_branch_from_post(request):
+    nombre = request.POST.get("nuevo_sucursal_nombre", "").strip()
+    username = request.POST.get("nuevo_sucursal_username", "").strip()
+    password = request.POST.get("nuevo_sucursal_password", "")
+    branch_type = request.POST.get("nuevo_sucursal_tipo", "")
+    valid_types = {value for value, _ in SucursalCliente.Tipo.choices}
+    if not nombre or not username or not password:
+        raise ValidationError("Nombre, usuario y contrasena son obligatorios.")
+    if branch_type not in valid_types:
+        raise ValidationError("Selecciona un tipo de cliente valido.")
+
+    user = User(
+        username=username,
+        first_name=nombre,
+        is_active=True,
+        is_staff=False,
+        is_superuser=False,
+    )
+    user.set_password(password)
+    user.full_clean()
+    user.save()
+    branch = SucursalCliente(
+        nombre=nombre,
+        tipo=branch_type,
+        activa=True,
+        usuario=user,
+    )
+    branch.full_clean()
+    branch.save()
+    return f"Usuario {nombre} creado. Ahora asigna sus precios."
+
+
+def update_admin_account_from_post(request):
+    user = request.user
+    username = request.POST.get("admin_username", "").strip()
+    display_name = request.POST.get("admin_display_name", "").strip()
+    password = request.POST.get("admin_password", "")
+    if not username:
+        raise ValidationError("La cuenta administradora necesita un usuario.")
+    user.username = username
+    user.first_name = display_name
+    if password:
+        user.set_password(password)
+    user.full_clean()
+    user.save()
+    if password:
+        update_session_auth_hash(request, user)
+    return "Cuenta administradora actualizada."
+
+
+ADMIN_CONFIG_ACTIONS = {
+    "actualizar_productos": update_products_from_post,
+    "crear_producto": create_product_from_post,
+    "actualizar_precios": update_prices_from_post,
+    "actualizar_sucursales": update_branches_from_post,
+    "crear_sucursal": create_branch_from_post,
+    "actualizar_admin": update_admin_account_from_post,
+}
+
+
+def admin_configuration_context(request):
+    products = list(Producto.objects.all())
+    branches = list(SucursalCliente.objects.select_related("usuario").all())
+    current_prices = {}
+    prices = Precio.objects.filter(fecha_vigencia__lte=timezone.localdate()).order_by(
+        "producto_id",
+        "sucursal_cliente_id",
+        "-fecha_vigencia",
+    )
+    for price in prices:
+        current_prices.setdefault(
+            (price.producto_id, price.sucursal_cliente_id),
+            price.precio_unitario,
+        )
+
+    price_rows = [
+        {
+            "product": product,
+            "prices": [
+                {
+                    "branch": branch,
+                    "value": current_prices.get((product.id, branch.id)),
+                }
+                for branch in branches
+            ],
+        }
+        for product in products
+    ]
+    return {
+        "productos": products,
+        "sucursales": branches,
+        "tipos_sucursal": SucursalCliente.Tipo.choices,
+        "price_rows": price_rows,
+        "admin_user": request.user,
+    }
+
+
+@admin_required
+@require_http_methods(["GET", "POST"])
+def admin_configuracion(request):
+    if request.method == "POST":
+        action = request.POST.get("action", "")
+        handler = ADMIN_CONFIG_ACTIONS.get(action)
+        if handler is None:
+            messages.error(request, "Accion de configuracion no reconocida.")
+            return redirect("admin_configuracion")
+        try:
+            with transaction.atomic():
+                success_message = handler(request)
+        except ValidationError as error:
+            messages.error(request, f"No se guardaron los cambios. {validation_error_text(error)}")
+        except IntegrityError:
+            messages.error(
+                request,
+                "No se guardaron los cambios. Ya existe un nombre o usuario con ese valor.",
+            )
+        else:
+            messages.success(request, success_message)
+        return redirect("admin_configuracion")
+
+    return render(
+        request,
+        "pedidos/admin_configuracion.html",
+        admin_configuration_context(request),
     )
 
 

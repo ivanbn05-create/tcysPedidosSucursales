@@ -8,12 +8,12 @@ from .models import Precio, Producto, SucursalCliente
 
 
 PRODUCTOS_DEMO = [
-    ("Barbacoa", "Carne de barbacoa lista para venta."),
-    ("Tortilla", "Tortilla para servicio."),
-    ("Cebolla Guisada", "Cebolla preparada."),
-    ("Chile Toreado", "Chile toreado preparado."),
-    ("Salsa Verde", "Salsa verde de la casa."),
-    ("Salsa Roja", "Salsa roja de la casa."),
+    ("Barbacoa", "BARBACOA", "Carne de barbacoa lista para venta."),
+    ("Tortilla", "TORTILLA", "Tortilla para servicio."),
+    ("Cebolla Guisada", "CEBOLLA GUISADA", "Cebolla preparada."),
+    ("Chile Toreado", "CHILE TOREADO", "Chile toreado preparado."),
+    ("Salsa Verde", "SALSA VERDE", "Salsa verde de la casa."),
+    ("Salsa Roja", "SALSA ROJA", "Salsa roja de la casa."),
 ]
 
 CLIENTES_DEMO = [
@@ -43,10 +43,15 @@ def seed_demo_data():
     admin.save()
 
     productos = []
-    for orden, (nombre, descripcion) in enumerate(PRODUCTOS_DEMO, start=1):
+    for orden, (nombre, nombre_ticket, descripcion) in enumerate(PRODUCTOS_DEMO, start=1):
         producto, _ = Producto.objects.update_or_create(
             nombre=nombre,
-            defaults={"descripcion": descripcion, "orden": orden},
+            defaults={
+                "nombre_ticket": nombre_ticket,
+                "descripcion": descripcion,
+                "orden": orden,
+                "activo": True,
+            },
         )
         productos.append(producto)
 

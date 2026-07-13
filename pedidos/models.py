@@ -38,14 +38,24 @@ class Producto(models.Model):
     """Producto disponible para pedido."""
 
     nombre = models.CharField(max_length=80, unique=True)
+    nombre_ticket = models.CharField(
+        max_length=24,
+        blank=True,
+        help_text="Nombre breve usado en el ticket termico.",
+    )
     descripcion = models.TextField(blank=True)
     orden = models.PositiveSmallIntegerField(default=0)
+    activo = models.BooleanField(default=True)
 
     class Meta:
         ordering = ["orden", "nombre"]
 
     def __str__(self):
         return self.nombre
+
+    @property
+    def etiqueta_ticket(self):
+        return (self.nombre_ticket.strip() or self.nombre.strip())[:24]
 
 
 class Precio(models.Model):

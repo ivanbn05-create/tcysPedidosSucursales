@@ -69,7 +69,7 @@ def ticket_title(pedido):
 def ticket_items(pedido):
     rows = [
         {
-            "producto": item.producto.nombre.upper(),
+            "producto": item.producto.etiqueta_ticket.upper(),
             "cantidad": format_ticket_quantity(item.cantidad),
         }
         for item in pedido.items.select_related("producto").all()

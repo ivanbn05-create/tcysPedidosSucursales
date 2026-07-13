@@ -10,6 +10,7 @@
         <div>
             <span class="eyebrow">Matriz</span>
             <h1>Pedidos</h1>
+            <a class="secondary-link compact admin-config-link" href="{% url 'admin_configuracion' %}">Configuraci&oacute;n</a>
         </div>
         <div class="stats-grid">
             <div class="stat-card">
@@ -63,13 +64,13 @@
             <tbody>
                 {% for pedido in pedidos %}
                 <tr>
-                    <td>#{{ pedido.id }}</td>
-                    <td>{{ pedido.sucursal_cliente.nombre }}</td>
-                    <td>{{ pedido.fecha_creacion|date:"d/m/Y H:i" }}</td>
-                    <td>{{ pedido.cantidad_items }}</td>
-                    <td>${{ pedido.total|floatformat:2 }}</td>
-                    <td><span class="status-pill {{ pedido.estado }}">{{ pedido.get_estado_display }}</span></td>
-                    <td class="actions-cell">
+                    <td data-label="ID">#{{ pedido.id }}</td>
+                    <td data-label="Sucursal/Cliente">{{ pedido.sucursal_cliente.nombre }}</td>
+                    <td data-label="Fecha">{{ pedido.fecha_creacion|date:"d/m/Y H:i" }}</td>
+                    <td data-label="Items">{{ pedido.cantidad_items }}</td>
+                    <td data-label="Total">${{ pedido.total|floatformat:2 }}</td>
+                    <td data-label="Estado"><span class="status-pill {{ pedido.estado }}">{{ pedido.get_estado_display }}</span></td>
+                    <td class="actions-cell" data-label="Acciones">
                         <button
                             class="secondary-button compact"
                             type="button"
@@ -126,5 +127,5 @@
 {% endblock %}
 
 {% block scripts %}
-<script src="{% static 'js/admin.js' %}?v=20260712-3" defer></script>
+<script src="{% static 'js/admin.js' %}?v=20260713-2" defer></script>
 {% endblock %}

@@ -12,6 +12,7 @@ document.addEventListener("DOMContentLoaded", () => {
     const productButtons = [...document.querySelectorAll(".product-button")];
     const selectedName = document.getElementById("selectedName");
     const quantityDisplay = document.getElementById("quantityDisplay");
+    const calculatorDisplay = document.querySelector(".calculator-display");
     const focusProduct = document.getElementById("focusProduct");
     const itemsList = document.getElementById("itemsList");
     const emptyState = document.getElementById("emptyState");
@@ -108,6 +109,10 @@ document.addEventListener("DOMContentLoaded", () => {
         quantityDisplay.textContent = quantityInput || "0";
     }
 
+    function setQuantityConfirmed(isConfirmed) {
+        calculatorDisplay.classList.toggle("confirmed", isConfirmed);
+    }
+
     function refreshSelectedState() {
         productButtons.forEach((button) => {
             button.classList.toggle(
@@ -139,6 +144,7 @@ document.addEventListener("DOMContentLoaded", () => {
             replaceOnNextKey = false;
         }
 
+        setQuantityConfirmed(false);
         refreshSelectedState();
     }
 
@@ -150,6 +156,7 @@ document.addEventListener("DOMContentLoaded", () => {
         selectedProduct = productById(item.producto_id) || selectedProduct;
         quantityInput = editableQuantity(item.cantidad);
         replaceOnNextKey = true;
+        setQuantityConfirmed(false);
         refreshSelectedState();
     }
 
@@ -186,6 +193,7 @@ document.addEventListener("DOMContentLoaded", () => {
     }
 
     function pressKey(key) {
+        setQuantityConfirmed(false);
         if (key === "DEL") {
             quantityInput = replaceOnNextKey ? "" : quantityInput.slice(0, -1);
             replaceOnNextKey = false;
@@ -230,6 +238,7 @@ document.addEventListener("DOMContentLoaded", () => {
             quantityInput = savedItem ? editableQuantity(savedItem.cantidad) : "";
             replaceOnNextKey = true;
             renderOrder();
+            setQuantityConfirmed(true);
             showNotice(data.mensaje);
         } catch (error) {
             showNotice(error.message, "error");
@@ -246,6 +255,7 @@ document.addEventListener("DOMContentLoaded", () => {
             selectedItemId = null;
             quantityInput = "";
             replaceOnNextKey = false;
+            setQuantityConfirmed(false);
             renderOrder();
             showNotice("Producto eliminado.");
         } catch (error) {
@@ -278,6 +288,7 @@ document.addEventListener("DOMContentLoaded", () => {
             selectedItemId = null;
             quantityInput = "";
             replaceOnNextKey = false;
+            setQuantityConfirmed(false);
             renderOrder();
             showNotice("Pedido limpio.");
         } catch (error) {
@@ -300,6 +311,7 @@ document.addEventListener("DOMContentLoaded", () => {
             selectedItemId = null;
             quantityInput = "";
             replaceOnNextKey = false;
+            setQuantityConfirmed(false);
             renderOrder();
             successText.textContent = `Pedido #${data.pedido_id} por ${money(data.total)}.`;
             modal.hidden = false;

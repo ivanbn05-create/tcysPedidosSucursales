@@ -12,9 +12,10 @@ class SucursalClienteAdmin(admin.ModelAdmin):
 
 @admin.register(Producto)
 class ProductoAdmin(admin.ModelAdmin):
-    list_display = ("nombre", "orden")
-    list_editable = ("orden",)
-    search_fields = ("nombre",)
+    list_display = ("nombre", "nombre_ticket", "orden", "activo")
+    list_editable = ("nombre_ticket", "orden", "activo")
+    list_filter = ("activo",)
+    search_fields = ("nombre", "nombre_ticket")
 
 
 @admin.register(Precio)
