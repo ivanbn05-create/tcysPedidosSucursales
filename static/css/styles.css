@@ -245,6 +245,10 @@ a {
     box-shadow: var(--shadow);
 }
 
+.mobile-panel-tab {
+    display: none;
+}
+
 .product-panel {
     grid-area: products;
     padding: 16px;

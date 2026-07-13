@@ -7,6 +7,7 @@
 {% block content %}
 <main class="order-shell">
     <section class="product-panel" aria-label="Productos">
+        <button class="mobile-panel-tab" type="button" data-mobile-panel="products" aria-label="Abrir productos">Productos</button>
         <div class="panel-heading">
             <span>Productos</span>
             <small>{{ sucursal.nombre }}</small>
@@ -29,6 +30,7 @@
     </section>
 
     <aside class="summary-panel" aria-label="Resumen del pedido">
+        <button class="mobile-panel-tab" type="button" data-mobile-panel="summary" aria-label="Abrir pedido">Pedido</button>
         <div class="summary-header">
             <div>
                 <span class="eyebrow">Resumen</span>
@@ -88,5 +90,5 @@
 
 {% block scripts %}
 {{ initial_data|json_script:"initial-data" }}
-<script src="{% static 'js/pedidos.js' %}?v=20260712-3" defer></script>
+<script src="{% static 'js/pedidos.js' %}?v=20260712-4" defer></script>
 {% endblock %}

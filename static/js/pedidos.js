@@ -8,6 +8,7 @@ document.addEventListener("DOMContentLoaded", () => {
     let replaceOnNextKey = false;
     let noticeTimer = null;
 
+    const orderShell = document.querySelector(".order-shell");
     const productButtons = [...document.querySelectorAll(".product-button")];
     const selectedName = document.getElementById("selectedName");
     const quantityDisplay = document.getElementById("quantityDisplay");
@@ -23,6 +24,7 @@ document.addEventListener("DOMContentLoaded", () => {
     const deleteSelectedButton = document.getElementById("deleteSelected");
     const modal = document.getElementById("successModal");
     const successText = document.getElementById("successText");
+    const mobilePanelTabs = [...document.querySelectorAll("[data-mobile-panel]")];
 
     function money(value) {
         return Number(value || 0).toLocaleString("es-MX", {
@@ -96,6 +98,10 @@ document.addEventListener("DOMContentLoaded", () => {
         clearButton.disabled = isBusy;
         confirmButton.disabled = isBusy;
         deleteSelectedButton.disabled = isBusy;
+    }
+
+    function setMobilePanel(panelName) {
+        orderShell.classList.toggle("summary-open", panelName === "summary");
     }
 
     function renderQuantity() {
@@ -309,6 +315,10 @@ document.addEventListener("DOMContentLoaded", () => {
 
     productButtons.forEach((button) => {
         button.addEventListener("click", () => selectProduct(button.dataset.productId));
+    });
+
+    mobilePanelTabs.forEach((button) => {
+        button.addEventListener("click", () => setMobilePanel(button.dataset.mobilePanel));
     });
 
     document.getElementById("keypad").addEventListener("click", (event) => {

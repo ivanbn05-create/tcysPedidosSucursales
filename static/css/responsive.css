@@ -18,8 +18,16 @@
 }
 
 @media (max-width: 767px) {
+    html,
+    body.order-page {
+        height: 100%;
+        overflow: hidden;
+    }
+
     .topbar {
-        align-items: flex-start;
+        min-height: 72px;
+        height: 72px;
+        align-items: center;
         padding: 10px 12px;
     }
 
@@ -34,14 +42,21 @@
     }
 
     .order-shell {
-        min-height: auto;
-        padding: 12px;
-        grid-template-columns: 1fr;
+        height: calc(100dvh - 72px);
+        min-height: 0;
+        padding: 10px;
+        grid-template-columns: minmax(0, 3fr) minmax(0, 1fr);
+        grid-template-rows: minmax(0, 1fr) 25dvh;
         grid-template-areas:
-            "products"
-            "calculator"
-            "summary";
-        gap: 12px;
+            "products summary"
+            "calculator calculator";
+        gap: 10px;
+        overflow: hidden;
+        transition: grid-template-columns 260ms ease;
+    }
+
+    .order-shell.summary-open {
+        grid-template-columns: minmax(0, 1fr) minmax(0, 3fr);
     }
 
     .focus-panel {
@@ -49,48 +64,175 @@
     }
 
     .product-panel,
-    .calculator-panel,
     .summary-panel {
-        padding: 12px;
+        min-width: 0;
+        min-height: 0;
+        overflow: hidden;
+        transition: box-shadow 200ms ease, border-color 200ms ease, background-color 200ms ease;
+    }
+
+    .product-panel {
+        padding: 10px;
+    }
+
+    .summary-panel {
+        padding: 10px;
+        position: static;
+        z-index: auto;
+        max-height: none;
+    }
+
+    .mobile-panel-tab {
+        width: 100%;
+        height: 100%;
+        min-height: 0;
+        border: 0;
+        border-radius: 8px;
+        background: #fff8a8;
+        color: var(--red);
+        display: none;
+        align-items: center;
+        justify-content: center;
+        padding: 8px;
+        font-weight: 900;
+        font-size: clamp(13px, 3.5vw, 16px);
+        cursor: pointer;
+    }
+
+    .order-shell.summary-open .product-panel .mobile-panel-tab,
+    .order-shell:not(.summary-open) .summary-panel .mobile-panel-tab {
+        display: flex;
+    }
+
+    .order-shell.summary-open .product-panel > :not(.mobile-panel-tab),
+    .order-shell:not(.summary-open) .summary-panel > :not(.mobile-panel-tab) {
+        display: none;
+    }
+
+    .order-shell.summary-open .product-panel,
+    .order-shell:not(.summary-open) .summary-panel {
+        padding: 6px;
+        background: #fffef0;
+        display: grid;
+        grid-template-rows: 1fr;
+    }
+
+    .order-shell:not(.summary-open) .product-panel .mobile-panel-tab,
+    .order-shell.summary-open .summary-panel .mobile-panel-tab {
+        display: none;
+    }
+
+    .order-shell:not(.summary-open) .product-panel,
+    .order-shell.summary-open .summary-panel {
+        animation: mobilePanelIn 220ms ease both;
     }
 
     .product-list {
         grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 8px;
+        overflow: auto;
+        padding-right: 2px;
     }
 
     .product-button {
-        min-height: 72px;
+        min-height: clamp(64px, 14vh, 96px);
         align-items: center;
         justify-content: center;
-        font-size: 15px;
+        font-size: clamp(14px, 3.5vw, 17px);
+        padding: 10px 8px;
     }
 
-    .calculator-panel {
-        grid-template-columns: 1fr;
+    .summary-header {
+        gap: 10px;
     }
 
-    .calculator-display {
-        min-height: 76px;
+    .summary-header h2 {
+        font-size: clamp(24px, 7vw, 34px);
     }
 
-    .calculator-display strong {
-        font-size: 30px;
-    }
-
-    .keypad button,
-    .arrow-button {
-        min-height: 58px;
-    }
-
-    .summary-panel {
-        position: sticky;
-        bottom: 0;
-        z-index: 5;
-        max-height: 74vh;
+    .summary-panel .empty-state {
+        padding: 14px;
     }
 
     .items-list {
-        max-height: 34vh;
+        min-height: 0;
+        max-height: none;
+        overflow: auto;
+    }
+
+    .calculator-panel {
+        padding: 8px;
+        grid-template-columns: 1fr;
+        grid-template-rows: 34px minmax(0, 1fr) 34px;
+        gap: 5px;
+        min-height: 0;
+        position: sticky;
+        bottom: 0;
+        z-index: 8;
+    }
+
+    .calculator-display {
+        min-height: 0;
+        height: 34px;
+        padding: 6px 10px;
+        border-radius: 6px;
+    }
+
+    .calculator-display span {
+        min-width: 0;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        font-size: 14px;
+    }
+
+    .calculator-display strong {
+        font-size: 24px;
+    }
+
+    .keypad {
+        gap: 5px;
+        min-height: 0;
+    }
+
+    .keypad button {
+        min-height: 0;
+        height: 100%;
+        border-radius: 6px;
+        font-size: clamp(18px, 6vw, 24px);
+    }
+
+    .calculator-actions {
+        gap: 5px;
+        min-height: 0;
+    }
+
+    .calculator-actions .arrow-button {
+        min-height: 0;
+        height: 34px;
+        border-radius: 6px;
+        font-size: 24px;
+    }
+
+    .summary-footer .primary-button,
+    .summary-footer .secondary-button {
+        min-height: 38px;
+        padding: 8px 10px;
+    }
+
+    .total-row {
+        padding: 8px 0;
+    }
+
+    @keyframes mobilePanelIn {
+        from {
+            opacity: 0.82;
+            transform: translateY(4px);
+        }
+        to {
+            opacity: 1;
+            transform: translateY(0);
+        }
     }
 
     .admin-shell {
