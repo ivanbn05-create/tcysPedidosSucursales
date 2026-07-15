@@ -213,14 +213,20 @@
         height: 42px;
         padding: 7px 12px;
         border-radius: 6px;
+        grid-template-columns: minmax(0, 1fr) auto minmax(34px, 0.3fr);
+        gap: 8px;
     }
 
-    .calculator-display span {
+    .display-product {
         min-width: 0;
         overflow: hidden;
         text-overflow: ellipsis;
         white-space: nowrap;
-        font-size: 14px;
+        font-size: 12px;
+    }
+
+    .display-unit {
+        font-size: 12px;
     }
 
     .calculator-display strong {
@@ -388,6 +394,15 @@
     .user-create-form,
     .admin-account-form {
         padding: 12px;
+        grid-template-columns: 1fr;
+    }
+
+    .config-card-grid {
+        padding: 12px;
+        grid-template-columns: 1fr;
+    }
+
+    .time-row {
         grid-template-columns: 1fr;
     }
 

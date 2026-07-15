@@ -22,17 +22,38 @@ class SucursalClienteAdmin(admin.ModelAdmin):
 
 @admin.register(Producto)
 class ProductoAdmin(admin.ModelAdmin):
-    list_display = ("nombre", "nombre_ticket", "orden", "activo")
-    list_editable = ("nombre_ticket", "orden", "activo")
-    list_filter = ("activo",)
+    list_display = (
+        "nombre",
+        "nombre_ticket",
+        "unidad_abreviatura",
+        "cantidad_por_precio",
+        "promo_aguilas_martes",
+        "orden",
+        "activo",
+    )
+    list_editable = (
+        "nombre_ticket",
+        "unidad_abreviatura",
+        "cantidad_por_precio",
+        "promo_aguilas_martes",
+        "orden",
+        "activo",
+    )
+    list_filter = ("activo", "promo_aguilas_martes", "unidad_abreviatura")
     search_fields = ("nombre", "nombre_ticket")
 
 
 @admin.register(Precio)
 class PrecioAdmin(admin.ModelAdmin):
-    list_display = ("producto", "sucursal_cliente", "precio_unitario", "fecha_vigencia")
+    list_display = (
+        "producto",
+        "sucursal_cliente",
+        "precio_unitario",
+        "nombre_ticket",
+        "fecha_vigencia",
+    )
     list_filter = ("sucursal_cliente", "producto")
-    search_fields = ("producto__nombre", "sucursal_cliente__nombre")
+    search_fields = ("producto__nombre", "nombre_ticket", "sucursal_cliente__nombre")
 
 
 class ItemPedidoInline(admin.TabularInline):

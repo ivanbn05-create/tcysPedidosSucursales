@@ -1,5 +1,5 @@
 import json
-from datetime import time, timedelta
+from datetime import datetime, time, timedelta
 from decimal import Decimal
 from io import BytesIO
 
@@ -42,7 +42,7 @@ class PedidoFlowTests(TestCase):
 
     def test_login_crear_confirmar_y_excel(self):
         self.assertTrue(self.client.login(username="aguilas", password="Aguilas"))
-        producto = Producto.objects.get(nombre="Barbacoa")
+        producto = Producto.objects.get(nombre="LITRO DE BARBACOA")
 
         response = self.client.post(
             "/api/pedidos/crear-item/",
@@ -52,7 +52,7 @@ class PedidoFlowTests(TestCase):
         self.assertEqual(response.status_code, 200)
         data = response.json()
         self.assertTrue(data["success"])
-        self.assertEqual(data["total_pedido"], "2.50")
+        self.assertEqual(data["total_pedido"], "445.00")
 
         response = self.client.post("/api/pedidos/confirmar/", content_type="application/json")
         self.assertEqual(response.status_code, 200)
@@ -61,7 +61,7 @@ class PedidoFlowTests(TestCase):
 
         pedido = Pedido.objects.get(id=data["pedido_id"])
         self.assertEqual(pedido.estado, Pedido.Estado.CONFIRMADO)
-        self.assertEqual(pedido.total, Decimal("2.50"))
+        self.assertEqual(pedido.total, Decimal("445.00"))
 
         self.client.logout()
         self.assertTrue(self.client.login(username="admin", password="admin123"))
@@ -73,11 +73,11 @@ class PedidoFlowTests(TestCase):
         self.assertIn("A1:C1", [str(range_ref) for range_ref in sheet.merged_cells.ranges])
         self.assertEqual(sheet["A1"].value, "AGUILAS")
         self.assertEqual(sheet["A3"].value, "BARBACOA")
-        self.assertEqual(sheet["B3"].value, "2.5")
+        self.assertEqual(sheet["B3"].value, "2.5 KG")
         self.assertEqual(sheet["C2"].number_format, "d-mmm")
-        self.assertAlmostEqual(sheet.column_dimensions["A"].width, 12.42578125)
-        self.assertAlmostEqual(sheet.column_dimensions["B"].width, 11.42578125)
-        self.assertEqual(sheet.column_dimensions["C"].width, 13)
+        self.assertAlmostEqual(sheet.column_dimensions["A"].width, 15.140625)
+        self.assertAlmostEqual(sheet.column_dimensions["B"].width, 10.7109375)
+        self.assertAlmostEqual(sheet.column_dimensions["C"].width, 10.140625)
         self.assertEqual(sheet.row_dimensions[1].height, 21.75)
         self.assertEqual(sheet.row_dimensions[2].height, 16.5)
         self.assertEqual(sheet.row_dimensions[3].height, 26.25)
@@ -95,23 +95,81 @@ class PedidoFlowTests(TestCase):
         self.assertContains(print_response, "size: 58mm 299.49mm;")
         self.assertContains(print_response, "AGUILAS")
         self.assertContains(print_response, "BARBACOA")
-        self.assertContains(print_response, "2.5")
-        self.assertNotContains(print_response, "$2.50")
+        self.assertContains(print_response, "2.5 KG")
+        self.assertNotContains(print_response, "$445.00")
 
     def test_cliente_mayorista_usa_precio_dos_pesos(self):
         self.assertTrue(self.client.login(username="brot_nueva_galicia", password="Brot Nueva Galicia"))
-        producto = Producto.objects.get(nombre="Tortilla")
+        producto = Producto.objects.get(nombre="TORTILLA ESPECIAL")
         response = self.client.post(
             "/api/pedidos/crear-item/",
             data=json.dumps({"producto_id": producto.id, "cantidad": "3"}),
             content_type="application/json",
         )
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(response.json()["total_pedido"], "6.00")
+        self.assertEqual(response.json()["total_pedido"], "79.50")
+
+    def test_chile_guero_se_cobra_por_kilo_promedio_de_treinta_piezas(self):
+        self.assertTrue(self.client.login(username="aguilas", password="Aguilas"))
+        producto = Producto.objects.get(nombre="CHILE GüERO")
+        response = self.client.post(
+            "/api/pedidos/crear-item/",
+            data=json.dumps({"producto_id": producto.id, "cantidad": "30"}),
+            content_type="application/json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertEqual(data["total_pedido"], "64.00")
+        self.assertEqual(data["pedido"]["items"][0]["unidad"], "PZA")
+
+    def test_ticket_mayoreo_marca_productos_con_sufijo_m(self):
+        self.assertTrue(self.client.login(username="brot_nueva_galicia", password="Brot Nueva Galicia"))
+        producto = Producto.objects.get(nombre="LITRO DE BARBACOA")
+        response = self.client.post(
+            "/api/pedidos/crear-item/",
+            data=json.dumps({"producto_id": producto.id, "cantidad": "1"}),
+            content_type="application/json",
+        )
+        self.assertEqual(response.status_code, 200)
+        response = self.client.post("/api/pedidos/confirmar/", content_type="application/json")
+        pedido_id = response.json()["pedido_id"]
+
+        self.client.logout()
+        self.assertTrue(self.client.login(username="admin", password="admin123"))
+        response = self.client.get(f"/admin/pedidos/{pedido_id}/excel/")
+        workbook = load_workbook(BytesIO(response.content))
+        self.assertEqual(workbook.active["A3"].value, "BARBACOA .M")
+
+    def test_promo_martes_aguilas_agrega_cinco_por_cada_veinte_en_ticket(self):
+        self.assertTrue(self.client.login(username="aguilas", password="Aguilas"))
+        producto = Producto.objects.get(nombre="LITRO DE BARBACOA")
+        response = self.client.post(
+            "/api/pedidos/crear-item/",
+            data=json.dumps({"producto_id": producto.id, "cantidad": "20"}),
+            content_type="application/json",
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["total_pedido"], "3560.00")
+        response = self.client.post("/api/pedidos/confirmar/", content_type="application/json")
+        pedido_id = response.json()["pedido_id"]
+
+        pedido = Pedido.objects.get(id=pedido_id)
+        martes = timezone.make_aware(datetime(2026, 7, 14, 10, 0))
+        pedido.fecha_confirmacion = martes
+        pedido.save(update_fields=["fecha_confirmacion"])
+
+        self.client.logout()
+        self.assertTrue(self.client.login(username="admin", password="admin123"))
+        response = self.client.get(f"/admin/pedidos/{pedido_id}/excel/")
+        workbook = load_workbook(BytesIO(response.content))
+        sheet = workbook.active
+        self.assertEqual(sheet["B3"].value, "25 KG")
+        self.assertEqual(pedido.total, Decimal("3560.00"))
 
     def test_agregar_producto_existente_reemplaza_cantidad(self):
         self.assertTrue(self.client.login(username="aguilas", password="Aguilas"))
-        producto = Producto.objects.get(nombre="Barbacoa")
+        producto = Producto.objects.get(nombre="LITRO DE BARBACOA")
 
         first = self.client.post(
             "/api/pedidos/crear-item/",
@@ -127,7 +185,7 @@ class PedidoFlowTests(TestCase):
         self.assertEqual(first.status_code, 200)
         self.assertEqual(second.status_code, 200)
         data = second.json()
-        self.assertEqual(data["total_pedido"], "3.00")
+        self.assertEqual(data["total_pedido"], "534.00")
         self.assertEqual(len(data["pedido"]["items"]), 1)
         self.assertEqual(data["pedido"]["items"][0]["cantidad"], "3.000")
 
@@ -135,7 +193,7 @@ class PedidoFlowTests(TestCase):
         self.assertTrue(self.client.login(username="aguilas", password="Aguilas"))
         sucursal = SucursalCliente.objects.get(nombre="Aguilas")
         Pedido.objects.create(sucursal_cliente=sucursal, usuario_nombre=sucursal.nombre)
-        producto = Producto.objects.get(nombre="Salsa Verde")
+        producto = Producto.objects.get(nombre="SALSA DE AGUACATE")
 
         response = self.client.post(
             "/api/pedidos/crear-item/",
@@ -145,9 +203,9 @@ class PedidoFlowTests(TestCase):
 
         self.assertEqual(response.status_code, 200)
         data = response.json()
-        self.assertEqual(data["total_pedido"], "1.00")
+        self.assertEqual(data["total_pedido"], "60.00")
         self.assertEqual(len(data["pedido"]["items"]), 1)
-        self.assertEqual(data["pedido"]["items"][0]["producto"], "Salsa Verde")
+        self.assertEqual(data["pedido"]["items"][0]["producto"], "SALSA DE AGUACATE")
         self.assertEqual(data["pedido"]["items"][0]["cantidad"], "1.000")
 
     def test_pantalla_pedidos_no_muestra_precios_unitarios(self):
@@ -155,7 +213,7 @@ class PedidoFlowTests(TestCase):
         response = self.client.get("/pedidos/")
 
         self.assertEqual(response.status_code, 200)
-        self.assertNotContains(response, "$1.00")
+        self.assertNotContains(response, "$178.00")
         self.assertNotContains(response, "precio_unitario")
 
     def test_usuario_no_admin_no_puede_ver_dashboard(self):
@@ -170,7 +228,7 @@ class PedidoFlowTests(TestCase):
 
     def test_admin_configura_ticket_precio_y_password(self):
         self.assertTrue(self.client.login(username="admin", password="admin123"))
-        producto = Producto.objects.get(nombre="Barbacoa")
+        producto = Producto.objects.get(nombre="LITRO DE BARBACOA")
         sucursal = SucursalCliente.objects.get(nombre="Aguilas")
 
         response = self.client.get("/admin/configuracion/")
@@ -183,9 +241,11 @@ class PedidoFlowTests(TestCase):
             data={
                 "action": "actualizar_productos",
                 f"producto_{producto.id}_present": "1",
-                f"producto_{producto.id}_nombre": "Barbacoa",
+                f"producto_{producto.id}_nombre": "LITRO DE BARBACOA",
                 f"producto_{producto.id}_ticket": "BARBA",
-                f"producto_{producto.id}_descripcion": producto.descripcion,
+                f"producto_{producto.id}_unidad": producto.unidad_medida,
+                f"producto_{producto.id}_unidad_abreviatura": producto.unidad_abreviatura,
+                f"producto_{producto.id}_cantidad_por_precio": str(producto.cantidad_por_precio),
                 f"producto_{producto.id}_orden": str(producto.orden),
                 f"producto_{producto.id}_activo": "on",
             },
@@ -197,6 +257,7 @@ class PedidoFlowTests(TestCase):
             data={
                 "action": "actualizar_precios",
                 f"precio_{producto.id}_{sucursal.id}": "12.50",
+                f"precio_ticket_{producto.id}_{sucursal.id}": "BARBA",
             },
         )
         self.assertRedirects(response, "/admin/configuracion/")
@@ -215,6 +276,7 @@ class PedidoFlowTests(TestCase):
                 f"sucursal_{sucursal.id}_nombre": sucursal.nombre,
                 f"sucursal_{sucursal.id}_tipo": sucursal.tipo,
                 f"sucursal_{sucursal.id}_username": sucursal.usuario.username,
+                f"sucursal_{sucursal.id}_email": sucursal.email,
                 f"sucursal_{sucursal.id}_password": "NuevaClave123",
                 f"sucursal_{sucursal.id}_activa": "on",
             },
@@ -246,15 +308,17 @@ class PedidoFlowTests(TestCase):
             "/admin/configuracion/",
             data={
                 "action": "crear_producto",
-                "nuevo_nombre": "Consome",
-                "nuevo_ticket": "CONSOME",
-                "nuevo_descripcion": "Consome para servicio.",
+                "nuevo_nombre": "Producto Prueba",
+                "nuevo_ticket": "PRUEBA",
+                "nuevo_unidad": "LITRO (LT)",
+                "nuevo_unidad_abreviatura": "LT",
+                "nuevo_cantidad_por_precio": "1.000",
                 "nuevo_orden": "7",
             },
         )
         self.assertRedirects(response, "/admin/configuracion/")
         self.assertTrue(
-            Producto.objects.filter(nombre="Consome", nombre_ticket="CONSOME", activo=True).exists()
+            Producto.objects.filter(nombre="Producto Prueba", nombre_ticket="PRUEBA", activo=True).exists()
         )
 
         response = self.client.post(
@@ -275,7 +339,7 @@ class PedidoFlowTests(TestCase):
         )
 
     def test_producto_inactivo_solo_permanece_en_pedido_pendiente(self):
-        producto = Producto.objects.get(nombre="Barbacoa")
+        producto = Producto.objects.get(nombre="LITRO DE BARBACOA")
         self.assertTrue(self.client.login(username="aguilas", password="Aguilas"))
         response = self.client.post(
             "/api/pedidos/crear-item/",
@@ -293,7 +357,9 @@ class PedidoFlowTests(TestCase):
                 f"producto_{producto.id}_present": "1",
                 f"producto_{producto.id}_nombre": producto.nombre,
                 f"producto_{producto.id}_ticket": producto.nombre_ticket,
-                f"producto_{producto.id}_descripcion": producto.descripcion,
+                f"producto_{producto.id}_unidad": producto.unidad_medida,
+                f"producto_{producto.id}_unidad_abreviatura": producto.unidad_abreviatura,
+                f"producto_{producto.id}_cantidad_por_precio": str(producto.cantidad_por_precio),
                 f"producto_{producto.id}_orden": str(producto.orden),
             },
         )
@@ -334,7 +400,7 @@ class RestriccionHorariaTests(TestCase):
         cache.delete(CONFIGURACION_CACHE_KEY)
 
         self.assertTrue(self.client.login(username="aguilas", password="Aguilas"))
-        producto = Producto.objects.get(nombre="Barbacoa")
+        producto = Producto.objects.get(nombre="LITRO DE BARBACOA")
         self.client.post(
             "/api/pedidos/crear-item/",
             data=json.dumps({"producto_id": producto.id, "cantidad": "1"}),
@@ -353,7 +419,7 @@ class RestriccionHorariaTests(TestCase):
     def test_confirmar_pedido_dentro_de_horario_permite(self):
         abrir_horario_completo()
         self.assertTrue(self.client.login(username="aguilas", password="Aguilas"))
-        producto = Producto.objects.get(nombre="Barbacoa")
+        producto = Producto.objects.get(nombre="LITRO DE BARBACOA")
         self.client.post(
             "/api/pedidos/crear-item/",
             data=json.dumps({"producto_id": producto.id, "cantidad": "1"}),

@@ -20,6 +20,14 @@ document.addEventListener("DOMContentLoaded", () => {
         });
     }
 
+    function quantityWithUnit(item) {
+        const unit = item.unidad || "";
+        if (Number(item.cantidad_promocion || 0) > 0) {
+            return `${quantity(item.cantidad_ticket)} ${unit} (${quantity(item.cantidad_promocion)} promo)`;
+        }
+        return `${quantity(item.cantidad)} ${unit}`;
+    }
+
     let lastTrigger = null;
 
     function openModal(trigger) {
@@ -46,7 +54,7 @@ document.addEventListener("DOMContentLoaded", () => {
                 row.innerHTML = `
                     <div>
                         <strong>${item.producto}</strong>
-                        <div class="item-meta">${quantity(item.cantidad)} × ${money(item.precio_unitario)}</div>
+                        <div class="item-meta">${quantityWithUnit(item)} × ${money(item.precio_unitario)}</div>
                     </div>
                     <strong>${money(item.subtotal)}</strong>
                 `;

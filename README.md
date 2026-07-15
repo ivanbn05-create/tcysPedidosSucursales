@@ -30,7 +30,7 @@ Los usernames internos sin espacios también funcionan para pruebas técnicas: `
 ## Flujos
 
 - `/pedidos/`: captura de pedido con Fetch API, calculadora y resumen responsivo.
-- `/api/pedidos/crear-item/`: agrega o acumula producto en el pedido pendiente.
+- `/api/pedidos/crear-item/`: guarda o reemplaza la cantidad del producto en el pedido pendiente.
 - `/api/pedidos/eliminar-item/`: elimina item del pedido pendiente.
 - `/api/pedidos/confirmar/`: confirma con transacción atómica, rate limit de 1 minuto y restricción horaria (rechaza con 400 fuera de `hora_inicio_pedidos`/`hora_fin_pedidos`).
 - `/api/horarios/`: informa el horario vigente de pedidos (sin auth), usado por el frontend para deshabilitar el botón de confirmar fuera de horario.
@@ -52,7 +52,7 @@ Mientras el proyecto vive en Render, este comando se dispara solo vía APSchedul
 
 ## Render
 
-Crear un Web Service con PostgreSQL y configurar variables de entorno:
+Crear un Web Service con PostgreSQL externo (por ejemplo Supabase) y configurar variables de entorno:
 
 ```env
 DEBUG=False
@@ -69,14 +69,16 @@ SCHEDULER_ENABLED=True
 Build command:
 
 ```bash
-pip install -r requirements.txt && python manage.py collectstatic --noinput
+pip install -r requirements.txt && python manage.py collectstatic --noinput && python manage.py migrate && python manage.py seed_demo
 ```
 
-Pre-deploy o release command:
+Si tu plan de Render tiene Pre-deploy o Release command, puedes mover ahí la parte de base de datos:
 
 ```bash
 python manage.py migrate && python manage.py seed_demo
 ```
+
+En el plan gratuito, dejar `migrate && seed_demo` dentro del Build command evita depender de Shell.
 
 Start command:
 

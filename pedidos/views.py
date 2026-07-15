@@ -182,12 +182,39 @@ def decimal_to_str(value, places="0.01"):
     return str(Decimal(value).quantize(Decimal(places)))
 
 
+def etiqueta_ticket_para_item(item, fecha=None):
+    fecha = fecha or timezone.localdate()
+    precio = (
+        Precio.objects.filter(
+            producto=item.producto,
+            sucursal_cliente=item.pedido.sucursal_cliente,
+            fecha_vigencia__lte=fecha,
+        )
+        .order_by("-fecha_vigencia")
+        .first()
+    )
+    if precio is not None:
+        return precio.etiqueta_ticket
+    return item.producto.etiqueta_ticket
+
+
+def fecha_referencia_pedido(pedido):
+    base = pedido.fecha_confirmacion or pedido.fecha_creacion
+    return timezone.localtime(base).date()
+
+
 def serializar_item(item, incluir_precios=False):
+    fecha_pedido = fecha_referencia_pedido(item.pedido)
+    cantidad_promocion = item.cantidad_bonificacion(fecha_pedido)
     data = {
         "id": item.id,
         "producto_id": item.producto_id,
         "producto": item.producto.nombre,
+        "nombre_ticket": etiqueta_ticket_para_item(item, fecha_pedido),
+        "unidad": item.producto.unidad_corta,
         "cantidad": decimal_to_str(item.cantidad, "0.001"),
+        "cantidad_ticket": decimal_to_str(item.cantidad_con_promocion(fecha_pedido), "0.001"),
+        "cantidad_promocion": decimal_to_str(cantidad_promocion, "0.001"),
     }
     if incluir_precios:
         data.update(
@@ -237,19 +264,30 @@ def pedidos_view(request):
         return redirect("login")
 
     pedido = pedido_pendiente(sucursal)
-    productos_query = Producto.objects.filter(activo=True)
+    productos_query = Producto.objects.filter(
+        activo=True,
+        precios__sucursal_cliente=sucursal,
+        precios__fecha_vigencia__lte=timezone.localdate(),
+    )
     if pedido is not None:
         productos_query = Producto.objects.filter(
-            Q(activo=True) | Q(items_pedido__pedido=pedido)
+            Q(
+                activo=True,
+                precios__sucursal_cliente=sucursal,
+                precios__fecha_vigencia__lte=timezone.localdate(),
+            )
+            | Q(items_pedido__pedido=pedido)
         ).distinct()
-    productos = list(productos_query)
+    productos = list(productos_query.distinct())
     productos_data = []
     for producto in productos:
+        precio = precio_vigente(producto, sucursal)
         productos_data.append(
             {
                 "id": producto.id,
                 "nombre": producto.nombre,
-                "descripcion": producto.descripcion,
+                "nombre_ticket": precio.etiqueta_ticket if precio else producto.etiqueta_ticket,
+                "unidad": producto.unidad_corta,
             }
         )
 
@@ -424,8 +462,8 @@ def parse_admin_price(value):
         price = Decimal(str(value)).quantize(Decimal("0.01"))
     except (InvalidOperation, TypeError, ValueError):
         raise ValidationError("Captura precios validos con hasta dos decimales.")
-    if price <= 0 or price > Decimal("9999.99"):
-        raise ValidationError("Cada precio debe estar entre 0.01 y 9999.99.")
+    if price < 0 or price > Decimal("9999.99"):
+        raise ValidationError("Cada precio debe estar entre 0 y 9999.99.")
     return price
 
 
@@ -437,6 +475,16 @@ def parse_admin_order(value):
     if order < 0 or order > 32767:
         raise ValidationError("El orden debe estar entre 0 y 32767.")
     return order
+
+
+def parse_factor_precio(value):
+    try:
+        factor = Decimal(str(value)).quantize(Decimal("0.001"))
+    except (InvalidOperation, TypeError, ValueError):
+        raise ValidationError("El divisor de precio debe ser un numero con hasta tres decimales.")
+    if factor <= 0 or factor > Decimal("999.999"):
+        raise ValidationError("El divisor de precio debe estar entre 0.001 y 999.999.")
+    return factor
 
 
 def validation_error_text(error):
@@ -462,7 +510,14 @@ def update_products_from_post(request):
 
         producto.nombre = nombre
         producto.nombre_ticket = request.POST.get(f"{prefix}ticket", "").strip()
-        producto.descripcion = request.POST.get(f"{prefix}descripcion", "").strip()
+        producto.unidad_medida = request.POST.get(f"{prefix}unidad", "").strip() or "PIEZA (PZA)"
+        producto.unidad_abreviatura = (
+            request.POST.get(f"{prefix}unidad_abreviatura", "").strip().upper() or "PZA"
+        )
+        producto.cantidad_por_precio = parse_factor_precio(
+            request.POST.get(f"{prefix}cantidad_por_precio", "1")
+        )
+        producto.promo_aguilas_martes = f"{prefix}promo_aguilas_martes" in request.POST
         producto.orden = parse_admin_order(request.POST.get(f"{prefix}orden"))
         producto.activo = f"{prefix}activo" in request.POST
         producto.full_clean()
@@ -478,7 +533,14 @@ def create_product_from_post(request):
     producto = Producto(
         nombre=nombre,
         nombre_ticket=request.POST.get("nuevo_ticket", "").strip(),
-        descripcion=request.POST.get("nuevo_descripcion", "").strip(),
+        unidad_medida=request.POST.get("nuevo_unidad", "").strip() or "PIEZA (PZA)",
+        unidad_abreviatura=(
+            request.POST.get("nuevo_unidad_abreviatura", "").strip().upper() or "PZA"
+        ),
+        cantidad_por_precio=parse_factor_precio(
+            request.POST.get("nuevo_cantidad_por_precio", "1")
+        ),
+        promo_aguilas_martes="nuevo_promo_aguilas_martes" in request.POST,
         orden=parse_admin_order(request.POST.get("nuevo_orden", "0")),
         activo=True,
     )
@@ -498,15 +560,17 @@ def update_prices_from_post(request):
             if field_name not in request.POST:
                 continue
             raw_value = request.POST.get(field_name, "").strip()
+            raw_ticket = request.POST.get(f"precio_ticket_{producto.id}_{branch.id}", "").strip()
             if not raw_value:
-                raise ValidationError(
-                    f"Falta el precio de {producto.nombre} para {branch.nombre}."
-                )
+                continue
             Precio.objects.update_or_create(
                 producto=producto,
                 sucursal_cliente=branch,
                 fecha_vigencia=today,
-                defaults={"precio_unitario": parse_admin_price(raw_value)},
+                defaults={
+                    "precio_unitario": parse_admin_price(raw_value),
+                    "nombre_ticket": raw_ticket[:24],
+                },
             )
             updated += 1
     return f"{updated} precios vigentes actualizados."
@@ -675,7 +739,10 @@ def admin_configuration_context(request):
     for price in prices:
         current_prices.setdefault(
             (price.producto_id, price.sucursal_cliente_id),
-            price.precio_unitario,
+            {
+                "value": price.precio_unitario,
+                "ticket": price.nombre_ticket,
+            },
         )
 
     price_rows = [
@@ -684,7 +751,11 @@ def admin_configuration_context(request):
             "prices": [
                 {
                     "branch": branch,
-                    "value": current_prices.get((product.id, branch.id)),
+                    "value": current_prices.get((product.id, branch.id), {}).get("value"),
+                    "ticket": current_prices.get((product.id, branch.id), {}).get(
+                        "ticket",
+                        product.nombre_ticket,
+                    ),
                 }
                 for branch in branches
             ],

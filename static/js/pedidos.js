@@ -13,6 +13,7 @@ document.addEventListener("DOMContentLoaded", () => {
     const orderShell = document.querySelector(".order-shell");
     const productButtons = [...document.querySelectorAll(".product-button")];
     const selectedName = document.getElementById("selectedName");
+    const selectedUnit = document.getElementById("selectedUnit");
     const quantityDisplay = document.getElementById("quantityDisplay");
     const calculatorDisplay = document.querySelector(".calculator-display");
     const focusProduct = document.getElementById("focusProduct");
@@ -51,6 +52,14 @@ document.addEventListener("DOMContentLoaded", () => {
 
     function productById(productId) {
         return products.find((product) => Number(product.id) === Number(productId)) || null;
+    }
+
+    function productTicketName(product) {
+        return product?.nombre_ticket || product?.nombre || "Producto";
+    }
+
+    function productUnit(product) {
+        return product?.unidad || "PZA";
     }
 
     function itemById(itemId) {
@@ -146,7 +155,8 @@ document.addEventListener("DOMContentLoaded", () => {
             row.setAttribute("aria-pressed", String(Number(row.dataset.itemId) === Number(selectedItemId)));
         });
 
-        selectedName.textContent = selectedProduct ? selectedProduct.nombre : "Producto";
+        selectedName.textContent = selectedProduct ? productTicketName(selectedProduct) : "Producto";
+        selectedUnit.textContent = selectedProduct ? productUnit(selectedProduct) : "PZA";
         focusProduct.textContent = selectedProduct ? selectedProduct.nombre : "Selecciona producto";
         renderQuantity();
     }
@@ -203,7 +213,11 @@ document.addEventListener("DOMContentLoaded", () => {
             const meta = document.createElement("div");
             name.textContent = item.producto;
             meta.className = "item-meta";
-            meta.textContent = `Cantidad: ${quantity(item.cantidad)}`;
+            if (Number(item.cantidad_promocion || 0) > 0) {
+                meta.textContent = `Cantidad: ${quantity(item.cantidad_ticket)} ${item.unidad} (${quantity(item.cantidad_promocion)} promo)`;
+            } else {
+                meta.textContent = `Cantidad: ${quantity(item.cantidad)} ${item.unidad}`;
+            }
             content.append(name, meta);
             row.append(content);
             itemsList.appendChild(row);

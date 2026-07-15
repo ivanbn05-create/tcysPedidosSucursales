@@ -6,12 +6,13 @@ from openpyxl import Workbook
 from openpyxl.styles import Alignment, Border, Font, Side
 from openpyxl.worksheet.page import PageMargins
 
+from .models import Precio
 
 TICKET_MIN_ITEM_ROWS = 31
 TICKET_COLUMN_WIDTHS = {
-    "A": 12.42578125,
-    "B": 11.42578125,
-    "C": 13,
+    "A": 15.140625,
+    "B": 10.7109375,
+    "C": 10.140625,
 }
 TICKET_ROW_HEIGHTS = {
     1: 21.75,
@@ -25,9 +26,9 @@ TICKET_ITEM_HEIGHT_MM = 9.26
 TICKET_SHORT_ITEM_HEIGHT_MM = 8.20
 TICKET_WIDTH_MM = 58
 TICKET_COLUMN_WIDTHS_MM = {
-    "product": 19.56,
-    "quantity": 17.98,
-    "blank": 20.46,
+    "product": 26.25,
+    "quantity": 14.85,
+    "blank": 16.90,
 }
 SPANISH_MONTH_ABBR = (
     "ene",
@@ -62,15 +63,36 @@ def format_ticket_quantity(value):
     return format(decimal_value, "f").rstrip("0").rstrip(".")
 
 
+def ticket_label_for_item(item, fecha):
+    precio = (
+        Precio.objects.filter(
+            producto=item.producto,
+            sucursal_cliente=item.pedido.sucursal_cliente,
+            fecha_vigencia__lte=fecha,
+        )
+        .order_by("-fecha_vigencia")
+        .first()
+    )
+    if precio is not None:
+        return precio.etiqueta_ticket.upper()
+    return item.producto.etiqueta_ticket.upper()
+
+
+def format_ticket_quantity_with_unit(item, fecha):
+    quantity = format_ticket_quantity(item.cantidad_con_promocion(fecha))
+    return f"{quantity} {item.producto.unidad_corta}".strip()
+
+
 def ticket_title(pedido):
     return pedido.sucursal_cliente.nombre.upper()
 
 
 def ticket_items(pedido):
+    fecha = ticket_date(pedido)
     rows = [
         {
-            "producto": item.producto.etiqueta_ticket.upper(),
-            "cantidad": format_ticket_quantity(item.cantidad),
+            "producto": ticket_label_for_item(item, fecha),
+            "cantidad": format_ticket_quantity_with_unit(item, fecha),
         }
         for item in pedido.items.select_related("producto").all()
     ]
@@ -144,8 +166,8 @@ def build_ticket_workbook(pedido):
         bottom=thin_black,
     )
     title_font = Font(name="Calibri", size=16, bold=True)
-    product_font = Font(name="Calibri", size=11, bold=True)
-    quantity_font = Font(name="Calibri", size=10, bold=True)
+    product_font = Font(name="Calibri", size=10, bold=True)
+    quantity_font = Font(name="Calibri", size=9, bold=True)
 
     ws["A1"].font = title_font
     ws["A1"].alignment = Alignment(horizontal="center", vertical="center")

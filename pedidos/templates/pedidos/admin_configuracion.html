@@ -38,8 +38,11 @@
                     <thead>
                         <tr>
                             <th>Nombre en pedidos</th>
-                            <th>Nombre en ticket</th>
-                            <th>Descripci&oacute;n</th>
+                            <th>Ticket general</th>
+                            <th>Unidad</th>
+                            <th>Abrev.</th>
+                            <th>Divisor precio</th>
+                            <th>Promo martes</th>
                             <th>Orden</th>
                             <th>Activo</th>
                         </tr>
@@ -52,7 +55,10 @@
                                 <input name="producto_{{ producto.id }}_nombre" value="{{ producto.nombre }}" maxlength="80" required aria-label="Nombre de {{ producto.nombre }}">
                             </td>
                             <td><input name="producto_{{ producto.id }}_ticket" value="{{ producto.nombre_ticket }}" maxlength="24" aria-label="Nombre de ticket de {{ producto.nombre }}"></td>
-                            <td><input name="producto_{{ producto.id }}_descripcion" value="{{ producto.descripcion }}" aria-label="Descripcion de {{ producto.nombre }}"></td>
+                            <td><input name="producto_{{ producto.id }}_unidad" value="{{ producto.unidad_medida }}" maxlength="40" aria-label="Unidad de {{ producto.nombre }}"></td>
+                            <td><input class="short-input" name="producto_{{ producto.id }}_unidad_abreviatura" value="{{ producto.unidad_abreviatura }}" maxlength="8" aria-label="Abreviatura de unidad de {{ producto.nombre }}"></td>
+                            <td><input class="short-input" name="producto_{{ producto.id }}_cantidad_por_precio" type="number" min="0.001" max="999.999" step="0.001" value="{{ producto.cantidad_por_precio|unlocalize }}" required aria-label="Divisor de precio de {{ producto.nombre }}"></td>
+                            <td class="toggle-cell"><input name="producto_{{ producto.id }}_promo_aguilas_martes" type="checkbox" {% if producto.promo_aguilas_martes %}checked{% endif %} aria-label="Promo martes para {{ producto.nombre }}"></td>
                             <td><input class="short-input" name="producto_{{ producto.id }}_orden" type="number" min="0" max="32767" value="{{ producto.orden }}" required aria-label="Orden de {{ producto.nombre }}"></td>
                             <td class="toggle-cell"><input name="producto_{{ producto.id }}_activo" type="checkbox" {% if producto.activo %}checked{% endif %} aria-label="Producto {{ producto.nombre }} activo"></td>
                         </tr>
@@ -70,7 +76,13 @@
             <input type="hidden" name="action" value="crear_producto">
             <input name="nuevo_nombre" maxlength="80" placeholder="Nombre en pedidos" required aria-label="Nombre del nuevo producto">
             <input name="nuevo_ticket" maxlength="24" placeholder="Nombre en ticket" aria-label="Nombre de ticket del nuevo producto">
-            <input name="nuevo_descripcion" placeholder="Descripci&oacute;n" aria-label="Descripci&oacute;n del nuevo producto">
+            <input name="nuevo_unidad" maxlength="40" placeholder="Unidad de medida" value="PIEZA (PZA)" aria-label="Unidad del nuevo producto">
+            <input class="short-input" name="nuevo_unidad_abreviatura" maxlength="8" placeholder="Abrev." value="PZA" aria-label="Abreviatura de unidad del nuevo producto">
+            <input class="short-input" name="nuevo_cantidad_por_precio" type="number" min="0.001" max="999.999" step="0.001" value="1.000" required aria-label="Divisor de precio del nuevo producto">
+            <label class="inline-toggle">
+                <input name="nuevo_promo_aguilas_martes" type="checkbox">
+                Promo martes
+            </label>
             <input class="short-input" name="nuevo_orden" type="number" min="0" max="32767" value="0" required aria-label="Orden del nuevo producto">
             <button class="secondary-button" type="submit">Agregar producto</button>
         </form>
@@ -103,19 +115,27 @@
                             <th scope="row">{{ row.product.nombre }}</th>
                             {% for price in row.prices %}
                             <td>
-                                <label class="currency-input">
-                                    <span>$</span>
+                                <div class="price-cell">
+                                    <label class="currency-input">
+                                        <span>$</span>
+                                        <input
+                                            name="precio_{{ row.product.id }}_{{ price.branch.id }}"
+                                            type="number"
+                                            min="0"
+                                            max="9999.99"
+                                            step="0.01"
+                                            value="{% if price.value is not None %}{{ price.value|unlocalize }}{% endif %}"
+                                            aria-label="Precio de {{ row.product.nombre }} para {{ price.branch.nombre }}"
+                                        >
+                                    </label>
                                     <input
-                                        name="precio_{{ row.product.id }}_{{ price.branch.id }}"
-                                        type="number"
-                                        min="0.01"
-                                        max="9999.99"
-                                        step="0.01"
-                                        value="{% if price.value is not None %}{{ price.value|unlocalize }}{% endif %}"
-                                        required
-                                        aria-label="Precio de {{ row.product.nombre }} para {{ price.branch.nombre }}"
+                                        name="precio_ticket_{{ row.product.id }}_{{ price.branch.id }}"
+                                        maxlength="24"
+                                        value="{{ price.ticket }}"
+                                        placeholder="Ticket"
+                                        aria-label="Nombre de ticket de {{ row.product.nombre }} para {{ price.branch.nombre }}"
                                     >
-                                </label>
+                                </div>
                             </td>
                             {% endfor %}
                         </tr>
@@ -208,48 +228,44 @@
             {% csrf_token %}
             <input type="hidden" name="action" value="actualizar_configuracion">
 
-            <div class="settings-table-wrap">
-                <table class="settings-table config-settings-table">
-                    <tbody>
-                        <tr>
-                            <th scope="row">Pedidos se aceptan de</th>
-                            <td>
-                                <input name="hora_inicio_pedidos" type="time" value="{{ configuracion.hora_inicio_pedidos|time:'H:i' }}" required aria-label="Hora de inicio de pedidos">
-                                a
-                                <input name="hora_fin_pedidos" type="time" value="{{ configuracion.hora_fin_pedidos|time:'H:i' }}" required aria-label="Hora de fin de pedidos">
-                            </td>
-                        </tr>
-                        <tr>
-                            <th scope="row">Recordatorio se env&iacute;a a las</th>
-                            <td>
-                                <input name="hora_envio_recordatorio" type="time" value="{{ configuracion.hora_envio_recordatorio|time:'H:i' }}" required aria-label="Hora de envio del recordatorio">
-                            </td>
-                        </tr>
-                        <tr>
-                            <th scope="row">D&iacute;as de recordatorio</th>
-                            <td class="dias-recordatorio">
-                                {% for value, label in dias_semana %}
-                                <label>
-                                    <input type="checkbox" name="dias_recordatorio" value="{{ value }}" {% if value in configuracion.dias_recordatorio_lista %}checked{% endif %}>
-                                    {{ label }}
-                                </label>
-                                {% endfor %}
-                            </td>
-                        </tr>
-                        <tr>
-                            <th scope="row">Remitente</th>
-                            <td>
-                                <input name="email_remitente" value="{{ configuracion.email_remitente }}" maxlength="255" placeholder="Los Tocayos &lt;correos@lostocayos.com&gt;" aria-label="Nombre de remitente de los correos">
-                            </td>
-                        </tr>
-                        <tr>
-                            <th scope="row">Recordatorios habilitados</th>
-                            <td class="toggle-cell">
-                                <input type="checkbox" name="recordatorios_habilitados" {% if configuracion.recordatorios_habilitados %}checked{% endif %} aria-label="Recordatorios habilitados">
-                            </td>
-                        </tr>
-                    </tbody>
-                </table>
+            <div class="config-card-grid">
+                <fieldset class="config-card">
+                    <legend>Horario de pedidos</legend>
+                    <div class="time-row">
+                        <label>
+                            <span>Inicio</span>
+                            <input name="hora_inicio_pedidos" type="time" value="{{ configuracion.hora_inicio_pedidos|time:'H:i' }}" required aria-label="Hora de inicio de pedidos">
+                        </label>
+                        <label>
+                            <span>Cierre</span>
+                            <input name="hora_fin_pedidos" type="time" value="{{ configuracion.hora_fin_pedidos|time:'H:i' }}" required aria-label="Hora de fin de pedidos">
+                        </label>
+                    </div>
+                </fieldset>
+
+                <fieldset class="config-card">
+                    <legend>Recordatorios</legend>
+                    <label>
+                        <span>Hora de env&iacute;o</span>
+                        <input name="hora_envio_recordatorio" type="time" value="{{ configuracion.hora_envio_recordatorio|time:'H:i' }}" required aria-label="Hora de envio del recordatorio">
+                    </label>
+                    <div class="dias-recordatorio" aria-label="Dias de recordatorio">
+                        {% for value, label in dias_semana %}
+                        <label>
+                            <input type="checkbox" name="dias_recordatorio" value="{{ value }}" {% if value in configuracion.dias_recordatorio_lista %}checked{% endif %}>
+                            {{ label }}
+                        </label>
+                        {% endfor %}
+                    </div>
+                    <label>
+                        <span>Remitente</span>
+                        <input name="email_remitente" value="{{ configuracion.email_remitente }}" maxlength="255" placeholder="Los Tocayos &lt;correos@lostocayos.com&gt;" aria-label="Nombre de remitente de los correos">
+                    </label>
+                    <label class="switch-row">
+                        <input type="checkbox" name="recordatorios_habilitados" {% if configuracion.recordatorios_habilitados %}checked{% endif %} aria-label="Recordatorios habilitados">
+                        <span>Recordatorios habilitados</span>
+                    </label>
+                </fieldset>
             </div>
             <p class="settings-hint">
                 Las credenciales de correo (usuario y contrase&ntilde;a SMTP) se configuran por variable de entorno,

@@ -45,6 +45,7 @@
         <div class="items-list" id="itemsList"></div>
 
         <div class="summary-footer">
+            <p class="total-note">Total tentativo; puede cambiar en el ticket final.</p>
             <div class="total-row">
                 <span>Total</span>
                 <strong id="totalAmount">$0.00</strong>
@@ -56,8 +57,9 @@
 
     <section class="calculator-panel" aria-label="Calculadora">
         <div class="calculator-display">
-            <span id="selectedName">Producto</span>
+            <span class="display-product" id="selectedName">Producto</span>
             <strong id="quantityDisplay">0</strong>
+            <span class="display-unit" id="selectedUnit">PZA</span>
         </div>
         <div class="keypad" id="keypad">
             <button type="button" data-key="1">1</button>
@@ -91,5 +93,5 @@
 
 {% block scripts %}
 {{ initial_data|json_script:"initial-data" }}
-<script src="{% static 'js/pedidos.js' %}?v=20260714-1" defer></script>
+<script src="{% static 'js/pedidos.js' %}?v=20260715-1" defer></script>
 {% endblock %}

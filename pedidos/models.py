@@ -53,7 +53,22 @@ class Producto(models.Model):
         blank=True,
         help_text="Nombre breve usado en el ticket termico.",
     )
-    descripcion = models.TextField(blank=True)
+    unidad_medida = models.CharField(max_length=40, default="PIEZA (PZA)")
+    unidad_abreviatura = models.CharField(max_length=8, default="PZA")
+    cantidad_por_precio = models.DecimalField(
+        max_digits=8,
+        decimal_places=3,
+        default=Decimal("1.000"),
+        validators=[
+            MinValueValidator(Decimal("0.001")),
+            MaxValueValidator(Decimal("999.999")),
+        ],
+        help_text=(
+            "Cantidad capturada que equivale a una unidad de precio. "
+            "Ejemplo: chile guero = 30 piezas por kilo."
+        ),
+    )
+    promo_aguilas_martes = models.BooleanField(default=False)
     orden = models.PositiveSmallIntegerField(default=0)
     activo = models.BooleanField(default=True)
 
@@ -67,6 +82,10 @@ class Producto(models.Model):
     def etiqueta_ticket(self):
         return (self.nombre_ticket.strip() or self.nombre.strip())[:24]
 
+    @property
+    def unidad_corta(self):
+        return (self.unidad_abreviatura.strip() or "PZA")[:8].upper()
+
 
 class Precio(models.Model):
     """Precio vigente de un producto para una sucursal o cliente."""
@@ -78,6 +97,11 @@ class Precio(models.Model):
         related_name="precios",
     )
     precio_unitario = models.DecimalField(max_digits=6, decimal_places=2)
+    nombre_ticket = models.CharField(
+        max_length=24,
+        blank=True,
+        help_text="Nombre breve usado para esta sucursal/cliente; si se deja vacio usa el del producto.",
+    )
     fecha_vigencia = models.DateField(default=timezone.localdate)
 
     class Meta:
@@ -91,6 +115,10 @@ class Precio(models.Model):
 
     def __str__(self):
         return f"{self.sucursal_cliente} - {self.producto}: ${self.precio_unitario}"
+
+    @property
+    def etiqueta_ticket(self):
+        return (self.nombre_ticket.strip() or self.producto.etiqueta_ticket)[:24]
 
 
 class Pedido(models.Model):
@@ -167,7 +195,25 @@ class ItemPedido(models.Model):
         return f"{self.producto} x {self.cantidad}"
 
     def calcular_subtotal(self):
-        return (self.cantidad * self.precio_unitario).quantize(Decimal("0.01"))
+        divisor = self.producto.cantidad_por_precio or Decimal("1.000")
+        return ((self.cantidad / divisor) * self.precio_unitario).quantize(Decimal("0.01"))
+
+    def aplica_promo_aguilas_martes(self, fecha=None):
+        fecha = fecha or timezone.localdate()
+        return (
+            self.producto.promo_aguilas_martes
+            and self.pedido.sucursal_cliente.nombre.strip().casefold() == "aguilas"
+            and fecha.isoweekday() == 2
+        )
+
+    def cantidad_bonificacion(self, fecha=None):
+        if not self.aplica_promo_aguilas_martes(fecha):
+            return Decimal("0.000")
+        paquetes = self.cantidad // Decimal("20.000")
+        return (paquetes * Decimal("5.000")).quantize(Decimal("0.001"))
+
+    def cantidad_con_promocion(self, fecha=None):
+        return (self.cantidad + self.cantidad_bonificacion(fecha)).quantize(Decimal("0.001"))
 
     def save(self, *args, **kwargs):
         self.subtotal = self.calcular_subtotal()
