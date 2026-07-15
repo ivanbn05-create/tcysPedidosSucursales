@@ -867,6 +867,15 @@ button:disabled {
     text-align: center;
 }
 
+.config-settings-table {
+    min-width: 0;
+    max-width: 720px;
+}
+
+.config-settings-table th {
+    width: 260px;
+}
+
 .dias-recordatorio {
     display: flex;
     flex-wrap: wrap;
@@ -968,3 +977,38 @@ button:disabled {
 
 .modal-backdrop[hidden] {
     display: none;
+}
+
+.modal {
+    width: min(100%, 420px);
+    padding: 20px;
+    border-radius: 12px;
+    background: #fff;
+    box-shadow: 0 16px 44px rgba(23, 32, 51, 0.28);
+}
+
+.modal.wide {
+    width: min(100%, 680px);
+}
+
+.modal p {
+    color: var(--muted);
+}
+
+.icon-button {
+    width: 42px;
+    min-height: 42px;
+    padding: 0;
+    border-radius: 999px;
+    background: #e9f0f4;
+    color: var(--blue);
+    font-size: 24px;
+}
+
+.detail-list {
+    margin: 16px 0;
+    display: grid;
+    gap: 10px;
+    max-height: 55vh;
+    overflow: auto;
+}

@@ -204,12 +204,12 @@
             </div>
         </div>
 
-        <form method="post" class="create-form settings-form" id="configuracion-form">
+        <form method="post" class="settings-form" id="configuracion-form">
             {% csrf_token %}
             <input type="hidden" name="action" value="actualizar_configuracion">
 
             <div class="settings-table-wrap">
-                <table class="settings-table">
+                <table class="settings-table config-settings-table">
                     <tbody>
                         <tr>
                             <th scope="row">Pedidos se aceptan de</th>
