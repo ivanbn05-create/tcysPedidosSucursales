@@ -87,7 +87,7 @@
                             target="_blank"
                             rel="noopener"
                         >Imprimir</a>
-                        <a class="primary-link" href="{% url 'descargar_y_marcar' pedido.id %}">Excel</a>
+                        <a class="primary-link compact" href="{% url 'descargar_y_marcar' pedido.id %}">Excel</a>
                         <form method="post" action="{% url 'marcar_enviado' pedido.id %}">
                             {% csrf_token %}
                             <button class="secondary-button compact" type="submit">Enviado</button>
@@ -127,5 +127,5 @@
 {% endblock %}
 
 {% block scripts %}
-<script src="{% static 'js/admin.js' %}?v=20260713-2" defer></script>
+<script src="{% static 'js/admin.js' %}?v=20260714-1" defer></script>
 {% endblock %}

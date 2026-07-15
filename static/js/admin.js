@@ -20,6 +20,19 @@ document.addEventListener("DOMContentLoaded", () => {
         });
     }
 
+    let lastTrigger = null;
+
+    function openModal(trigger) {
+        lastTrigger = trigger;
+        modal.hidden = false;
+        closeDetail.focus();
+    }
+
+    function closeModal() {
+        modal.hidden = true;
+        if (lastTrigger) lastTrigger.focus();
+    }
+
     document.querySelectorAll("[data-detail]").forEach((button) => {
         button.addEventListener("click", () => {
             const items = JSON.parse(button.dataset.items || "[]");
@@ -39,7 +52,7 @@ document.addEventListener("DOMContentLoaded", () => {
                 `;
                 detailList.appendChild(row);
             });
-            modal.hidden = false;
+            openModal(button);
         });
     });
 
@@ -51,11 +64,13 @@ document.addEventListener("DOMContentLoaded", () => {
         });
     });
 
-    closeDetail.addEventListener("click", () => {
-        modal.hidden = true;
-    });
+    closeDetail.addEventListener("click", closeModal);
 
     modal.addEventListener("click", (event) => {
-        if (event.target === modal) modal.hidden = true;
+        if (event.target === modal) closeModal();
+    });
+
+    document.addEventListener("keydown", (event) => {
+        if (event.key === "Escape" && !modal.hidden) closeModal();
     });
 });

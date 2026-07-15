@@ -2,9 +2,9 @@
     --red: #e21b23;
     --red-dark: #c9151d;
     --blue: #242424;
-    --blue-soft: #249b45;
-    --green: #249b45;
-    --green-dark: #197c35;
+    --blue-soft: #2f6fed;
+    --green: #197c35;
+    --green-dark: #125725;
     --yellow: #ffe600;
     --warm: #ffffff;
     --line: #e6e0d2;
@@ -72,7 +72,7 @@ a:focus-visible,
 input:focus-visible,
 select:focus-visible,
 textarea:focus-visible {
-    outline: 3px solid rgba(226, 27, 35, 0.28);
+    outline: 3px solid var(--red);
     outline-offset: 2px;
 }
 
@@ -209,19 +209,22 @@ button:disabled {
 }
 
 .message {
-    padding: 12px 14px;
-    border-radius: 8px;
-    background: #fff;
-    border-left: 4px solid var(--green);
+    padding: 10px 12px;
+    border-radius: 6px;
+    background: #e8f7f2;
+    color: #075f49;
+    font-weight: 800;
     box-shadow: var(--shadow);
 }
 
 .message.error {
-    border-left-color: var(--red);
+    background: #ffe9ec;
+    color: var(--red-dark);
 }
 
 .message.success {
-    border-left-color: var(--green);
+    background: #e8f7f2;
+    color: #075f49;
 }
 
 .login-page {
