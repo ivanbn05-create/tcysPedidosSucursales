@@ -434,6 +434,20 @@ button:disabled {
     color: var(--red-dark);
 }
 
+.schedule-status {
+    padding: 10px 12px;
+    border-radius: 6px;
+    background: #e8f7f2;
+    color: #075f49;
+    font-weight: 800;
+    font-size: 14px;
+}
+
+.schedule-status.closed {
+    background: #ffe9ec;
+    color: var(--red-dark);
+}
+
 .empty-state {
     padding: 18px;
     border: 1px dashed var(--line);
@@ -853,6 +867,25 @@ button:disabled {
     text-align: center;
 }
 
+.dias-recordatorio {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px 18px;
+}
+
+.dias-recordatorio label {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-weight: 700;
+}
+
+.settings-hint {
+    margin: 12px 0 0;
+    color: var(--muted);
+    font-size: 13px;
+}
+
 .product-settings-table {
     table-layout: fixed;
 }
@@ -935,38 +968,3 @@ button:disabled {
 
 .modal-backdrop[hidden] {
     display: none;
-}
-
-.modal {
-    width: min(100%, 420px);
-    padding: 20px;
-    border-radius: 12px;
-    background: #fff;
-    box-shadow: 0 16px 44px rgba(23, 32, 51, 0.28);
-}
-
-.modal.wide {
-    width: min(100%, 680px);
-}
-
-.modal p {
-    color: var(--muted);
-}
-
-.icon-button {
-    width: 42px;
-    min-height: 42px;
-    padding: 0;
-    border-radius: 999px;
-    background: #e9f0f4;
-    color: var(--blue);
-    font-size: 24px;
-}
-
-.detail-list {
-    margin: 16px 0;
-    display: grid;
-    gap: 10px;
-    max-height: 55vh;
-    overflow: auto;
-}

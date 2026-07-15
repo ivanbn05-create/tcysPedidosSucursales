@@ -1,0 +1,12 @@
+LOS TOCAYOS - Recordatorio de pedido
+
+Hola {{ sucursal.nombre }}, todavía no hemos recibido tu pedido de hoy.
+
+Recuerda que los pedidos se aceptan hasta las {{ hora_fin_pedidos|time:"H:i" }} horas.
+Después de esa hora el sistema deja de aceptar pedidos hasta el siguiente día hábil.
+
+Entra al sistema y captura tu pedido lo antes posible para asegurar tu entrega.
+
+--
+Recordatorio automático enviado el {{ hora_actual|date:"d/m/Y" }} a las {{ hora_actual|time:"H:i" }} horas.
+Si ya capturaste tu pedido, puedes ignorar este mensaje.

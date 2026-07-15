@@ -39,6 +39,7 @@
             <span class="item-count" id="itemCount">0</span>
         </div>
 
+        <div class="schedule-status" id="scheduleStatus" hidden></div>
         <div class="notice" id="notice" hidden></div>
         <div class="empty-state" id="emptyState">Sin productos</div>
         <div class="items-list" id="itemsList"></div>
@@ -90,5 +91,5 @@
 
 {% block scripts %}
 {{ initial_data|json_script:"initial-data" }}
-<script src="{% static 'js/pedidos.js' %}?v=20260713-2" defer></script>
+<script src="{% static 'js/pedidos.js' %}?v=20260714-1" defer></script>
 {% endblock %}

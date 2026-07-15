@@ -11,6 +11,7 @@ urlpatterns = [
     path("api/pedidos/eliminar-item/", views.eliminar_item, name="api_eliminar_item"),
     path("api/pedidos/limpiar/", views.limpiar_pedido, name="api_limpiar_pedido"),
     path("api/pedidos/confirmar/", views.confirmar_pedido, name="api_confirmar_pedido"),
+    path("api/horarios/", views.info_horarios, name="info_horarios"),
     path("admin/", views.admin_dashboard, name="admin_dashboard"),
     path("admin/configuracion/", views.admin_configuracion, name="admin_configuracion"),
     path("admin/pedidos/<int:pedido_id>/excel/", views.descargar_excel, name="descargar_excel"),

@@ -32,10 +32,23 @@ Los usernames internos sin espacios también funcionan para pruebas técnicas: `
 - `/pedidos/`: captura de pedido con Fetch API, calculadora y resumen responsivo.
 - `/api/pedidos/crear-item/`: agrega o acumula producto en el pedido pendiente.
 - `/api/pedidos/eliminar-item/`: elimina item del pedido pendiente.
-- `/api/pedidos/confirmar/`: confirma con transacción atómica y rate limit de 1 minuto.
+- `/api/pedidos/confirmar/`: confirma con transacción atómica, rate limit de 1 minuto y restricción horaria (rechaza con 400 fuera de `hora_inicio_pedidos`/`hora_fin_pedidos`).
+- `/api/horarios/`: informa el horario vigente de pedidos (sin auth), usado por el frontend para deshabilitar el botón de confirmar fuera de horario.
 - `/admin/`: dashboard propio de matriz con filtros, detalle y descarga.
+- `/admin/configuracion/`: productos, precios, sucursales/clientes (incluye correo de recordatorios), horarios de pedidos y recordatorios, cuenta admin.
 - `/admin/pedidos/<id>/descargar/`: descarga Excel y marca como enviado.
 - `/django-admin/`: admin nativo de Django.
+
+## Recordatorios diarios por correo
+
+```bash
+python manage.py enviar_recordatorios            # respeta día configurado + recordatorios_habilitados
+python manage.py enviar_recordatorios --test      # simula, no manda correos reales
+python manage.py enviar_recordatorios --sucursal "Aguilas"
+python manage.py enviar_recordatorios --fuerza    # ignora día/recordatorios_habilitados
+```
+
+Mientras el proyecto vive en Render, este comando se dispara solo vía APScheduler (`pedidos/scheduler.py`, arrancado desde `pedidos/apps.py`), que revisa cada minuto si toca enviar según `Configuracion.hora_envio_recordatorio`. Al migrar a un VPS, esto se reemplaza por un cron nativo llamando al mismo comando (ver CLAUDE.md, sección "Automatización de correos") y se debe poner `SCHEDULER_ENABLED=False`.
 
 ## Render
 
@@ -47,6 +60,10 @@ SECRET_KEY=your-secret-key-here
 ALLOWED_HOSTS=tu-app.render.com
 CSRF_TRUSTED_ORIGINS=https://tu-app.render.com
 DATABASE_URL=postgresql://user:password@host:port/database
+EMAIL_HOST_USER=correos@lostocayos.com
+EMAIL_HOST_PASSWORD=contraseña-de-aplicacion-de-gmail
+DEFAULT_FROM_EMAIL=Los Tocayos <correos@lostocayos.com>
+SCHEDULER_ENABLED=True
 ```
 
 Build command:

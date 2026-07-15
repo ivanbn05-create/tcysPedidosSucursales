@@ -18,6 +18,7 @@
         <a href="#productos">Productos</a>
         <a href="#precios">Precios</a>
         <a href="#usuarios">Usuarios</a>
+        <a href="#horarios">Horarios y recordatorios</a>
         <a href="#administrador">Administrador</a>
     </nav>
 
@@ -146,6 +147,7 @@
                             <th>Nombre</th>
                             <th>Tipo</th>
                             <th>Usuario</th>
+                            <th>Correo de recordatorios</th>
                             <th>Nueva contrase&ntilde;a</th>
                             <th>Activo</th>
                         </tr>
@@ -165,6 +167,7 @@
                                 </select>
                             </td>
                             <td><input name="sucursal_{{ sucursal.id }}_username" value="{{ sucursal.usuario.username|default:'' }}" maxlength="150" required autocomplete="off" aria-label="Usuario de {{ sucursal.nombre }}"></td>
+                            <td><input name="sucursal_{{ sucursal.id }}_email" type="email" value="{{ sucursal.email|default:'' }}" maxlength="254" placeholder="correo@ejemplo.com" aria-label="Correo de recordatorios de {{ sucursal.nombre }}"></td>
                             <td><input name="sucursal_{{ sucursal.id }}_password" type="password" placeholder="Sin cambio" autocomplete="new-password" aria-label="Nueva contrase&ntilde;a de {{ sucursal.nombre }}"></td>
                             <td class="toggle-cell"><input name="sucursal_{{ sucursal.id }}_activa" type="checkbox" {% if sucursal.activa %}checked{% endif %} aria-label="Usuario {{ sucursal.nombre }} activo"></td>
                         </tr>
@@ -187,8 +190,74 @@
                 {% endfor %}
             </select>
             <input name="nuevo_sucursal_username" maxlength="150" placeholder="Usuario" required autocomplete="off" aria-label="Nuevo usuario">
+            <input name="nuevo_sucursal_email" type="email" maxlength="254" placeholder="Correo de recordatorios (opcional)" aria-label="Correo de recordatorios del nuevo usuario">
             <input name="nuevo_sucursal_password" type="password" placeholder="Contrase&ntilde;a" required autocomplete="new-password" aria-label="Contrase&ntilde;a del nuevo usuario">
             <button class="secondary-button" type="submit">Agregar usuario</button>
+        </form>
+    </section>
+
+    <section class="settings-section" id="horarios">
+        <div class="settings-section-heading">
+            <div>
+                <span class="eyebrow">Automatizaci&oacute;n</span>
+                <h2>Horarios y recordatorios</h2>
+            </div>
+        </div>
+
+        <form method="post" class="create-form settings-form" id="configuracion-form">
+            {% csrf_token %}
+            <input type="hidden" name="action" value="actualizar_configuracion">
+
+            <div class="settings-table-wrap">
+                <table class="settings-table">
+                    <tbody>
+                        <tr>
+                            <th scope="row">Pedidos se aceptan de</th>
+                            <td>
+                                <input name="hora_inicio_pedidos" type="time" value="{{ configuracion.hora_inicio_pedidos|time:'H:i' }}" required aria-label="Hora de inicio de pedidos">
+                                a
+                                <input name="hora_fin_pedidos" type="time" value="{{ configuracion.hora_fin_pedidos|time:'H:i' }}" required aria-label="Hora de fin de pedidos">
+                            </td>
+                        </tr>
+                        <tr>
+                            <th scope="row">Recordatorio se env&iacute;a a las</th>
+                            <td>
+                                <input name="hora_envio_recordatorio" type="time" value="{{ configuracion.hora_envio_recordatorio|time:'H:i' }}" required aria-label="Hora de envio del recordatorio">
+                            </td>
+                        </tr>
+                        <tr>
+                            <th scope="row">D&iacute;as de recordatorio</th>
+                            <td class="dias-recordatorio">
+                                {% for value, label in dias_semana %}
+                                <label>
+                                    <input type="checkbox" name="dias_recordatorio" value="{{ value }}" {% if value in configuracion.dias_recordatorio_lista %}checked{% endif %}>
+                                    {{ label }}
+                                </label>
+                                {% endfor %}
+                            </td>
+                        </tr>
+                        <tr>
+                            <th scope="row">Remitente</th>
+                            <td>
+                                <input name="email_remitente" value="{{ configuracion.email_remitente }}" maxlength="255" placeholder="Los Tocayos &lt;correos@lostocayos.com&gt;" aria-label="Nombre de remitente de los correos">
+                            </td>
+                        </tr>
+                        <tr>
+                            <th scope="row">Recordatorios habilitados</th>
+                            <td class="toggle-cell">
+                                <input type="checkbox" name="recordatorios_habilitados" {% if configuracion.recordatorios_habilitados %}checked{% endif %} aria-label="Recordatorios habilitados">
+                            </td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+            <p class="settings-hint">
+                Las credenciales de correo (usuario y contrase&ntilde;a SMTP) se configuran por variable de entorno,
+                no aqu&iacute;. Consulta el archivo CLAUDE.md o pide ayuda a soporte t&eacute;cnico para cambiarlas.
+            </p>
+            <div class="settings-actions">
+                <button class="primary-button success" type="submit">Guardar horarios y recordatorios</button>
+            </div>
         </form>
     </section>
 

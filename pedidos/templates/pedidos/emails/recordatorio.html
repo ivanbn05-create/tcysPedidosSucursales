@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html lang="es-mx">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Recordatorio de pedido - Los Tocayos</title>
+</head>
+<body style="margin:0; padding:0; background:#f4f1e6; font-family:Arial, Helvetica, sans-serif; color:#242424;">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#f4f1e6; padding:24px 0;">
+<tr>
+<td align="center">
+<table role="presentation" width="480" cellpadding="0" cellspacing="0" style="background:#ffffff; border-radius:8px; overflow:hidden; box-shadow:0 2px 8px rgba(0,0,0,0.08);">
+<tr>
+<td style="background:#e21b23; padding:20px 28px;">
+<span style="color:#ffffff; font-size:20px; font-weight:900; letter-spacing:0.5px;">LOS TOCAYOS</span>
+</td>
+</tr>
+<tr>
+<td style="padding:28px;">
+<h1 style="margin:0 0 12px; font-size:20px; color:#242424;">Recordatorio de pedido</h1>
+<p style="margin:0 0 16px; font-size:15px; line-height:1.5;">
+Hola <strong>{{ sucursal.nombre }}</strong>, todav&iacute;a no hemos recibido tu pedido de hoy.
+</p>
+<p style="margin:0 0 20px; font-size:15px; line-height:1.5;">
+Recuerda que los pedidos se aceptan hasta las <strong>{{ hora_fin_pedidos|time:"H:i" }}</strong> horas.
+Despu&eacute;s de esa hora el sistema deja de aceptar pedidos hasta el siguiente d&iacute;a h&aacute;bil.
+</p>
+<p style="margin:0 0 24px; font-size:15px; line-height:1.5;">
+Entra al sistema y captura tu pedido lo antes posible para asegurar tu entrega.
+</p>
+<p style="margin:0; font-size:13px; color:#6b665d;">
+Este es un recordatorio autom&aacute;tico enviado el {{ hora_actual|date:"d/m/Y" }} a las {{ hora_actual|time:"H:i" }} horas.
+Si ya capturaste tu pedido, puedes ignorar este mensaje.
+</p>
+</td>
+</tr>
+<tr>
+<td style="background:#fffef0; padding:16px 28px; font-size:12px; color:#6b665d; border-top:1px solid #e6e0d2;">
+Los Tocayos &middot; Sistema de gesti&oacute;n de pedidos
+</td>
+</tr>
+</table>
+</td>
+</tr>
+</table>
+</body>
+</html>

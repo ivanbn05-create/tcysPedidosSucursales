@@ -4,7 +4,7 @@ from django.contrib.auth import get_user_model
 from django.utils import timezone
 from django.utils.text import slugify
 
-from .models import Precio, Producto, SucursalCliente
+from .models import Configuracion, Precio, Producto, SucursalCliente
 
 
 PRODUCTOS_DEMO = [
@@ -77,6 +77,12 @@ def seed_demo_data():
                 fecha_vigencia=hoy,
                 defaults={"precio_unitario": precio_unitario},
             )
+
+    # Asegura que exista el registro único de Configuracion (horarios de pedidos
+    # y recordatorios). No se tocan correos de sucursales/clientes aquí: quedan
+    # en blanco hasta que un admin real los capture, para no arriesgar el envío
+    # de recordatorios a direcciones de prueba en un ambiente de demo/staging.
+    Configuracion.get_solo()
 
     return {
         "usuarios": User.objects.count(),

@@ -1,10 +1,16 @@
+from datetime import time
 from decimal import Decimal
 
 from django.contrib.auth.models import User
+from django.core.exceptions import ValidationError
 from django.core.validators import MaxValueValidator, MinValueValidator
 from django.db import models
 from django.db.models import Sum
 from django.utils import timezone
+
+# Cache key compartida entre views.py y admin.py para invalidar la
+# configuración cacheada cuando se edita desde cualquiera de los dos admins.
+CONFIGURACION_CACHE_KEY = "pedidos:configuracion"
 
 
 class SucursalCliente(models.Model):
@@ -24,6 +30,10 @@ class SucursalCliente(models.Model):
     nombre = models.CharField(max_length=120, unique=True)
     tipo = models.CharField(max_length=24, choices=Tipo.choices)
     activa = models.BooleanField(default=True)
+    email = models.EmailField(
+        blank=True,
+        help_text="Correo al que se envía el recordatorio diario de pedidos.",
+    )
 
     class Meta:
         ordering = ["tipo", "nombre"]
@@ -162,3 +172,102 @@ class ItemPedido(models.Model):
     def save(self, *args, **kwargs):
         self.subtotal = self.calcular_subtotal()
         super().save(*args, **kwargs)
+
+
+class Configuracion(models.Model):
+    """Configuración global de horario de pedidos y recordatorios por correo.
+
+    Debe existir un único registro (patrón singleton, ver ``get_solo``). Las
+    credenciales SMTP (usuario/password de Gmail) NO viven aquí: se leen de
+    variables de entorno como el resto de secretos del proyecto (ver
+    ``settings.py`` y ``.env``), para no guardar contraseñas en texto plano
+    en la base de datos.
+    """
+
+    hora_inicio_pedidos = models.TimeField(
+        default=time(8, 0),
+        help_text="Hora a partir de la cual se aceptan pedidos.",
+    )
+    hora_fin_pedidos = models.TimeField(
+        default=time(16, 0),
+        help_text="Hora hasta la cual se aceptan pedidos.",
+    )
+    hora_envio_recordatorio = models.TimeField(
+        default=time(14, 0),
+        help_text="Hora a la que se envía el recordatorio diario de pedidos.",
+    )
+    dias_recordatorio = models.CharField(
+        max_length=20,
+        default="1,2,3,4,5",
+        help_text="Días ISO (1=lunes ... 7=domingo) separados por coma en que se envía el recordatorio.",
+    )
+    email_remitente = models.CharField(
+        max_length=255,
+        blank=True,
+        help_text=(
+            'Nombre visible del remitente, ej. "Los Tocayos <correos@lostocayos.com>". '
+            "Si se deja vacío se usa DEFAULT_FROM_EMAIL/EMAIL_HOST_USER."
+        ),
+    )
+    recordatorios_habilitados = models.BooleanField(
+        default=True,
+        help_text="Habilitar o deshabilitar el envío de recordatorios diarios.",
+    )
+    actualizado_en = models.DateTimeField(auto_now=True)
+    actualizado_por = models.CharField(max_length=150, blank=True)
+
+    class Meta:
+        verbose_name = "Configuración"
+        verbose_name_plural = "Configuración del sistema"
+
+    def __str__(self):
+        return "Configuración de pedidos y recordatorios"
+
+    def clean(self):
+        if self.hora_inicio_pedidos >= self.hora_fin_pedidos:
+            raise ValidationError(
+                "La hora de inicio de pedidos debe ser menor que la hora de fin."
+            )
+
+    def dias_recordatorio_lista(self):
+        """Regresa los días ISO configurados como lista de enteros (1=lunes...7=domingo)."""
+        dias = []
+        for part in self.dias_recordatorio.split(","):
+            part = part.strip()
+            if part.isdigit():
+                dias.append(int(part))
+        return dias
+
+    @classmethod
+    def get_solo(cls):
+        """Regresa el único registro de configuración, creándolo si no existe."""
+        config = cls.objects.first()
+        if config is None:
+            config = cls.objects.create()
+        return config
+
+
+class LogRecordatorio(models.Model):
+    """Registro de intentos de envío del recordatorio diario por sucursal/cliente."""
+
+    class Estado(models.TextChoices):
+        ENVIADO = "enviado", "Enviado exitosamente"
+        ERROR = "error", "Error al enviar"
+        SALTADO = "saltado", "Saltado (sin correo)"
+
+    sucursal_cliente = models.ForeignKey(
+        SucursalCliente,
+        on_delete=models.CASCADE,
+        related_name="logs_recordatorio",
+    )
+    fecha_envio = models.DateTimeField(auto_now_add=True)
+    estado = models.CharField(max_length=16, choices=Estado.choices)
+    mensaje_error = models.TextField(blank=True)
+
+    class Meta:
+        ordering = ["-fecha_envio"]
+        verbose_name = "Log de recordatorio"
+        verbose_name_plural = "Logs de recordatorios"
+
+    def __str__(self):
+        return f"{self.sucursal_cliente} - {self.fecha_envio:%Y-%m-%d %H:%M} ({self.estado})"

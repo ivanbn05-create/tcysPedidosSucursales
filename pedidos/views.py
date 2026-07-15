@@ -1,6 +1,6 @@
 import json
 import logging
-from datetime import timedelta
+from datetime import datetime, timedelta
 from decimal import Decimal, InvalidOperation
 from functools import wraps
 
@@ -8,6 +8,7 @@ from django.contrib import messages
 from django.contrib.auth import authenticate, login, logout, update_session_auth_hash
 from django.contrib.auth.decorators import login_required
 from django.contrib.auth.models import User
+from django.core.cache import cache
 from django.core.exceptions import ValidationError
 from django.db import IntegrityError, transaction
 from django.db.models import Q, Sum
@@ -17,10 +18,20 @@ from django.urls import reverse
 from django.utils import timezone
 from django.views.decorators.http import require_http_methods, require_POST
 
-from .models import ItemPedido, Pedido, Precio, Producto, SucursalCliente
+from .models import (
+    CONFIGURACION_CACHE_KEY,
+    Configuracion,
+    ItemPedido,
+    Pedido,
+    Precio,
+    Producto,
+    SucursalCliente,
+)
 from .tickets import build_ticket_workbook, ticket_context
 
 logger = logging.getLogger(__name__)
+
+CONFIGURACION_CACHE_TIMEOUT = 300  # 5 minutos
 
 
 def is_admin_user(user):
@@ -123,6 +134,48 @@ def pedido_pendiente(sucursal, crear=False):
             usuario_nombre=sucursal.nombre,
         )
     return pedido
+
+
+def get_configuracion():
+    """Configuración de horarios/recordatorios, cacheada para no pegarle a la BD
+    en cada request. Se invalida al guardar desde cualquiera de los dos admins."""
+
+    config = cache.get(CONFIGURACION_CACHE_KEY)
+    if config is None:
+        config = Configuracion.get_solo()
+        cache.set(CONFIGURACION_CACHE_KEY, config, CONFIGURACION_CACHE_TIMEOUT)
+    return config
+
+
+def validar_horario_pedidos():
+    """Regresa (es_valido, mensaje) según el horario configurado en Configuracion."""
+
+    config = get_configuracion()
+    ahora = timezone.localtime().time()
+    dentro_horario = config.hora_inicio_pedidos <= ahora <= config.hora_fin_pedidos
+    if dentro_horario:
+        mensaje = f"Pedidos habilitados hasta las {config.hora_fin_pedidos:%H:%M}."
+    else:
+        mensaje = f"Pedidos cerrados. Reabre a las {config.hora_inicio_pedidos:%H:%M}."
+    return dentro_horario, mensaje
+
+
+def info_horarios(request):
+    """Endpoint público (sin auth) que informa el horario vigente de aceptación
+    de pedidos, para que el frontend habilite/deshabilite el botón de confirmar."""
+
+    config = get_configuracion()
+    ahora_dt = timezone.localtime()
+    dentro_horario, mensaje = validar_horario_pedidos()
+    return JsonResponse(
+        {
+            "hora_inicio": config.hora_inicio_pedidos.strftime("%H:%M"),
+            "hora_fin": config.hora_fin_pedidos.strftime("%H:%M"),
+            "hora_actual": ahora_dt.strftime("%H:%M"),
+            "dentro_horario": dentro_horario,
+            "mensaje": mensaje,
+        }
+    )
 
 
 def decimal_to_str(value, places="0.01"):
@@ -316,6 +369,10 @@ def confirmar_pedido(request):
     if sucursal is None:
         return JsonResponse({"success": False, "mensaje": "Usuario sin sucursal activa."}, status=403)
 
+    es_valido, mensaje_horario = validar_horario_pedidos()
+    if not es_valido:
+        return JsonResponse({"success": False, "mensaje": mensaje_horario}, status=400)
+
     limite = timezone.now() - timedelta(seconds=60)
     if Pedido.objects.filter(
         sucursal_cliente=sucursal,
@@ -468,6 +525,7 @@ def update_branches_from_post(request):
         branch_type = request.POST.get(f"{prefix}tipo", "")
         active = f"{prefix}activa" in request.POST
         password = request.POST.get(f"{prefix}password", "")
+        email = request.POST.get(f"{prefix}email", "").strip()
         if not nombre or not username:
             raise ValidationError("Cada sucursal o cliente necesita nombre y usuario.")
         if branch_type not in valid_types:
@@ -490,6 +548,7 @@ def update_branches_from_post(request):
         branch.tipo = branch_type
         branch.activa = active
         branch.usuario = user
+        branch.email = email
         branch.full_clean()
         branch.save()
         updated += 1
@@ -517,11 +576,13 @@ def create_branch_from_post(request):
     user.set_password(password)
     user.full_clean()
     user.save()
+    email = request.POST.get("nuevo_sucursal_email", "").strip()
     branch = SucursalCliente(
         nombre=nombre,
         tipo=branch_type,
         activa=True,
         usuario=user,
+        email=email,
     )
     branch.full_clean()
     branch.save()
@@ -546,6 +607,51 @@ def update_admin_account_from_post(request):
     return "Cuenta administradora actualizada."
 
 
+DIAS_SEMANA_CHOICES = [
+    (1, "Lunes"),
+    (2, "Martes"),
+    (3, "Miercoles"),
+    (4, "Jueves"),
+    (5, "Viernes"),
+    (6, "Sabado"),
+    (7, "Domingo"),
+]
+
+
+def parse_time_field(value, field_label):
+    try:
+        return datetime.strptime(value, "%H:%M").time()
+    except (TypeError, ValueError):
+        raise ValidationError(f"Captura una hora valida (HH:MM) para {field_label}.")
+
+
+def update_configuracion_from_post(request):
+    config = Configuracion.get_solo()
+    config.hora_inicio_pedidos = parse_time_field(
+        request.POST.get("hora_inicio_pedidos"), "hora de inicio de pedidos"
+    )
+    config.hora_fin_pedidos = parse_time_field(
+        request.POST.get("hora_fin_pedidos"), "hora de fin de pedidos"
+    )
+    config.hora_envio_recordatorio = parse_time_field(
+        request.POST.get("hora_envio_recordatorio"), "hora de envio de recordatorio"
+    )
+
+    dias_seleccionados = request.POST.getlist("dias_recordatorio")
+    dias_validos = {str(value) for value, _ in DIAS_SEMANA_CHOICES}
+    if not dias_seleccionados or not set(dias_seleccionados).issubset(dias_validos):
+        raise ValidationError("Selecciona al menos un dia valido para el recordatorio.")
+    config.dias_recordatorio = ",".join(sorted(dias_seleccionados, key=int))
+
+    config.email_remitente = request.POST.get("email_remitente", "").strip()
+    config.recordatorios_habilitados = "recordatorios_habilitados" in request.POST
+    config.actualizado_por = request.user.username
+    config.full_clean()
+    config.save()
+    cache.delete(CONFIGURACION_CACHE_KEY)
+    return "Horarios y recordatorios actualizados."
+
+
 ADMIN_CONFIG_ACTIONS = {
     "actualizar_productos": update_products_from_post,
     "crear_producto": create_product_from_post,
@@ -553,6 +659,7 @@ ADMIN_CONFIG_ACTIONS = {
     "actualizar_sucursales": update_branches_from_post,
     "crear_sucursal": create_branch_from_post,
     "actualizar_admin": update_admin_account_from_post,
+    "actualizar_configuracion": update_configuracion_from_post,
 }
 
 
@@ -590,6 +697,8 @@ def admin_configuration_context(request):
         "tipos_sucursal": SucursalCliente.Tipo.choices,
         "price_rows": price_rows,
         "admin_user": request.user,
+        "configuracion": Configuracion.get_solo(),
+        "dias_semana": DIAS_SEMANA_CHOICES,
     }
 
 

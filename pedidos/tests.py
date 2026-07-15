@@ -1,18 +1,44 @@
 import json
+from datetime import time, timedelta
 from decimal import Decimal
 from io import BytesIO
 
 from django.contrib.auth.models import User
+from django.core import mail
+from django.core.cache import cache
+from django.core.management import call_command
 from django.test import TestCase
+from django.utils import timezone
 from openpyxl import load_workbook
 
-from .models import Pedido, Precio, Producto, SucursalCliente
+from .models import (
+    CONFIGURACION_CACHE_KEY,
+    Configuracion,
+    LogRecordatorio,
+    Pedido,
+    Precio,
+    Producto,
+    SucursalCliente,
+)
 from .seed import seed_demo_data
+
+
+def abrir_horario_completo():
+    """Deja el horario de pedidos abierto todo el día, para que las pruebas que
+    no son sobre restricción horaria no dependan de la hora real de ejecución."""
+
+    config = Configuracion.get_solo()
+    config.hora_inicio_pedidos = time(0, 0)
+    config.hora_fin_pedidos = time(23, 59)
+    config.save()
+    cache.delete(CONFIGURACION_CACHE_KEY)
+    return config
 
 
 class PedidoFlowTests(TestCase):
     def setUp(self):
         seed_demo_data()
+        abrir_horario_completo()
 
     def test_login_crear_confirmar_y_excel(self):
         self.assertTrue(self.client.login(username="aguilas", password="Aguilas"))
@@ -285,3 +311,139 @@ class PedidoFlowTests(TestCase):
 
     def test_seed_crea_seis_clientes_demo(self):
         self.assertEqual(SucursalCliente.objects.count(), 6)
+
+
+class RestriccionHorariaTests(TestCase):
+    def setUp(self):
+        seed_demo_data()
+
+    def _ventana_fuera_de_ahora(self):
+        """Regresa (inicio, fin) que garantizadamente NO incluye la hora actual."""
+
+        ahora = timezone.localtime().time()
+        if ahora < time(12, 0):
+            return time(20, 0), time(23, 0)
+        return time(0, 0), time(1, 0)
+
+    def test_confirmar_pedido_fuera_de_horario_retorna_400(self):
+        inicio, fin = self._ventana_fuera_de_ahora()
+        config = Configuracion.get_solo()
+        config.hora_inicio_pedidos = inicio
+        config.hora_fin_pedidos = fin
+        config.save()
+        cache.delete(CONFIGURACION_CACHE_KEY)
+
+        self.assertTrue(self.client.login(username="aguilas", password="Aguilas"))
+        producto = Producto.objects.get(nombre="Barbacoa")
+        self.client.post(
+            "/api/pedidos/crear-item/",
+            data=json.dumps({"producto_id": producto.id, "cantidad": "1"}),
+            content_type="application/json",
+        )
+
+        response = self.client.post("/api/pedidos/confirmar/", content_type="application/json")
+        self.assertEqual(response.status_code, 400)
+        data = response.json()
+        self.assertFalse(data["success"])
+        self.assertIn("Pedidos cerrados", data["mensaje"])
+
+        pedido = Pedido.objects.get(sucursal_cliente__nombre="Aguilas")
+        self.assertEqual(pedido.estado, Pedido.Estado.PENDIENTE)
+
+    def test_confirmar_pedido_dentro_de_horario_permite(self):
+        abrir_horario_completo()
+        self.assertTrue(self.client.login(username="aguilas", password="Aguilas"))
+        producto = Producto.objects.get(nombre="Barbacoa")
+        self.client.post(
+            "/api/pedidos/crear-item/",
+            data=json.dumps({"producto_id": producto.id, "cantidad": "1"}),
+            content_type="application/json",
+        )
+        response = self.client.post("/api/pedidos/confirmar/", content_type="application/json")
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.json()["success"])
+
+    def test_endpoint_info_horarios_no_requiere_login(self):
+        abrir_horario_completo()
+        response = self.client.get("/api/horarios/")
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertTrue(data["dentro_horario"])
+        for key in ("hora_inicio", "hora_fin", "hora_actual", "dentro_horario", "mensaje"):
+            self.assertIn(key, data)
+
+    def test_admin_actualiza_horarios_desde_panel_configuracion(self):
+        self.assertTrue(self.client.login(username="admin", password="admin123"))
+        response = self.client.post(
+            "/admin/configuracion/",
+            data={
+                "action": "actualizar_configuracion",
+                "hora_inicio_pedidos": "09:00",
+                "hora_fin_pedidos": "18:00",
+                "hora_envio_recordatorio": "15:30",
+                "dias_recordatorio": ["1", "2", "3", "4", "5"],
+                "email_remitente": "Los Tocayos <correos@lostocayos.com>",
+                "recordatorios_habilitados": "on",
+            },
+        )
+        self.assertRedirects(response, "/admin/configuracion/")
+
+        config = Configuracion.get_solo()
+        self.assertEqual(config.hora_inicio_pedidos, time(9, 0))
+        self.assertEqual(config.hora_fin_pedidos, time(18, 0))
+        self.assertEqual(config.hora_envio_recordatorio, time(15, 30))
+        self.assertEqual(config.dias_recordatorio_lista(), [1, 2, 3, 4, 5])
+        self.assertTrue(config.recordatorios_habilitados)
+        self.assertEqual(config.actualizado_por, "admin")
+
+
+class EnviarRecordatoriosCommandTests(TestCase):
+    def setUp(self):
+        seed_demo_data()
+        self.sucursal = SucursalCliente.objects.get(nombre="Aguilas")
+        self.sucursal.email = "aguilas@example.com"
+        self.sucursal.save()
+
+    def test_modo_test_no_envia_correos_reales(self):
+        call_command("enviar_recordatorios", test=True, fuerza=True)
+        self.assertEqual(len(mail.outbox), 0)
+
+    def test_fuerza_envia_y_registra_log(self):
+        call_command("enviar_recordatorios", fuerza=True)
+        self.assertEqual(len(mail.outbox), 1)
+        self.assertIn(self.sucursal.email, mail.outbox[0].to)
+        self.assertTrue(
+            LogRecordatorio.objects.filter(
+                sucursal_cliente=self.sucursal, estado=LogRecordatorio.Estado.ENVIADO
+            ).exists()
+        )
+
+    def test_sucursal_sin_correo_se_marca_saltada(self):
+        otra = SucursalCliente.objects.get(nombre="Fortin")
+        self.assertEqual(otra.email, "")
+        call_command("enviar_recordatorios", fuerza=True)
+        self.assertTrue(
+            LogRecordatorio.objects.filter(
+                sucursal_cliente=otra, estado=LogRecordatorio.Estado.SALTADO
+            ).exists()
+        )
+
+    def test_sin_fuerza_respeta_dias_configurados(self):
+        config = Configuracion.get_solo()
+        hoy_iso = timezone.localdate().isoweekday()
+        # Configura un único día distinto al de hoy para forzar el "saltado".
+        otro_dia = 1 if hoy_iso != 1 else 2
+        config.dias_recordatorio = str(otro_dia)
+        config.save()
+
+        call_command("enviar_recordatorios")
+        self.assertEqual(len(mail.outbox), 0)
+        self.assertFalse(LogRecordatorio.objects.exists())
+
+    def test_recordatorios_deshabilitados_sin_fuerza_no_envia(self):
+        config = Configuracion.get_solo()
+        config.recordatorios_habilitados = False
+        config.save()
+
+        call_command("enviar_recordatorios")
+        self.assertEqual(len(mail.outbox), 0)
