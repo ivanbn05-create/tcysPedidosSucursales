@@ -10,7 +10,9 @@
         <div>
             <span class="eyebrow">Matriz</span>
             <h1>Pedidos</h1>
+            {% if can_manage_pedidos %}
             <a class="secondary-link compact admin-config-link" href="{% url 'admin_configuracion' %}">Configuraci&oacute;n</a>
+            {% endif %}
         </div>
         <div class="stats-grid">
             <div class="stat-card">
@@ -87,6 +89,7 @@
                             target="_blank"
                             rel="noopener"
                         >Imprimir</a>
+                        {% if can_manage_pedidos %}
                         <a class="primary-link compact" href="{% url 'descargar_y_marcar' pedido.id %}">Excel</a>
                         <form method="post" action="{% url 'marcar_enviado' pedido.id %}">
                             {% csrf_token %}
@@ -96,6 +99,7 @@
                             {% csrf_token %}
                             <button class="danger-button compact" type="submit">Eliminar</button>
                         </form>
+                        {% endif %}
                     </td>
                 </tr>
                 {% empty %}
@@ -127,5 +131,5 @@
 {% endblock %}
 
 {% block scripts %}
-<script src="{% static 'js/admin.js' %}?v=20260714-1" defer></script>
+<script src="{% static 'js/admin.js' %}?v=20260715-2" defer></script>
 {% endblock %}

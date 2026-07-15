@@ -8,6 +8,12 @@
 <main class="login-shell">
     <section class="login-panel">
         <img class="login-logo" src="{% static 'img/mainlogo.webp' %}" alt="Los Tocayos">
+        {% if horario_pedidos %}
+        <div class="login-schedule-status {% if not horario_pedidos.dentro_horario %}closed{% endif %}">
+            <strong>{% if horario_pedidos.dentro_horario %}Pedidos abiertos{% else %}Pedidos cerrados{% endif %}</strong>
+            <span>{{ horario_pedidos.mensaje }}</span>
+        </div>
+        {% endif %}
         <form method="post" class="login-form" novalidate>
             {% csrf_token %}
             <label for="username">Usuario</label>

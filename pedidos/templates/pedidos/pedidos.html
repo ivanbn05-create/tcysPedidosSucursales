@@ -39,13 +39,11 @@
             <span class="item-count" id="itemCount">0</span>
         </div>
 
-        <div class="schedule-status" id="scheduleStatus" hidden></div>
         <div class="notice" id="notice" hidden></div>
         <div class="empty-state" id="emptyState">Sin productos</div>
         <div class="items-list" id="itemsList"></div>
 
         <div class="summary-footer">
-            <p class="total-note">Total tentativo; puede cambiar en el ticket final.</p>
             <div class="total-row">
                 <span>Total</span>
                 <strong id="totalAmount">$0.00</strong>
@@ -93,5 +91,5 @@
 
 {% block scripts %}
 {{ initial_data|json_script:"initial-data" }}
-<script src="{% static 'js/pedidos.js' %}?v=20260715-1" defer></script>
+<script src="{% static 'js/pedidos.js' %}?v=20260715-2" defer></script>
 {% endblock %}

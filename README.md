@@ -23,7 +23,8 @@ La contraseña de cada sucursal/cliente es exactamente su nombre:
 - `Brot Nueva Galicia` / `Brot Nueva Galicia`
 - `Brot CAT` / `Brot CAT`
 - `Rakebela` / `Rakebela`
-- Admin: `admin` / `admin123`
+- Admin: `juancarlos` / `TocayosMO2026`
+- Solo impresión: `juanmanuel` / `imprimir`
 
 Los usernames internos sin espacios también funcionan para pruebas técnicas: `aguilas`, `fortin`, `estancia`, `brot_nueva_galicia`, `brot_cat`, `rakebela`.
 
@@ -32,9 +33,9 @@ Los usernames internos sin espacios también funcionan para pruebas técnicas: `
 - `/pedidos/`: captura de pedido con Fetch API, calculadora y resumen responsivo.
 - `/api/pedidos/crear-item/`: guarda o reemplaza la cantidad del producto en el pedido pendiente.
 - `/api/pedidos/eliminar-item/`: elimina item del pedido pendiente.
-- `/api/pedidos/confirmar/`: confirma con transacción atómica, rate limit de 1 minuto y restricción horaria (rechaza con 400 fuera de `hora_inicio_pedidos`/`hora_fin_pedidos`).
-- `/api/horarios/`: informa el horario vigente de pedidos (sin auth), usado por el frontend para deshabilitar el botón de confirmar fuera de horario.
-- `/admin/`: dashboard propio de matriz con filtros, detalle y descarga.
+- `/api/pedidos/confirmar/`: confirma con transacción atómica, rate limit de 1 minuto, aviso de total tentativo y restricción horaria (rechaza con 400 fuera de `hora_inicio_pedidos`/`hora_fin_pedidos`).
+- `/api/horarios/`: informa el horario vigente de pedidos (sin auth), mostrado en la pantalla de login.
+- `/admin/`: dashboard propio de matriz con filtros, detalle, descarga e impresión. El usuario `juanmanuel` solo puede ver e imprimir.
 - `/admin/configuracion/`: productos, precios, sucursales/clientes (incluye correo de recordatorios), horarios de pedidos y recordatorios, cuenta admin.
 - `/admin/pedidos/<id>/descargar/`: descarga Excel y marca como enviado.
 - `/django-admin/`: admin nativo de Django.

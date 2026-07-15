@@ -7,8 +7,6 @@ document.addEventListener("DOMContentLoaded", () => {
     let quantityInput = "";
     let replaceOnNextKey = false;
     let noticeTimer = null;
-    let horarioBloqueado = false;
-    let horarioTimer = null;
 
     const orderShell = document.querySelector(".order-shell");
     const productButtons = [...document.querySelectorAll(".product-button")];
@@ -22,7 +20,6 @@ document.addEventListener("DOMContentLoaded", () => {
     const totalAmount = document.getElementById("totalAmount");
     const itemCount = document.getElementById("itemCount");
     const notice = document.getElementById("notice");
-    const scheduleStatus = document.getElementById("scheduleStatus");
     const addButton = document.getElementById("addItem");
     const clearButton = document.getElementById("clearOrder");
     const confirmButton = document.getElementById("confirmOrder");
@@ -109,25 +106,8 @@ document.addEventListener("DOMContentLoaded", () => {
     function setBusy(isBusy) {
         addButton.disabled = isBusy;
         clearButton.disabled = isBusy;
-        confirmButton.disabled = isBusy || horarioBloqueado;
+        confirmButton.disabled = isBusy;
         deleteSelectedButton.disabled = isBusy;
-    }
-
-    async function validarHorarioPedidos() {
-        try {
-            const response = await fetch("/api/horarios/");
-            const data = await response.json();
-
-            horarioBloqueado = !data.dentro_horario;
-            scheduleStatus.textContent = (data.dentro_horario ? "✓ " : "✗ ") + data.mensaje;
-            scheduleStatus.classList.toggle("closed", !data.dentro_horario);
-            scheduleStatus.hidden = false;
-            setBusy(false);
-        } catch (error) {
-            // Si falla la consulta de horario, no bloqueamos al usuario: se deja
-            // que el backend valide de nuevo (y rechace) al confirmar si aplica.
-            scheduleStatus.hidden = true;
-        }
     }
 
     function setMobilePanel(panelName) {
@@ -337,7 +317,13 @@ document.addEventListener("DOMContentLoaded", () => {
             showNotice("Agrega al menos un producto.", "error");
             return;
         }
-        if (!window.confirm(`Confirmar pedido por ${money(order.total)}?`)) return;
+        const confirmation = [
+            `El total mostrado (${money(order.total)}) es tentativo.`,
+            "Puede cambiar en el ticket final de la compra.",
+            "",
+            "¿Confirmar pedido?",
+        ].join("\n");
+        if (!window.confirm(confirmation)) return;
         try {
             setBusy(true);
             const data = await postJson("/api/pedidos/confirmar/");
@@ -387,6 +373,4 @@ document.addEventListener("DOMContentLoaded", () => {
 
     selectProduct(selectedProduct?.id);
     renderOrder();
-    validarHorarioPedidos();
-    horarioTimer = window.setInterval(validarHorarioPedidos, 60000);
 });

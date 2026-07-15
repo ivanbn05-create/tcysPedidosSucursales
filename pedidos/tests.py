@@ -64,7 +64,7 @@ class PedidoFlowTests(TestCase):
         self.assertEqual(pedido.total, Decimal("445.00"))
 
         self.client.logout()
-        self.assertTrue(self.client.login(username="admin", password="admin123"))
+        self.assertTrue(self.client.login(username="juancarlos", password="TocayosMO2026"))
         response = self.client.get(f"/admin/pedidos/{pedido.id}/excel/")
         self.assertEqual(response.status_code, 200)
         workbook = load_workbook(BytesIO(response.content))
@@ -136,7 +136,7 @@ class PedidoFlowTests(TestCase):
         pedido_id = response.json()["pedido_id"]
 
         self.client.logout()
-        self.assertTrue(self.client.login(username="admin", password="admin123"))
+        self.assertTrue(self.client.login(username="juancarlos", password="TocayosMO2026"))
         response = self.client.get(f"/admin/pedidos/{pedido_id}/excel/")
         workbook = load_workbook(BytesIO(response.content))
         self.assertEqual(workbook.active["A3"].value, "BARBACOA .M")
@@ -160,7 +160,7 @@ class PedidoFlowTests(TestCase):
         pedido.save(update_fields=["fecha_confirmacion"])
 
         self.client.logout()
-        self.assertTrue(self.client.login(username="admin", password="admin123"))
+        self.assertTrue(self.client.login(username="juancarlos", password="TocayosMO2026"))
         response = self.client.get(f"/admin/pedidos/{pedido_id}/excel/")
         workbook = load_workbook(BytesIO(response.content))
         sheet = workbook.active
@@ -215,6 +215,13 @@ class PedidoFlowTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertNotContains(response, "$178.00")
         self.assertNotContains(response, "precio_unitario")
+        self.assertNotContains(response, "scheduleStatus")
+        self.assertNotContains(response, "Total tentativo")
+
+    def test_login_muestra_horario_de_pedidos(self):
+        response = self.client.get("/login/")
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Pedidos abiertos")
 
     def test_usuario_no_admin_no_puede_ver_dashboard(self):
         self.assertTrue(self.client.login(username="fortin", password="Fortin"))
@@ -226,8 +233,43 @@ class PedidoFlowTests(TestCase):
         self.assertEqual(response.status_code, 302)
         self.assertEqual(response.url, "/pedidos/")
 
+    def test_usuario_impresion_solo_ve_dashboard_e_imprime(self):
+        self.assertTrue(self.client.login(username="aguilas", password="Aguilas"))
+        producto = Producto.objects.get(nombre="LITRO DE BARBACOA")
+        self.client.post(
+            "/api/pedidos/crear-item/",
+            data=json.dumps({"producto_id": producto.id, "cantidad": "1"}),
+            content_type="application/json",
+        )
+        response = self.client.post("/api/pedidos/confirmar/", content_type="application/json")
+        pedido_id = response.json()["pedido_id"]
+        self.client.logout()
+
+        self.assertTrue(self.client.login(username="juanmanuel", password="imprimir"))
+        dashboard = self.client.get("/admin/")
+        self.assertEqual(dashboard.status_code, 200)
+        self.assertContains(dashboard, "Ver detalle")
+        self.assertContains(dashboard, "Imprimir")
+        html = dashboard.content.decode()
+        self.assertNotIn("admin/configuracion", html)
+        self.assertNotIn(">Excel</a>", html)
+        self.assertNotIn("marcar-enviado", html)
+        self.assertNotIn("eliminar/", html)
+
+        print_response = self.client.get(f"/admin/pedidos/{pedido_id}/imprimir/")
+        self.assertEqual(print_response.status_code, 200)
+        self.assertContains(print_response, "window.print()")
+
+        response = self.client.get("/admin/configuracion/")
+        self.assertEqual(response.status_code, 302)
+        response = self.client.get(f"/admin/pedidos/{pedido_id}/excel/")
+        self.assertEqual(response.status_code, 302)
+        response = self.client.post(f"/admin/pedidos/{pedido_id}/eliminar/")
+        self.assertEqual(response.status_code, 302)
+        self.assertFalse(Pedido.objects.get(id=pedido_id).eliminado)
+
     def test_admin_configura_ticket_precio_y_password(self):
-        self.assertTrue(self.client.login(username="admin", password="admin123"))
+        self.assertTrue(self.client.login(username="juancarlos", password="TocayosMO2026"))
         producto = Producto.objects.get(nombre="LITRO DE BARBACOA")
         sucursal = SucursalCliente.objects.get(nombre="Aguilas")
 
@@ -297,13 +339,13 @@ class PedidoFlowTests(TestCase):
         pedido_id = response.json()["pedido_id"]
 
         self.client.logout()
-        self.assertTrue(self.client.login(username="admin", password="admin123"))
+        self.assertTrue(self.client.login(username="juancarlos", password="TocayosMO2026"))
         response = self.client.get(f"/admin/pedidos/{pedido_id}/excel/")
         workbook = load_workbook(BytesIO(response.content))
         self.assertEqual(workbook.active["A3"].value, "BARBA")
 
     def test_admin_puede_crear_producto_y_usuario(self):
-        self.assertTrue(self.client.login(username="admin", password="admin123"))
+        self.assertTrue(self.client.login(username="juancarlos", password="TocayosMO2026"))
         response = self.client.post(
             "/admin/configuracion/",
             data={
@@ -349,7 +391,7 @@ class PedidoFlowTests(TestCase):
         self.assertEqual(response.status_code, 200)
 
         self.client.logout()
-        self.assertTrue(self.client.login(username="admin", password="admin123"))
+        self.assertTrue(self.client.login(username="juancarlos", password="TocayosMO2026"))
         response = self.client.post(
             "/admin/configuracion/",
             data={
@@ -416,6 +458,18 @@ class RestriccionHorariaTests(TestCase):
         pedido = Pedido.objects.get(sucursal_cliente__nombre="Aguilas")
         self.assertEqual(pedido.estado, Pedido.Estado.PENDIENTE)
 
+    def test_login_muestra_pedidos_cerrados_fuera_de_horario(self):
+        inicio, fin = self._ventana_fuera_de_ahora()
+        config = Configuracion.get_solo()
+        config.hora_inicio_pedidos = inicio
+        config.hora_fin_pedidos = fin
+        config.save()
+        cache.delete(CONFIGURACION_CACHE_KEY)
+
+        response = self.client.get("/login/")
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Pedidos cerrados")
+
     def test_confirmar_pedido_dentro_de_horario_permite(self):
         abrir_horario_completo()
         self.assertTrue(self.client.login(username="aguilas", password="Aguilas"))
@@ -439,7 +493,7 @@ class RestriccionHorariaTests(TestCase):
             self.assertIn(key, data)
 
     def test_admin_actualiza_horarios_desde_panel_configuracion(self):
-        self.assertTrue(self.client.login(username="admin", password="admin123"))
+        self.assertTrue(self.client.login(username="juancarlos", password="TocayosMO2026"))
         response = self.client.post(
             "/admin/configuracion/",
             data={
@@ -460,7 +514,7 @@ class RestriccionHorariaTests(TestCase):
         self.assertEqual(config.hora_envio_recordatorio, time(15, 30))
         self.assertEqual(config.dias_recordatorio_lista(), [1, 2, 3, 4, 5])
         self.assertTrue(config.recordatorios_habilitados)
-        self.assertEqual(config.actualizado_por, "admin")
+        self.assertEqual(config.actualizado_por, "juancarlos")
 
 
 class EnviarRecordatoriosCommandTests(TestCase):

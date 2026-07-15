@@ -32,10 +32,23 @@ from .tickets import build_ticket_workbook, ticket_context
 logger = logging.getLogger(__name__)
 
 CONFIGURACION_CACHE_TIMEOUT = 300  # 5 minutos
+PRINT_GROUP_NAME = "Operador de impresion"
 
 
 def is_admin_user(user):
     return user.is_authenticated and (user.is_staff or user.is_superuser)
+
+
+def is_print_user(user):
+    return (
+        user.is_authenticated
+        and not is_admin_user(user)
+        and user.groups.filter(name=PRINT_GROUP_NAME).exists()
+    )
+
+
+def can_view_admin_dashboard(user):
+    return is_admin_user(user) or is_print_user(user)
 
 
 def admin_required(view_func):
@@ -50,10 +63,22 @@ def admin_required(view_func):
     return wrapped
 
 
+def dashboard_required(view_func):
+    @wraps(view_func)
+    @login_required
+    def wrapped(request, *args, **kwargs):
+        if not can_view_admin_dashboard(request.user):
+            messages.error(request, "No tienes permiso para entrar al panel admin.")
+            return redirect("pedidos")
+        return view_func(request, *args, **kwargs)
+
+    return wrapped
+
+
 def home(request):
     if not request.user.is_authenticated:
         return redirect("login")
-    if is_admin_user(request.user):
+    if can_view_admin_dashboard(request.user):
         return redirect("admin_dashboard")
     return redirect("pedidos")
 
@@ -85,11 +110,11 @@ def login_view(request):
         user = authenticate(request, username=username, password=password)
         if user is not None:
             login(request, user)
-            return redirect("admin_dashboard" if is_admin_user(user) else "pedidos")
+            return redirect("admin_dashboard" if can_view_admin_dashboard(user) else "pedidos")
 
         messages.error(request, "Usuario o contraseña incorrectos.")
 
-    return render(request, "pedidos/login.html")
+    return render(request, "pedidos/login.html", horario_login_context())
 
 
 @require_http_methods(["GET", "POST"])
@@ -158,6 +183,19 @@ def validar_horario_pedidos():
     else:
         mensaje = f"Pedidos cerrados. Reabre a las {config.hora_inicio_pedidos:%H:%M}."
     return dentro_horario, mensaje
+
+
+def horario_login_context():
+    config = get_configuracion()
+    dentro_horario, mensaje = validar_horario_pedidos()
+    return {
+        "horario_pedidos": {
+            "dentro_horario": dentro_horario,
+            "mensaje": mensaje,
+            "hora_inicio": config.hora_inicio_pedidos.strftime("%H:%M"),
+            "hora_fin": config.hora_fin_pedidos.strftime("%H:%M"),
+        }
+    }
 
 
 def info_horarios(request):
@@ -255,7 +293,7 @@ def parse_cantidad(value):
 
 @login_required
 def pedidos_view(request):
-    if is_admin_user(request.user):
+    if can_view_admin_dashboard(request.user):
         return redirect("admin_dashboard")
 
     sucursal = sucursal_para_usuario(request.user)
@@ -803,7 +841,7 @@ def admin_configuracion(request):
     )
 
 
-@admin_required
+@dashboard_required
 def admin_dashboard(request):
     pedidos = (
         Pedido.objects.filter(eliminado=False)
@@ -859,6 +897,7 @@ def admin_dashboard(request):
             "hasta": hasta,
             "q": q,
         },
+        "can_manage_pedidos": is_admin_user(request.user),
     }
     return render(request, "pedidos/admin_dashboard.html", context)
 
@@ -900,7 +939,7 @@ def descargar_y_marcar(request, pedido_id):
     return excel_response_for_pedido(pedido)
 
 
-@admin_required
+@dashboard_required
 def imprimir_pedido(request, pedido_id):
     pedido = get_object_or_404(
         Pedido.objects.select_related("sucursal_cliente").prefetch_related("items__producto"),

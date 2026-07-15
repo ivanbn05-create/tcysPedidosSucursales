@@ -1,10 +1,14 @@
 from decimal import Decimal
 
 from django.contrib.auth import get_user_model
+from django.contrib.auth.models import Group
 from django.utils import timezone
 from django.utils.text import slugify
 
 from .models import Configuracion, Precio, Producto, SucursalCliente
+
+
+PRINT_GROUP_NAME = "Operador de impresion"
 
 
 PRODUCTOS_CATALOGO = [
@@ -18,7 +22,7 @@ PRODUCTOS_CATALOGO = [
     ("SALSA DE TOMATE", "S. ROJA", "LITRO (LT)", "LT", "1.000", False),
     ("SALSA DE AGUACATE", "S. VERDE", "LITRO (LT)", "LT", "1.000", False),
     ("SALSA DE CHIPOTLE", "S. CHIPOTLE", "LITRO (LT)", "LT", "1.000", False),
-    ("SALSA DE SERRANO", "S. SERRANI", "LITRO (LT)", "LT", "1.000", False),
+    ("SALSA DE SERRANO", "S. SERRANO", "LITRO (LT)", "LT", "1.000", False),
     ("SALSA VERDE SIN CHILE", "S. VERDE S/CH", "LITRO (LT)", "LT", "1.000", False),
     ("SALSA MEXICANA", "S. MEXICANA", "KILOGRAMO (KG)", "KG", "1.000", False),
     ("SALSA HABANERO TATEMADO", "S. HABANERO", "LITRO (LT)", "LT", "1.000", False),
@@ -60,7 +64,7 @@ PRECIOS_POR_GRUPO = {
         "SALSA DE TOMATE": ("60", "S. ROJA"),
         "SALSA DE AGUACATE": ("60", "S. VERDE"),
         "SALSA DE CHIPOTLE": ("56", "S. CHIPOTLE"),
-        "SALSA DE SERRANO": ("56", "S. SERRANI"),
+        "SALSA DE SERRANO": ("56", "S. SERRANO"),
         "SALSA VERDE SIN CHILE": ("55", "S. VERDE S/CH"),
         "SALSA MEXICANA": ("45", "S. MEXICANA"),
         "SALSA HABANERO TATEMADO": ("55", "S. HABANERO"),
@@ -100,7 +104,7 @@ PRECIOS_POR_GRUPO = {
         "SALSA DE TOMATE": ("60", "S. ROJA"),
         "SALSA DE AGUACATE": ("60", "S. VERDE"),
         "SALSA DE CHIPOTLE": ("56", "S. CHIPOTLE"),
-        "SALSA DE SERRANO": ("56", "S. SERRANI"),
+        "SALSA DE SERRANO": ("56", "S. SERRANO"),
         "SALSA VERDE SIN CHILE": ("55", "S. VERDE S/CH"),
         "SALSA MEXICANA": ("45", "S. MEXICANA"),
         "SALSA HABANERO TATEMADO": ("55", "S. HABANERO"),
@@ -140,7 +144,7 @@ PRECIOS_POR_GRUPO = {
         "SALSA DE TOMATE": ("60", "S. ROJA"),
         "SALSA DE AGUACATE": ("60", "S. VERDE"),
         "SALSA DE CHIPOTLE": ("56", "S. CHIPOTLE"),
-        "SALSA DE SERRANO": ("56", "S. SERRANI"),
+        "SALSA DE SERRANO": ("56", "S. SERRANO"),
         "SALSA VERDE SIN CHILE": ("55", "S. VERDE S/CH"),
         "SALSA MEXICANA": ("45", "S. MEXICANA"),
         "SALSA HABANERO TATEMADO": ("55", "S. HABANERO"),
@@ -193,13 +197,32 @@ def seed_demo_data():
 
     User = get_user_model()
 
-    admin, admin_created = User.objects.get_or_create(username="admin")
+    admin = User.objects.filter(username="juancarlos").first()
+    legacy_admin = User.objects.filter(username="admin", is_staff=True).first()
+    if admin is None:
+        admin = legacy_admin or User(username="juancarlos")
+    admin.username = "juancarlos"
     admin.is_staff = True
     admin.is_superuser = True
-    admin.first_name = admin.first_name or "Admin"
-    if admin_created or not admin.has_usable_password():
-        admin.set_password("admin123")
+    admin.is_active = True
+    admin.first_name = "Juan Carlos"
+    admin.set_password("TocayosMO2026")
     admin.save()
+    User.objects.filter(username="admin").exclude(pk=admin.pk).update(
+        is_staff=False,
+        is_superuser=False,
+        is_active=False,
+    )
+
+    print_group, _ = Group.objects.get_or_create(name=PRINT_GROUP_NAME)
+    printer_user, _ = User.objects.get_or_create(username="juanmanuel")
+    printer_user.first_name = "Juan Manuel"
+    printer_user.is_staff = False
+    printer_user.is_superuser = False
+    printer_user.is_active = True
+    printer_user.set_password("imprimir")
+    printer_user.save()
+    printer_user.groups.add(print_group)
 
     productos = {}
     for orden, (
