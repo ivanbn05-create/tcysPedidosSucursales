@@ -35,7 +35,7 @@ Los usernames internos sin espacios también funcionan para pruebas técnicas: `
 - `/api/pedidos/eliminar-item/`: elimina item del pedido pendiente.
 - `/api/pedidos/confirmar/`: confirma con transacción atómica, rate limit de 1 minuto, aviso de total tentativo y restricción horaria (rechaza con 400 fuera de `hora_inicio_pedidos`/`hora_fin_pedidos`).
 - `/api/horarios/`: informa el horario vigente de pedidos (sin auth), mostrado en la pantalla de login.
-- `/admin/`: dashboard propio de matriz con filtros, detalle, descarga e impresión. El usuario `juanmanuel` solo puede ver e imprimir.
+- `/admin/`: dashboard propio de matriz con filtros, detalle, descarga e impresión. El usuario `juanmanuel` solo puede ver e imprimir. Los pedidos se muestran por fecha/hora, no por ID incremental.
 - `/admin/configuracion/`: productos, precios, sucursales/clientes (incluye correo de recordatorios), horarios de pedidos y recordatorios, cuenta admin.
 - `/admin/pedidos/<id>/descargar/`: descarga Excel y marca como enviado.
 - `/django-admin/`: admin nativo de Django.
@@ -95,4 +95,4 @@ python manage.py test pedidos
 python manage.py collectstatic --noinput
 ```
 
-El Excel se genera en memoria con `openpyxl`, sin headers, en tres columnas: producto, cantidad y columna vacía.
+El Excel se genera en memoria con `openpyxl`, sin headers, en tres columnas: producto, cantidad y columna vacía. El ticket sólo imprime una fila por producto pedido; no agrega filas vacías de relleno.
