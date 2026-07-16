@@ -8,7 +8,6 @@ from openpyxl.worksheet.page import PageMargins
 
 from .models import Precio
 
-TICKET_MIN_ITEM_ROWS = 31
 TICKET_COLUMN_WIDTHS = {
     "A": 15.140625,
     "B": 10.7109375,
@@ -24,6 +23,7 @@ TICKET_HEADER_HEIGHT_MM = 7.67
 TICKET_DATE_HEIGHT_MM = 5.82
 TICKET_ITEM_HEIGHT_MM = 9.26
 TICKET_SHORT_ITEM_HEIGHT_MM = 8.20
+TICKET_PRINT_SAFETY_HEIGHT_MM = 6.0
 TICKET_WIDTH_MM = 58
 TICKET_COLUMN_WIDTHS_MM = {
     "product": 26.25,
@@ -89,16 +89,13 @@ def ticket_title(pedido):
 
 def ticket_items(pedido):
     fecha = ticket_date(pedido)
-    rows = [
+    return [
         {
             "producto": ticket_label_for_item(item, fecha),
             "cantidad": format_ticket_quantity_with_unit(item, fecha),
         }
         for item in pedido.items.select_related("producto").all()
     ]
-    item_count = max(TICKET_MIN_ITEM_ROWS, len(rows))
-    rows.extend({"producto": "", "cantidad": ""} for _ in range(item_count - len(rows)))
-    return rows
 
 
 def ticket_context(pedido):
@@ -119,6 +116,7 @@ def ticket_context(pedido):
         TICKET_HEADER_HEIGHT_MM
         + TICKET_DATE_HEIGHT_MM
         + sum(row["height_mm"] for row in rows)
+        + TICKET_PRINT_SAFETY_HEIGHT_MM
     )
     return {
         "pedido": pedido,

@@ -16,6 +16,7 @@ from django.http import HttpResponse, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
 from django.utils import timezone
+from django.utils.text import slugify
 from django.views.decorators.http import require_http_methods, require_POST
 
 from .models import (
@@ -218,6 +219,15 @@ def info_horarios(request):
 
 def decimal_to_str(value, places="0.01"):
     return str(Decimal(value).quantize(Decimal(places)))
+
+
+def parse_filter_date(value):
+    for date_format in ("%Y-%m-%d", "%d/%m/%Y", "%d-%m-%Y"):
+        try:
+            return datetime.strptime(value, date_format).date()
+        except ValueError:
+            continue
+    return None
 
 
 def etiqueta_ticket_para_item(item, fecha=None):
@@ -489,8 +499,9 @@ def confirmar_pedido(request):
         {
             "success": True,
             "pedido_id": pedido.id,
+            "pedido_folio": pedido.folio_fecha,
             "total": decimal_to_str(pedido.total),
-            "mensaje": f"Pedido confirmado #{pedido.id}.",
+            "mensaje": f"Pedido confirmado {pedido.folio_fecha}.",
         }
     )
 
@@ -866,8 +877,11 @@ def admin_dashboard(request):
         pedidos = pedidos.filter(fecha_creacion__date__lte=hasta)
     if q:
         filtro = Q(sucursal_cliente__nombre__icontains=q) | Q(usuario_nombre__icontains=q)
-        if q.isdigit():
-            filtro |= Q(id=int(q))
+        fecha_busqueda = parse_filter_date(q)
+        if fecha_busqueda:
+            filtro |= Q(fecha_creacion__date=fecha_busqueda) | Q(
+                fecha_confirmacion__date=fecha_busqueda
+            )
         pedidos = pedidos.filter(filtro)
 
     pedidos_list = list(pedidos)
@@ -904,8 +918,8 @@ def admin_dashboard(request):
 
 def excel_response_for_pedido(pedido):
     output = build_ticket_workbook(pedido)
-    fecha = timezone.localtime(pedido.fecha_creacion).strftime("%Y%m%d")
-    filename = f"pedido_{pedido.id}_{fecha}.xlsx"
+    sucursal = slugify(pedido.sucursal_cliente.nombre) or "pedido"
+    filename = f"pedido_{sucursal}_{pedido.folio_archivo}.xlsx"
     response = HttpResponse(
         output.getvalue(),
         content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
@@ -967,5 +981,5 @@ def eliminar_pedido(request, pedido_id):
     pedido.eliminado = True
     pedido.save(update_fields=["eliminado"])
     logger.info("Pedido #%s eliminado suavemente por %s", pedido.id, request.user.username)
-    messages.success(request, f"Pedido #{pedido.id} eliminado.")
+    messages.success(request, f"Pedido {pedido.folio_fecha} eliminado.")
     return redirect("admin_dashboard")

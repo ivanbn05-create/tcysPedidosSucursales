@@ -333,7 +333,7 @@ document.addEventListener("DOMContentLoaded", () => {
             replaceOnNextKey = false;
             setQuantityConfirmed(false);
             renderOrder();
-            successText.textContent = `Pedido #${data.pedido_id} por ${money(data.total)}.`;
+            successText.textContent = `Pedido ${data.pedido_folio} por ${money(data.total)}.`;
             modal.hidden = false;
             window.setTimeout(() => {
                 modal.hidden = true;

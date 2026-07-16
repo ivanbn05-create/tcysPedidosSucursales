@@ -58,6 +58,8 @@ class PedidoFlowTests(TestCase):
         self.assertEqual(response.status_code, 200)
         data = response.json()
         self.assertTrue(data["success"])
+        self.assertIn("pedido_folio", data)
+        self.assertNotIn("#", data["mensaje"])
 
         pedido = Pedido.objects.get(id=data["pedido_id"])
         self.assertEqual(pedido.estado, Pedido.Estado.CONFIRMADO)
@@ -81,22 +83,55 @@ class PedidoFlowTests(TestCase):
         self.assertEqual(sheet.row_dimensions[1].height, 21.75)
         self.assertEqual(sheet.row_dimensions[2].height, 16.5)
         self.assertEqual(sheet.row_dimensions[3].height, 26.25)
-        self.assertEqual(sheet.row_dimensions[7].height, 23.25)
+        self.assertEqual(sheet.max_row, 3)
         self.assertEqual(sheet.page_margins.left, 0)
         self.assertEqual(sheet.page_margins.right, 0)
         self.assertEqual(sheet.page_setup.paperSize, 121)
         self.assertEqual(sheet.page_setup.scale, 90)
         self.assertEqual(sheet.page_setup.horizontalDpi, 203)
-        self.assertEqual(sheet.print_area, "'PEDIDOS'!$A$1:$C$33")
+        self.assertEqual(sheet.print_area, "'PEDIDOS'!$A$1:$C$3")
 
         print_response = self.client.get(f"/admin/pedidos/{pedido.id}/imprimir/")
         self.assertEqual(print_response.status_code, 200)
         self.assertContains(print_response, "window.print()")
-        self.assertContains(print_response, "size: 58mm 299.49mm;")
+        self.assertContains(print_response, "size: 58mm 28.75mm;")
+        self.assertContains(print_response, 'class="ticket-item-row"', count=1)
         self.assertContains(print_response, "AGUILAS")
         self.assertContains(print_response, "BARBACOA")
         self.assertContains(print_response, "2.5 KG")
         self.assertNotContains(print_response, "$445.00")
+
+        dashboard = self.client.get("/admin/")
+        self.assertContains(dashboard, pedido.folio_fecha)
+        self.assertNotContains(dashboard, f"#{pedido.id}")
+
+    def test_ticket_imprime_solo_una_fila_por_producto_pedido(self):
+        self.assertTrue(self.client.login(username="aguilas", password="Aguilas"))
+        productos = list(
+            Producto.objects.filter(precios__sucursal_cliente__nombre="Aguilas")
+            .distinct()
+            .order_by("orden", "nombre")[:5]
+        )
+        self.assertEqual(len(productos), 5)
+        for producto in productos:
+            response = self.client.post(
+                "/api/pedidos/crear-item/",
+                data=json.dumps({"producto_id": producto.id, "cantidad": "1"}),
+                content_type="application/json",
+            )
+            self.assertEqual(response.status_code, 200)
+
+        response = self.client.post("/api/pedidos/confirmar/", content_type="application/json")
+        pedido_id = response.json()["pedido_id"]
+
+        self.client.logout()
+        self.assertTrue(self.client.login(username="juancarlos", password="TocayosMO2026"))
+        response = self.client.get(f"/admin/pedidos/{pedido_id}/excel/")
+        workbook = load_workbook(BytesIO(response.content))
+        self.assertEqual(workbook.active.print_area, "'PEDIDOS'!$A$1:$C$7")
+
+        print_response = self.client.get(f"/admin/pedidos/{pedido_id}/imprimir/")
+        self.assertContains(print_response, 'class="ticket-item-row"', count=5)
 
     def test_cliente_mayorista_usa_precio_dos_pesos(self):
         self.assertTrue(self.client.login(username="brot_nueva_galicia", password="Brot Nueva Galicia"))

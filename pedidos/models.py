@@ -150,7 +150,23 @@ class Pedido(models.Model):
         ordering = ["-fecha_creacion"]
 
     def __str__(self):
-        return f"Pedido #{self.pk} - {self.sucursal_cliente}"
+        return f"Pedido {self.folio_fecha} - {self.sucursal_cliente}"
+
+    @property
+    def fecha_referencia(self):
+        return self.fecha_confirmacion or self.fecha_creacion
+
+    @property
+    def folio_fecha(self):
+        if self.fecha_referencia is None:
+            return "sin fecha"
+        return timezone.localtime(self.fecha_referencia).strftime("%d/%m/%Y %H:%M")
+
+    @property
+    def folio_archivo(self):
+        if self.fecha_referencia is None:
+            return "sin_fecha"
+        return timezone.localtime(self.fecha_referencia).strftime("%Y%m%d_%H%M%S")
 
     @property
     def cantidad_items(self):

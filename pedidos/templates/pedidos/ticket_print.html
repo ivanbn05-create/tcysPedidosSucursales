@@ -3,7 +3,7 @@
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>Imprimir pedido #{{ pedido.id }}</title>
+    <title>Imprimir pedido {{ pedido.folio_fecha }}</title>
     <style>
         @page {
             size: {{ ticket_width_mm }}mm {{ ticket_height_mm }}mm;
@@ -56,6 +56,13 @@
             table-layout: fixed;
             border-collapse: collapse;
             border-spacing: 0;
+            break-inside: avoid;
+            page-break-inside: avoid;
+        }
+
+        .ticket-table,
+        .ticket-table * {
+            box-sizing: border-box;
         }
 
         .ticket-table col.product {
@@ -105,6 +112,11 @@
             vertical-align: middle;
         }
 
+        .ticket-item-row {
+            break-inside: avoid;
+            page-break-inside: avoid;
+        }
+
         .ticket-product {
             padding-left: 1mm !important;
             font-size: 10pt;
@@ -150,6 +162,8 @@
             .ticket-sheet {
                 margin: 0;
                 box-shadow: none;
+                break-inside: avoid;
+                page-break-inside: avoid;
             }
         }
     </style>
