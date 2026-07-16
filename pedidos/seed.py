@@ -182,9 +182,22 @@ CLIENTES_DEMO = [
     ("Rakebela", SucursalCliente.Tipo.CLIENTE_MAYORISTA, "mayoreo"),
 ]
 
+CLIENTE_PASSWORD_SUFFIXES = {
+    "Aguilas": "8445",
+    "Fortin": "9481",
+    "Estancia": "7608",
+    "Brot Nueva Galicia": "0846",
+    "Brot CAT": "7721",
+    "Rakebela": "4349",
+}
+
 
 def username_for_name(nombre):
     return slugify(nombre).replace("-", "_")
+
+
+def password_for_cliente(nombre):
+    return f"{nombre}{CLIENTE_PASSWORD_SUFFIXES[nombre]}"
 
 
 def ensure_password(user, password):
@@ -258,7 +271,7 @@ def seed_demo_data():
         user.is_superuser = False
         user.is_active = True
         if user_created or not user.has_usable_password():
-            user.set_password(nombre)
+            user.set_password(password_for_cliente(nombre))
         user.save()
 
         sucursal, _ = SucursalCliente.objects.update_or_create(

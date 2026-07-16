@@ -4,7 +4,7 @@ Contexto operativo para un agente de IA que va a mantener, actualizar o extender
 
 ## Qué es esto
 
-App Django monolítica (un solo app `pedidos`) para que sucursales de "Los Tocayos" (negocio de barbacoa/tortillas) y clientes mayoristas capturen pedidos desde el navegador (celular o tablet en sucursal), y un usuario admin (matriz) los revise, filtre, descargue en Excel o los imprima directo en una impresora térmica de tickets (58mm) usando el diálogo de impresión del navegador. No hay frontend framework: es Django + templates + JS vanilla con `fetch`, simulando una SPA solo en la vista `/pedidos/`.
+App Django monolítica (un solo app `pedidos`) para que sucursales de "Los Tocayos" (negocio de barbacoa/tortillas) y clientes mayoristas capturen pedidos desde el navegador (celular o tablet en sucursal), y un usuario admin (matriz) los revise, filtre, descargue en Excel o los imprima directo en una impresora térmica de tickets (72mm imprimibles en impresora 80mm) usando el diálogo de impresión del navegador. No hay frontend framework: es Django + templates + JS vanilla con `fetch`, simulando una SPA solo en la vista `/pedidos/`.
 
 Todo el código, UI y mensajes están en español (México). Mantén ese idioma en cualquier código, commit o texto nuevo.
 
@@ -35,7 +35,7 @@ pedidos/
     pedidos.html + static/js/pedidos.js     captura de pedido (SPA-like, fetch), sin precios unitarios en la UI
     admin_dashboard.html + static/js/admin.js  panel de matriz (filtros, detalle, descarga)
     admin_configuracion.html                CRUD de productos/precios/sucursales/admin + horarios/recordatorios
-    ticket_print.html                       HTML/CSS @page 58mm, window.print() automático
+    ticket_print.html                       HTML/CSS @page 72mm, window.print() automático
     emails/recordatorio.html + .txt         plantilla del correo de recordatorio (HTML + texto plano)
 static/             fuente de CSS/JS/img servidos por WhiteNoise
 staticfiles/        salida de collectstatic — generado, NUNCA editar a mano, está en .gitignore
@@ -130,7 +130,7 @@ Comandos de Render (de `README.md`):
 - Si el plan tiene Release/pre-deploy: puedes mover ahi `python manage.py migrate && python manage.py seed_demo`
 - Start: `gunicorn proyecto.wsgi` (`Procfile` ya lo define igual)
 
-**Riesgo real a vigilar**: `seed_demo` corre en cada deploy y es idempotente en estructura, pero **resetea la contraseña del admin `juancarlos` a `TocayosMO2026`, la del usuario de impresión `juanmanuel` a `imprimir`** y la de cada sucursal a su propio nombre (`set_password` incondicional en `seed.py`). Si en algún momento el negocio cambia contraseñas desde `/admin/configuracion/`, el siguiente deploy las vuelve a pisar. Antes de tocar el pipeline de deploy o `seed.py`, confirma con el usuario si eso sigue siendo intencional (es razonable en fase demo, peligroso si ya hay contraseñas reales de operación).
+**Riesgo real a vigilar**: `seed_demo` corre en cada deploy y es idempotente en estructura; hoy fija la contraseña del admin `juancarlos` a `TocayosMO2026`, la del usuario de impresión `juanmanuel` a `imprimir`, y solo asigna contraseñas de sucursal/cliente al crear usuarios nuevos o si no tienen contraseña usable. Si en algún momento el negocio cambia contraseñas desde `/admin/configuracion/`, revisa `seed.py` antes de cambiar esa política para no pisar claves reales de operación.
 
 ## Variables de entorno
 

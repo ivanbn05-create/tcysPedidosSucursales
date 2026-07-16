@@ -20,7 +20,7 @@ from .models import (
     Producto,
     SucursalCliente,
 )
-from .seed import seed_demo_data
+from .seed import CLIENTES_DEMO, password_for_cliente, seed_demo_data
 
 
 def abrir_horario_completo():
@@ -41,7 +41,7 @@ class PedidoFlowTests(TestCase):
         abrir_horario_completo()
 
     def test_login_crear_confirmar_y_excel(self):
-        self.assertTrue(self.client.login(username="aguilas", password="Aguilas"))
+        self.assertTrue(self.client.login(username="aguilas", password="Aguilas8445"))
         producto = Producto.objects.get(nombre="LITRO DE BARBACOA")
 
         response = self.client.post(
@@ -94,7 +94,7 @@ class PedidoFlowTests(TestCase):
         print_response = self.client.get(f"/admin/pedidos/{pedido.id}/imprimir/")
         self.assertEqual(print_response.status_code, 200)
         self.assertContains(print_response, "window.print()")
-        self.assertContains(print_response, "size: 58mm 28.75mm;")
+        self.assertContains(print_response, "size: 72mm 73mm;")
         self.assertContains(print_response, 'class="ticket-item-row"', count=1)
         self.assertContains(print_response, "AGUILAS")
         self.assertContains(print_response, "BARBACOA")
@@ -106,7 +106,7 @@ class PedidoFlowTests(TestCase):
         self.assertNotContains(dashboard, f"#{pedido.id}")
 
     def test_ticket_imprime_solo_una_fila_por_producto_pedido(self):
-        self.assertTrue(self.client.login(username="aguilas", password="Aguilas"))
+        self.assertTrue(self.client.login(username="aguilas", password="Aguilas8445"))
         productos = list(
             Producto.objects.filter(precios__sucursal_cliente__nombre="Aguilas")
             .distinct()
@@ -134,7 +134,7 @@ class PedidoFlowTests(TestCase):
         self.assertContains(print_response, 'class="ticket-item-row"', count=5)
 
     def test_cliente_mayorista_usa_precio_dos_pesos(self):
-        self.assertTrue(self.client.login(username="brot_nueva_galicia", password="Brot Nueva Galicia"))
+        self.assertTrue(self.client.login(username="brot_nueva_galicia", password="Brot Nueva Galicia0846"))
         producto = Producto.objects.get(nombre="TORTILLA ESPECIAL")
         response = self.client.post(
             "/api/pedidos/crear-item/",
@@ -145,7 +145,7 @@ class PedidoFlowTests(TestCase):
         self.assertEqual(response.json()["total_pedido"], "79.50")
 
     def test_chile_guero_se_cobra_por_kilo_promedio_de_treinta_piezas(self):
-        self.assertTrue(self.client.login(username="aguilas", password="Aguilas"))
+        self.assertTrue(self.client.login(username="aguilas", password="Aguilas8445"))
         producto = Producto.objects.get(nombre="CHILE GüERO")
         response = self.client.post(
             "/api/pedidos/crear-item/",
@@ -159,7 +159,7 @@ class PedidoFlowTests(TestCase):
         self.assertEqual(data["pedido"]["items"][0]["unidad"], "PZA")
 
     def test_ticket_mayoreo_marca_productos_con_sufijo_m(self):
-        self.assertTrue(self.client.login(username="brot_nueva_galicia", password="Brot Nueva Galicia"))
+        self.assertTrue(self.client.login(username="brot_nueva_galicia", password="Brot Nueva Galicia0846"))
         producto = Producto.objects.get(nombre="LITRO DE BARBACOA")
         response = self.client.post(
             "/api/pedidos/crear-item/",
@@ -177,7 +177,7 @@ class PedidoFlowTests(TestCase):
         self.assertEqual(workbook.active["A3"].value, "BARBACOA .M")
 
     def test_promo_martes_aguilas_agrega_cinco_por_cada_veinte_en_ticket(self):
-        self.assertTrue(self.client.login(username="aguilas", password="Aguilas"))
+        self.assertTrue(self.client.login(username="aguilas", password="Aguilas8445"))
         producto = Producto.objects.get(nombre="LITRO DE BARBACOA")
         response = self.client.post(
             "/api/pedidos/crear-item/",
@@ -203,7 +203,7 @@ class PedidoFlowTests(TestCase):
         self.assertEqual(pedido.total, Decimal("3560.00"))
 
     def test_agregar_producto_existente_reemplaza_cantidad(self):
-        self.assertTrue(self.client.login(username="aguilas", password="Aguilas"))
+        self.assertTrue(self.client.login(username="aguilas", password="Aguilas8445"))
         producto = Producto.objects.get(nombre="LITRO DE BARBACOA")
 
         first = self.client.post(
@@ -225,7 +225,7 @@ class PedidoFlowTests(TestCase):
         self.assertEqual(data["pedido"]["items"][0]["cantidad"], "3.000")
 
     def test_primer_item_se_muestra_si_habia_pedido_pendiente_vacio(self):
-        self.assertTrue(self.client.login(username="aguilas", password="Aguilas"))
+        self.assertTrue(self.client.login(username="aguilas", password="Aguilas8445"))
         sucursal = SucursalCliente.objects.get(nombre="Aguilas")
         Pedido.objects.create(sucursal_cliente=sucursal, usuario_nombre=sucursal.nombre)
         producto = Producto.objects.get(nombre="SALSA DE AGUACATE")
@@ -244,7 +244,7 @@ class PedidoFlowTests(TestCase):
         self.assertEqual(data["pedido"]["items"][0]["cantidad"], "1.000")
 
     def test_pantalla_pedidos_no_muestra_precios_unitarios(self):
-        self.assertTrue(self.client.login(username="aguilas", password="Aguilas"))
+        self.assertTrue(self.client.login(username="aguilas", password="Aguilas8445"))
         response = self.client.get("/pedidos/")
 
         self.assertEqual(response.status_code, 200)
@@ -257,9 +257,11 @@ class PedidoFlowTests(TestCase):
         response = self.client.get("/login/")
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, "Pedidos abiertos")
+        self.assertContains(response, "data-password-toggle")
+        self.assertContains(response, 'aria-label="Mostrar contraseña"')
 
     def test_usuario_no_admin_no_puede_ver_dashboard(self):
-        self.assertTrue(self.client.login(username="fortin", password="Fortin"))
+        self.assertTrue(self.client.login(username="fortin", password="Fortin9481"))
         response = self.client.get("/admin/")
         self.assertEqual(response.status_code, 302)
         self.assertEqual(response.url, "/pedidos/")
@@ -269,7 +271,7 @@ class PedidoFlowTests(TestCase):
         self.assertEqual(response.url, "/pedidos/")
 
     def test_usuario_impresion_solo_ve_dashboard_e_imprime(self):
-        self.assertTrue(self.client.login(username="aguilas", password="Aguilas"))
+        self.assertTrue(self.client.login(username="aguilas", password="Aguilas8445"))
         producto = Producto.objects.get(nombre="LITRO DE BARBACOA")
         self.client.post(
             "/api/pedidos/crear-item/",
@@ -361,7 +363,7 @@ class PedidoFlowTests(TestCase):
         self.assertRedirects(response, "/admin/configuracion/")
 
         self.client.logout()
-        self.assertFalse(self.client.login(username="aguilas", password="Aguilas"))
+        self.assertFalse(self.client.login(username="aguilas", password="Aguilas8445"))
         self.assertTrue(self.client.login(username="aguilas", password="NuevaClave123"))
         response = self.client.post(
             "/api/pedidos/crear-item/",
@@ -417,7 +419,7 @@ class PedidoFlowTests(TestCase):
 
     def test_producto_inactivo_solo_permanece_en_pedido_pendiente(self):
         producto = Producto.objects.get(nombre="LITRO DE BARBACOA")
-        self.assertTrue(self.client.login(username="aguilas", password="Aguilas"))
+        self.assertTrue(self.client.login(username="aguilas", password="Aguilas8445"))
         response = self.client.post(
             "/api/pedidos/crear-item/",
             data=json.dumps({"producto_id": producto.id, "cantidad": "1"}),
@@ -443,17 +445,20 @@ class PedidoFlowTests(TestCase):
         self.assertRedirects(response, "/admin/configuracion/")
 
         self.client.logout()
-        self.assertTrue(self.client.login(username="aguilas", password="Aguilas"))
+        self.assertTrue(self.client.login(username="aguilas", password="Aguilas8445"))
         response = self.client.get("/pedidos/")
         self.assertContains(response, f'data-product-id="{producto.id}"')
 
         self.client.logout()
-        self.assertTrue(self.client.login(username="fortin", password="Fortin"))
+        self.assertTrue(self.client.login(username="fortin", password="Fortin9481"))
         response = self.client.get("/pedidos/")
         self.assertNotContains(response, f'data-product-id="{producto.id}"')
 
     def test_seed_crea_seis_clientes_demo(self):
         self.assertEqual(SucursalCliente.objects.count(), 6)
+        for nombre, _, _ in CLIENTES_DEMO:
+            sucursal = SucursalCliente.objects.get(nombre=nombre)
+            self.assertTrue(sucursal.usuario.check_password(password_for_cliente(nombre)))
 
 
 class RestriccionHorariaTests(TestCase):
@@ -476,7 +481,7 @@ class RestriccionHorariaTests(TestCase):
         config.save()
         cache.delete(CONFIGURACION_CACHE_KEY)
 
-        self.assertTrue(self.client.login(username="aguilas", password="Aguilas"))
+        self.assertTrue(self.client.login(username="aguilas", password="Aguilas8445"))
         producto = Producto.objects.get(nombre="LITRO DE BARBACOA")
         self.client.post(
             "/api/pedidos/crear-item/",
@@ -507,7 +512,7 @@ class RestriccionHorariaTests(TestCase):
 
     def test_confirmar_pedido_dentro_de_horario_permite(self):
         abrir_horario_completo()
-        self.assertTrue(self.client.login(username="aguilas", password="Aguilas"))
+        self.assertTrue(self.client.login(username="aguilas", password="Aguilas8445"))
         producto = Producto.objects.get(nombre="LITRO DE BARBACOA")
         self.client.post(
             "/api/pedidos/crear-item/",

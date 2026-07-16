@@ -20,10 +20,55 @@
             <input id="username" name="username" type="text" autocomplete="username" required autofocus>
 
             <label for="password">Contraseña</label>
-            <input id="password" name="password" type="password" autocomplete="current-password" required>
+            <div class="password-field">
+                <input id="password" name="password" type="password" autocomplete="current-password" required>
+                <button
+                    class="password-toggle"
+                    type="button"
+                    aria-label="Mostrar contraseña"
+                    aria-pressed="false"
+                    title="Mostrar contraseña"
+                    data-password-toggle
+                >
+                    <svg class="password-icon password-icon-eye" aria-hidden="true" viewBox="0 0 24 24" focusable="false">
+                        <path d="M2.1 12s3.6-6.5 9.9-6.5S21.9 12 21.9 12s-3.6 6.5-9.9 6.5S2.1 12 2.1 12Z"></path>
+                        <circle cx="12" cy="12" r="3"></circle>
+                    </svg>
+                    <svg class="password-icon password-icon-eye-off" aria-hidden="true" viewBox="0 0 24 24" focusable="false">
+                        <path d="M3 3l18 18"></path>
+                        <path d="M10.6 5.7A10.9 10.9 0 0 1 12 5.5c6.3 0 9.9 6.5 9.9 6.5a17.4 17.4 0 0 1-3 3.8"></path>
+                        <path d="M14.1 14.1A3 3 0 0 1 9.9 9.9"></path>
+                        <path d="M6.7 6.7A17 17 0 0 0 2.1 12s3.6 6.5 9.9 6.5a10.6 10.6 0 0 0 4.1-.8"></path>
+                    </svg>
+                </button>
+            </div>
 
             <button class="primary-button" type="submit">Entrar</button>
         </form>
     </section>
 </main>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    (() => {
+        const passwordInput = document.getElementById("password");
+        const toggle = document.querySelector("[data-password-toggle]");
+        if (!passwordInput || !toggle) {
+            return;
+        }
+
+        toggle.addEventListener("click", () => {
+            const shouldShow = passwordInput.type === "password";
+            const label = shouldShow ? "Ocultar contraseña" : "Mostrar contraseña";
+
+            passwordInput.type = shouldShow ? "text" : "password";
+            toggle.classList.toggle("is-visible", shouldShow);
+            toggle.setAttribute("aria-pressed", String(shouldShow));
+            toggle.setAttribute("aria-label", label);
+            toggle.title = label;
+            passwordInput.focus({ preventScroll: true });
+        });
+    })();
+</script>
 {% endblock %}

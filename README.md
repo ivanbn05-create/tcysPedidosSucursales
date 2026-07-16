@@ -15,14 +15,14 @@ Abrir `http://127.0.0.1:8000/`.
 
 ## Credenciales demo
 
-La contraseña de cada sucursal/cliente es exactamente su nombre:
+La contraseña de cada sucursal/cliente es su nombre más 4 dígitos:
 
-- `Aguilas` / `Aguilas`
-- `Fortin` / `Fortin`
-- `Estancia` / `Estancia`
-- `Brot Nueva Galicia` / `Brot Nueva Galicia`
-- `Brot CAT` / `Brot CAT`
-- `Rakebela` / `Rakebela`
+- `Aguilas` / `Aguilas8445`
+- `Fortin` / `Fortin9481`
+- `Estancia` / `Estancia7608`
+- `Brot Nueva Galicia` / `Brot Nueva Galicia0846`
+- `Brot CAT` / `Brot CAT7721`
+- `Rakebela` / `Rakebela4349`
 - Admin: `juancarlos` / `TocayosMO2026`
 - Solo impresión: `juanmanuel` / `imprimir`
 

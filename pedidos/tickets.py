@@ -24,11 +24,12 @@ TICKET_DATE_HEIGHT_MM = 5.82
 TICKET_ITEM_HEIGHT_MM = 9.26
 TICKET_SHORT_ITEM_HEIGHT_MM = 8.20
 TICKET_PRINT_SAFETY_HEIGHT_MM = 6.0
-TICKET_WIDTH_MM = 58
+TICKET_WIDTH_MM = 72
+TICKET_MIN_HEIGHT_MM = TICKET_WIDTH_MM + 1
 TICKET_COLUMN_WIDTHS_MM = {
-    "product": 26.25,
-    "quantity": 14.85,
-    "blank": 16.90,
+    "product": 32.59,
+    "quantity": 18.43,
+    "blank": 20.98,
 }
 SPANISH_MONTH_ABBR = (
     "ene",
@@ -112,12 +113,13 @@ def ticket_context(pedido):
                 ),
             }
         )
-    ticket_height_mm = (
+    content_height_mm = (
         TICKET_HEADER_HEIGHT_MM
         + TICKET_DATE_HEIGHT_MM
         + sum(row["height_mm"] for row in rows)
         + TICKET_PRINT_SAFETY_HEIGHT_MM
     )
+    ticket_height_mm = max(content_height_mm, TICKET_MIN_HEIGHT_MM)
     return {
         "pedido": pedido,
         "title": ticket_title(pedido),

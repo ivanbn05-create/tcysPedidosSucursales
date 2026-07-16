@@ -152,6 +152,8 @@
             body {
                 width: {{ ticket_width_mm }}mm;
                 min-width: {{ ticket_width_mm }}mm;
+                height: {{ ticket_height_mm }}mm;
+                min-height: {{ ticket_height_mm }}mm;
                 background: #fff;
             }
 
@@ -161,6 +163,7 @@
 
             .ticket-sheet {
                 margin: 0;
+                min-height: {{ ticket_height_mm }}mm;
                 box-shadow: none;
                 break-inside: avoid;
                 page-break-inside: avoid;
