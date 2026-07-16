@@ -419,3 +419,275 @@
         height: 140px;
     }
 }
+
+@media (min-width: 768px) {
+    html,
+    body.order-page {
+        min-height: 100%;
+    }
+
+    body.order-page {
+        background: var(--yellow);
+    }
+
+    body.order-page .topbar {
+        width: min(100%, 540px);
+        min-height: 60px;
+        height: 60px;
+        margin: 0 auto;
+        padding: 6px 10px;
+        gap: 8px;
+        background: var(--yellow);
+        box-shadow: 0 10px 28px rgba(36, 36, 36, 0.16);
+    }
+
+    body.order-page .brand {
+        gap: 8px;
+        min-width: 0;
+    }
+
+    body.order-page .brand img {
+        width: 36px;
+        height: 36px;
+        border-radius: 6px;
+    }
+
+    body.order-page .brand span {
+        font-size: 18px;
+        line-height: 1;
+    }
+
+    body.order-page .topbar-user {
+        min-width: 0;
+        gap: 6px;
+        flex-wrap: nowrap;
+        font-size: 13px;
+    }
+
+    body.order-page .topbar-user span {
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+
+    body.order-page .topbar-user .ghost-button {
+        min-height: 36px;
+        padding: 8px 10px;
+    }
+
+    body.order-page .order-shell {
+        width: min(100%, 540px);
+        height: min(800px, calc(100dvh - 60px));
+        min-height: 0;
+        margin: 0 auto;
+        padding: 10px;
+        grid-template-columns: minmax(0, 4fr) minmax(0, 1fr);
+        grid-template-rows: minmax(0, 1fr) minmax(230px, 35%);
+        grid-template-areas:
+            "products summary"
+            "calculator calculator";
+        gap: 10px;
+        overflow: hidden;
+        background: rgba(255, 255, 255, 0.32);
+        box-shadow: 0 18px 48px rgba(36, 36, 36, 0.2);
+        transition: grid-template-columns 260ms ease;
+    }
+
+    body.order-page .order-shell.summary-open {
+        grid-template-columns: minmax(0, 1fr) minmax(0, 4fr);
+    }
+
+    body.order-page .focus-panel {
+        display: none;
+    }
+
+    body.order-page .product-panel,
+    body.order-page .summary-panel {
+        min-width: 0;
+        min-height: 0;
+        overflow: hidden;
+        transition: box-shadow 200ms ease, border-color 200ms ease, background-color 200ms ease;
+    }
+
+    body.order-page .product-panel {
+        padding: 10px;
+    }
+
+    body.order-page .summary-panel {
+        padding: 10px;
+        position: static;
+        z-index: auto;
+        max-height: none;
+    }
+
+    body.order-page .mobile-panel-tab {
+        width: 100%;
+        height: 100%;
+        min-height: 0;
+        border: 0;
+        border-radius: 8px;
+        background: #fff8a8;
+        color: var(--red);
+        display: none;
+        align-items: center;
+        justify-content: center;
+        padding: 10px 6px;
+        font-weight: 900;
+        font-size: 15px;
+        line-height: 1;
+        white-space: nowrap;
+        cursor: pointer;
+    }
+
+    body.order-page .mobile-panel-tab span {
+        display: block;
+        white-space: nowrap;
+        transform: rotate(90deg);
+    }
+
+    body.order-page .mobile-panel-tab:hover {
+        background: #fff26b;
+    }
+
+    body.order-page .order-shell.summary-open .product-panel .mobile-panel-tab,
+    body.order-page .order-shell:not(.summary-open) .summary-panel .mobile-panel-tab {
+        display: flex;
+    }
+
+    body.order-page .order-shell.summary-open .product-panel > :not(.mobile-panel-tab),
+    body.order-page .order-shell:not(.summary-open) .summary-panel > :not(.mobile-panel-tab) {
+        display: none;
+    }
+
+    body.order-page .order-shell.summary-open .product-panel,
+    body.order-page .order-shell:not(.summary-open) .summary-panel {
+        padding: 6px;
+        background: #fffef0;
+        display: grid;
+        grid-template-rows: 1fr;
+    }
+
+    body.order-page .order-shell:not(.summary-open) .product-panel .mobile-panel-tab,
+    body.order-page .order-shell.summary-open .summary-panel .mobile-panel-tab {
+        display: none;
+    }
+
+    body.order-page .order-shell:not(.summary-open) .product-panel,
+    body.order-page .order-shell.summary-open .summary-panel {
+        animation: mobilePanelIn 220ms ease both;
+    }
+
+    body.order-page .product-list {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 8px;
+        overflow: auto;
+        padding-right: 2px;
+    }
+
+    body.order-page .product-button {
+        min-height: 76px;
+        align-items: center;
+        justify-content: center;
+        padding: 10px 8px;
+        font-size: 15px;
+    }
+
+    body.order-page .summary-header {
+        gap: 10px;
+    }
+
+    body.order-page .summary-header h2 {
+        font-size: 28px;
+    }
+
+    body.order-page .summary-panel .empty-state {
+        padding: 14px;
+    }
+
+    body.order-page .items-list {
+        min-height: 0;
+        max-height: none;
+        overflow: auto;
+    }
+
+    body.order-page .calculator-panel {
+        min-height: 0;
+        padding: 8px;
+        grid-template-columns: 1fr;
+        grid-template-rows: 42px minmax(0, 1fr) 42px;
+        gap: 6px;
+        position: sticky;
+        bottom: 0;
+        z-index: 8;
+    }
+
+    body.order-page .calculator-display {
+        min-height: 0;
+        height: 42px;
+        padding: 7px 12px;
+        border-radius: 6px;
+        grid-template-columns: minmax(0, 1fr) auto minmax(34px, 0.3fr);
+        gap: 8px;
+    }
+
+    body.order-page .display-product {
+        min-width: 0;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        font-size: 12px;
+    }
+
+    body.order-page .display-unit {
+        font-size: 12px;
+    }
+
+    body.order-page .calculator-display strong {
+        font-size: 28px;
+    }
+
+    body.order-page .keypad {
+        min-height: 0;
+        gap: 6px;
+    }
+
+    body.order-page .keypad button {
+        min-height: 0;
+        height: 100%;
+        border-radius: 6px;
+        font-size: 26px;
+    }
+
+    body.order-page .calculator-actions {
+        min-height: 0;
+        gap: 6px;
+    }
+
+    body.order-page .calculator-actions .arrow-button {
+        min-height: 0;
+        height: 42px;
+        border-radius: 6px;
+        font-size: 28px;
+    }
+
+    body.order-page .summary-footer .primary-button,
+    body.order-page .summary-footer .secondary-button {
+        min-height: 38px;
+        padding: 8px 10px;
+    }
+
+    body.order-page .total-row {
+        padding: 8px 0;
+    }
+
+    @keyframes mobilePanelIn {
+        from {
+            opacity: 0.82;
+            transform: translateY(4px);
+        }
+        to {
+            opacity: 1;
+            transform: translateY(0);
+        }
+    }
+}
