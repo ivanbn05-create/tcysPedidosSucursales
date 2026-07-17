@@ -1,0 +1,143 @@
+{% extends "pedidos/base.html" %}
+
+{% block title %}Datos | Los Tocayos{% endblock %}
+{% block body_class %}admin-page{% endblock %}
+
+{% block content %}
+<main class="admin-shell data-shell">
+    <section class="admin-header">
+        <div>
+            <span class="eyebrow">Matriz</span>
+            <h1>Datos</h1>
+            <div class="admin-actions">
+                <a class="secondary-link compact" href="{% url 'admin_dashboard' %}">Pedidos</a>
+                <a
+                    class="secondary-link compact print-link"
+                    href="{% url 'imprimir_aguas' %}"
+                    target="_blank"
+                    rel="noopener"
+                >Aguas</a>
+                <a class="secondary-link compact" href="{% url 'admin_configuracion' %}">Configuraci&oacute;n</a>
+            </div>
+        </div>
+        <div class="stats-grid">
+            <div class="stat-card">
+                <span>Pedidos hist&oacute;ricos</span>
+                <strong>{{ total_orders }}</strong>
+            </div>
+            <div class="stat-card">
+                <span>Venta acumulada</span>
+                <strong>${{ total_revenue|floatformat:2 }}</strong>
+            </div>
+            <div class="stat-card">
+                <span>Ticket promedio</span>
+                <strong>${{ avg_ticket|floatformat:2 }}</strong>
+            </div>
+        </div>
+    </section>
+
+    <form class="filters data-filters" method="get">
+        <select name="sucursal" aria-label="Sucursal o cliente">
+            {% for sucursal in sucursales %}
+            <option value="{{ sucursal.id }}" {% if selected_sucursal_id == sucursal.id|stringformat:"s" %}selected{% endif %}>
+                {{ sucursal.nombre }}
+            </option>
+            {% endfor %}
+        </select>
+        <select name="dia" aria-label="Dia de la semana">
+            {% for value, label in weekdays %}
+            <option value="{{ value }}" {% if selected_weekday == value %}selected{% endif %}>{{ label }}</option>
+            {% endfor %}
+        </select>
+        <button class="primary-button compact" type="submit">Actualizar</button>
+    </form>
+
+    <section class="data-grid">
+        <article class="data-card prediction-card">
+            <div class="data-card-heading">
+                <span class="eyebrow">{{ selected_sucursal.nombre|default:"Sin sucursal" }}</span>
+                <h2>Promedio de {{ selected_weekday_label }}</h2>
+            </div>
+            {% if prediction_rows %}
+            <div class="prediction-list">
+                {% for row in prediction_rows %}
+                <div class="prediction-row">
+                    <div>
+                        <strong>{{ row.producto }}</strong>
+                        <span>{{ row.frecuencia }}% de frecuencia{% if row.ultimo %} &middot; &uacute;ltimo {{ row.ultimo|date:"d/m/Y" }}{% endif %}</span>
+                    </div>
+                    <b>{{ row.cantidad_promedio|floatformat:1 }}</b>
+                    <i style="--bar: {{ row.bar }}%;"></i>
+                </div>
+                {% endfor %}
+            </div>
+            {% else %}
+            <div class="empty-state">Sin historial para esta combinaci&oacute;n.</div>
+            {% endif %}
+        </article>
+
+        <article class="data-card">
+            <div class="data-card-heading">
+                <span class="eyebrow">Ventas</span>
+                <h2>Por d&iacute;a</h2>
+            </div>
+            <div class="bar-list">
+                {% for row in weekday_chart %}
+                <div class="bar-row">
+                    <span>{{ row.label }}</span>
+                    <div><i style="--bar: {{ row.bar }}%;"></i></div>
+                    <strong>${{ row.total|floatformat:0 }}</strong>
+                </div>
+                {% endfor %}
+            </div>
+        </article>
+
+        <article class="data-card">
+            <div class="data-card-heading">
+                <span class="eyebrow">Ventas</span>
+                <h2>Por sucursal/cliente</h2>
+            </div>
+            <div class="bar-list">
+                {% for row in branch_chart %}
+                <div class="bar-row">
+                    <span>{{ row.label }}</span>
+                    <div><i style="--bar: {{ row.bar }}%;"></i></div>
+                    <strong>${{ row.total|floatformat:0 }}</strong>
+                </div>
+                {% endfor %}
+            </div>
+        </article>
+    </section>
+
+    <section class="table-wrap">
+        <table class="orders-table data-table">
+            <thead>
+                <tr>
+                    <th>Sucursal/Cliente</th>
+                    <th>D&iacute;a</th>
+                    <th>Pedidos</th>
+                    <th>Ticket promedio</th>
+                    <th>Productos promedio</th>
+                    <th>Unidades promedio</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for row in average_rows %}
+                <tr>
+                    <td data-label="Sucursal/Cliente">{{ row.sucursal }}</td>
+                    <td data-label="D&iacute;a">{{ row.weekday }}</td>
+                    <td data-label="Pedidos">{{ row.pedidos }}</td>
+                    <td data-label="Ticket promedio">${{ row.avg_total|floatformat:2 }}</td>
+                    <td data-label="Productos promedio">{{ row.avg_products|floatformat:1 }}</td>
+                    <td data-label="Unidades promedio">{{ row.avg_units|floatformat:1 }}</td>
+                </tr>
+                {% empty %}
+                <tr>
+                    <td colspan="6" class="table-empty">Sin pedidos hist&oacute;ricos.</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </section>
+</main>
+{% endblock %}

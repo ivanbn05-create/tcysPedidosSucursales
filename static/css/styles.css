@@ -743,6 +743,13 @@ button.password-toggle:active {
     margin-top: 10px;
 }
 
+.admin-actions {
+    margin-top: 10px;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+
 .stats-grid {
     display: grid;
     grid-template-columns: repeat(3, minmax(130px, 1fr));
@@ -840,6 +847,117 @@ button.password-toggle:active {
 .table-empty {
     text-align: center;
     color: var(--muted);
+}
+
+.data-shell {
+    max-width: 1500px;
+    margin: 0 auto;
+}
+
+.data-filters {
+    grid-template-columns: minmax(220px, 1fr) minmax(180px, 0.5fr) auto;
+}
+
+.data-grid {
+    display: grid;
+    grid-template-columns: minmax(340px, 1.2fr) repeat(2, minmax(280px, 1fr));
+    gap: 14px;
+}
+
+.data-card {
+    min-width: 0;
+    padding: 16px;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    background: #fff;
+    box-shadow: var(--shadow);
+    display: grid;
+    align-content: start;
+    gap: 14px;
+}
+
+.data-card-heading h2 {
+    margin: 4px 0 0;
+    color: var(--blue);
+    font-size: 22px;
+}
+
+.prediction-list,
+.bar-list {
+    display: grid;
+    gap: 10px;
+}
+
+.prediction-row {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 6px 12px;
+    align-items: center;
+}
+
+.prediction-row strong {
+    color: var(--blue);
+}
+
+.prediction-row span {
+    display: block;
+    margin-top: 3px;
+    color: var(--muted);
+    font-size: 12px;
+    font-weight: 800;
+}
+
+.prediction-row b {
+    color: var(--red);
+    font-size: 18px;
+}
+
+.prediction-row i,
+.bar-row i {
+    display: block;
+    width: var(--bar);
+    min-width: 3px;
+    height: 7px;
+    border-radius: 999px;
+    background: var(--yellow);
+    box-shadow: inset 0 0 0 1px #d6c000;
+}
+
+.prediction-row i {
+    grid-column: 1 / -1;
+}
+
+.bar-row {
+    display: grid;
+    grid-template-columns: 86px minmax(80px, 1fr) 82px;
+    gap: 10px;
+    align-items: center;
+}
+
+.bar-row span {
+    min-width: 0;
+    overflow: hidden;
+    color: var(--blue);
+    font-size: 13px;
+    font-weight: 900;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.bar-row div {
+    min-height: 10px;
+    border-radius: 999px;
+    background: #f1f3f5;
+}
+
+.bar-row strong {
+    text-align: right;
+    color: var(--blue);
+    font-size: 13px;
+}
+
+.data-table {
+    min-width: 860px;
 }
 
 .settings-shell {

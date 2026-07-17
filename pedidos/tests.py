@@ -3,6 +3,7 @@ from datetime import datetime, time, timedelta
 from decimal import Decimal
 from io import BytesIO
 
+from django.conf import settings
 from django.contrib.auth.models import User
 from django.core import mail
 from django.core.cache import cache
@@ -14,6 +15,7 @@ from openpyxl import load_workbook
 from .models import (
     CONFIGURACION_CACHE_KEY,
     Configuracion,
+    ItemPedido,
     LogRecordatorio,
     Pedido,
     Precio,
@@ -39,6 +41,28 @@ class PedidoFlowTests(TestCase):
     def setUp(self):
         seed_demo_data()
         abrir_horario_completo()
+
+    def test_configuracion_estaticos_mantiene_whitenoise(self):
+        self.assertIn("whitenoise.middleware.WhiteNoiseMiddleware", settings.MIDDLEWARE)
+
+    def crear_pedido_confirmado(self, sucursal_nombre, items, fecha_confirmacion=None):
+        sucursal = SucursalCliente.objects.get(nombre=sucursal_nombre)
+        pedido = Pedido.objects.create(
+            sucursal_cliente=sucursal,
+            usuario_nombre=sucursal.nombre,
+            estado=Pedido.Estado.CONFIRMADO,
+            fecha_confirmacion=fecha_confirmacion or timezone.now(),
+        )
+        for producto_nombre, cantidad in items:
+            producto = Producto.objects.get(nombre=producto_nombre)
+            ItemPedido.objects.create(
+                pedido=pedido,
+                producto=producto,
+                cantidad=Decimal(str(cantidad)),
+                precio_unitario=Decimal("1.00"),
+            )
+        pedido.recalcular_total()
+        return pedido
 
     def test_login_crear_confirmar_y_excel(self):
         self.assertTrue(self.client.login(username="aguilas", password="Aguilas8445"))
@@ -287,8 +311,10 @@ class PedidoFlowTests(TestCase):
         self.assertEqual(dashboard.status_code, 200)
         self.assertContains(dashboard, "Ver detalle")
         self.assertContains(dashboard, "Imprimir")
+        self.assertContains(dashboard, "Aguas")
         html = dashboard.content.decode()
         self.assertNotIn("admin/configuracion", html)
+        self.assertNotIn("admin/datos", html)
         self.assertNotIn(">Excel</a>", html)
         self.assertNotIn("marcar-enviado", html)
         self.assertNotIn("eliminar/", html)
@@ -296,8 +322,13 @@ class PedidoFlowTests(TestCase):
         print_response = self.client.get(f"/admin/pedidos/{pedido_id}/imprimir/")
         self.assertEqual(print_response.status_code, 200)
         self.assertContains(print_response, "window.print()")
+        aguas_response = self.client.get("/admin/aguas/imprimir/")
+        self.assertEqual(aguas_response.status_code, 200)
+        self.assertContains(aguas_response, "size: 72mm 72mm;")
 
         response = self.client.get("/admin/configuracion/")
+        self.assertEqual(response.status_code, 302)
+        response = self.client.get("/admin/datos/")
         self.assertEqual(response.status_code, 302)
         response = self.client.get(f"/admin/pedidos/{pedido_id}/excel/")
         self.assertEqual(response.status_code, 302)
@@ -416,6 +447,81 @@ class PedidoFlowTests(TestCase):
         self.assertTrue(
             SucursalCliente.objects.filter(nombre="Sucursal Prueba", usuario=created_user).exists()
         )
+
+    def test_admin_imprime_aguas_de_pedidos_del_dia_anterior(self):
+        ayer = timezone.localdate() - timedelta(days=1)
+        fecha_ayer = timezone.make_aware(datetime.combine(ayer, time(11, 0)))
+        self.crear_pedido_confirmado(
+            "Estancia",
+            [
+                ("AGUA HORCHATA BLANCA 1/2", "2"),
+                ("AGUA HORCHATA ROSA LT", "3"),
+            ],
+            fecha_ayer,
+        )
+        self.crear_pedido_confirmado(
+            "Aguilas",
+            [
+                ("AGUA HORCHATA BLANCA 1/2", "5"),
+                ("AGUA JAMAICA LT", "1"),
+            ],
+            fecha_ayer,
+        )
+        self.crear_pedido_confirmado(
+            "Fortin",
+            [("LITRO DE BARBACOA", "4")],
+            fecha_ayer,
+        )
+
+        self.assertTrue(self.client.login(username="juancarlos", password="TocayosMO2026"))
+        dashboard = self.client.get("/admin/")
+        self.assertContains(dashboard, "Aguas")
+        response = self.client.get("/admin/aguas/imprimir/")
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "window.print()")
+        self.assertContains(response, "size: 72mm 72mm;")
+        self.assertContains(response, "<td>1/B</td>", html=True)
+        self.assertContains(response, "<td>2</td>", html=True)
+        self.assertContains(response, "<td>5</td>", html=True)
+        self.assertContains(response, "<td>/</td>", html=True)
+        self.assertContains(response, "<td>LR</td>", html=True)
+        self.assertContains(response, "<td>3</td>", html=True)
+        self.assertContains(response, "<td>LJ</td>", html=True)
+        self.assertContains(response, "<td>1</td>", html=True)
+
+    def test_admin_datos_muestra_promedios_y_prediccion(self):
+        lunes = timezone.make_aware(datetime(2026, 7, 13, 10, 0))
+        self.crear_pedido_confirmado(
+            "Aguilas",
+            [
+                ("LITRO DE BARBACOA", "2"),
+                ("AGUA JAMAICA LT", "4"),
+            ],
+            lunes,
+        )
+        self.crear_pedido_confirmado(
+            "Aguilas",
+            [("AGUA JAMAICA LT", "2")],
+            lunes + timedelta(minutes=30),
+        )
+
+        sucursal = SucursalCliente.objects.get(nombre="Aguilas")
+        self.assertTrue(self.client.login(username="juancarlos", password="TocayosMO2026"))
+        response = self.client.get(f"/admin/datos/?sucursal={sucursal.id}&dia=1")
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Datos")
+        self.assertContains(response, "Promedio de Lunes")
+        self.assertContains(response, "AGUA JAMAICA LT")
+        self.assertContains(response, "Ticket promedio")
+
+    def test_seed_crea_usuario_debug_admin(self):
+        user = User.objects.get(username="ivanprueba")
+        self.assertTrue(user.is_staff)
+        self.assertTrue(user.is_superuser)
+        self.assertTrue(user.check_password("prueba8989"))
+        self.assertTrue(self.client.login(username="ivanprueba", password="prueba8989"))
+        response = self.client.get("/admin/configuracion/")
+        self.assertEqual(response.status_code, 200)
 
     def test_producto_inactivo_solo_permanece_en_pedido_pendiente(self):
         producto = Producto.objects.get(nombre="LITRO DE BARBACOA")
