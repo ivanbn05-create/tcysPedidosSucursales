@@ -15,6 +15,7 @@
                     class="secondary-link compact print-link"
                     href="{% url 'imprimir_aguas' %}"
                     data-inline-print
+                    data-print-template-id="print-aguas"
                 >Aguas</a>
                 {% if can_manage_pedidos %}
                 <a class="secondary-link compact" href="{% url 'admin_datos' %}">Datos</a>
@@ -93,6 +94,7 @@
                             class="secondary-link compact print-link"
                             href="{% url 'imprimir_pedido' pedido.id %}"
                             data-inline-print
+                            data-print-template-id="print-pedido-{{ pedido.id }}"
                         >Imprimir</a>
                         {% if can_manage_pedidos %}
                         <a class="primary-link compact" href="{% url 'descargar_y_marcar' pedido.id %}">Excel</a>
@@ -133,6 +135,7 @@
         </div>
     </div>
 </div>
+{% include "pedidos/partials/inline_print_templates.html" with inline_print_pedidos=pedidos aguas_print=aguas_print %}
 {% endblock %}
 
 {% block scripts %}

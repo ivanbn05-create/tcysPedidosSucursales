@@ -1115,6 +1115,7 @@ def admin_datos_context(request):
         "branch_chart": branch_chart,
         "prediction_rows": prediction_rows,
         "selected_order_count": selected_order_count,
+        "aguas_print": aguas_print_context(),
     }
 
 
@@ -1155,6 +1156,7 @@ def admin_dashboard(request):
         pedido.items_json = json.dumps(
             [serializar_item(item, incluir_precios=True) for item in pedido.items.all()]
         )
+        pedido.print_context = ticket_context(pedido)
 
     hoy = timezone.localdate()
     stats_base = Pedido.objects.filter(eliminado=False)
@@ -1178,6 +1180,7 @@ def admin_dashboard(request):
             "q": q,
         },
         "can_manage_pedidos": is_admin_user(request.user),
+        "aguas_print": aguas_print_context(),
     }
     return render(request, "pedidos/admin_dashboard.html", context)
 

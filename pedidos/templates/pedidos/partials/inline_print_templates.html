@@ -1,0 +1,78 @@
+<div id="inlinePrintSurface" class="inline-print-surface" aria-hidden="true"></div>
+
+{% if aguas_print %}
+<template
+    id="print-aguas"
+    data-print-width="72"
+    data-print-height="72"
+>
+    <main class="inline-print-sheet inline-aguas-sheet" aria-label="Resumen imprimible de aguas">
+        <table class="inline-aguas-table">
+            <colgroup>
+                <col class="label">
+                <col class="branch">
+                <col class="branch">
+                <col class="branch">
+                <col class="blank">
+            </colgroup>
+            <tbody>
+                <tr>
+                    <th></th>
+                    {% for branch in aguas_print.branches %}
+                    <th>{{ branch }}</th>
+                    {% endfor %}
+                    <th>=</th>
+                </tr>
+                {% for row in aguas_print.rows %}
+                <tr>
+                    <td>{{ row.label }}</td>
+                    {% for value in row.values %}
+                    <td>{{ value }}</td>
+                    {% endfor %}
+                    <td></td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </main>
+</template>
+{% endif %}
+
+{% for pedido in inline_print_pedidos %}
+<template
+    id="print-pedido-{{ pedido.id }}"
+    data-print-width="{{ pedido.print_context.ticket_width_mm }}"
+    data-print-height="{{ pedido.print_context.ticket_height_mm }}"
+>
+    <main class="inline-print-sheet inline-ticket-sheet" aria-label="Pedido imprimible">
+        <table class="inline-ticket-table">
+            <colgroup>
+                <col style="width: {{ pedido.print_context.column_widths_mm.product }}mm;">
+                <col style="width: {{ pedido.print_context.column_widths_mm.quantity }}mm;">
+                <col style="width: {{ pedido.print_context.column_widths_mm.blank }}mm;">
+            </colgroup>
+            <tbody>
+                <tr>
+                    <td
+                        class="inline-ticket-title"
+                        colspan="3"
+                        style="height: {{ pedido.print_context.header_height_mm }}mm;"
+                    >{{ pedido.print_context.title }}</td>
+                </tr>
+                <tr class="inline-ticket-date-row" style="height: {{ pedido.print_context.date_height_mm }}mm;">
+                    <td></td>
+                    <td></td>
+                    <td class="inline-ticket-date-cell">{{ pedido.print_context.date_display }}</td>
+                </tr>
+                {% for row in pedido.print_context.rows %}
+                <tr class="inline-ticket-item-row" style="height: {{ row.height_mm }}mm;">
+                    <td class="inline-ticket-product">{{ row.producto }}</td>
+                    <td class="inline-ticket-quantity">{{ row.cantidad }}</td>
+                    <td></td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </main>
+</template>
+{% endfor %}

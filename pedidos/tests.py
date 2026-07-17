@@ -128,6 +128,9 @@ class PedidoFlowTests(TestCase):
         dashboard = self.client.get("/admin/")
         self.assertContains(dashboard, pedido.folio_fecha)
         self.assertContains(dashboard, "data-inline-print")
+        self.assertContains(dashboard, f'data-print-template-id="print-pedido-{pedido.id}"')
+        self.assertContains(dashboard, 'id="inlinePrintSurface"')
+        self.assertContains(dashboard, f'id="print-pedido-{pedido.id}"')
         self.assertNotContains(dashboard, 'target="_blank"')
         self.assertNotContains(dashboard, f"#{pedido.id}")
 
@@ -334,6 +337,8 @@ class PedidoFlowTests(TestCase):
         self.assertContains(dashboard, "Imprimir")
         self.assertContains(dashboard, "Aguas")
         self.assertContains(dashboard, "data-inline-print")
+        self.assertContains(dashboard, 'data-print-template-id="print-aguas"')
+        self.assertContains(dashboard, f'id="print-pedido-{pedido_id}"')
         html = dashboard.content.decode()
         self.assertNotIn('target="_blank"', html)
         self.assertNotIn("admin/configuracion", html)
@@ -503,6 +508,7 @@ class PedidoFlowTests(TestCase):
         dashboard = self.client.get("/admin/")
         self.assertContains(dashboard, "Aguas")
         self.assertContains(dashboard, "data-inline-print")
+        self.assertContains(dashboard, 'id="print-aguas"')
         self.assertNotContains(dashboard, 'target="_blank"')
         response = self.client.get("/admin/aguas/imprimir/")
         self.assertEqual(response.status_code, 200)
@@ -542,6 +548,8 @@ class PedidoFlowTests(TestCase):
         self.assertContains(response, "AGUA JAMAICA LT")
         self.assertContains(response, "Ticket promedio")
         self.assertContains(response, "data-inline-print")
+        self.assertContains(response, 'data-print-template-id="print-aguas"')
+        self.assertContains(response, 'id="print-aguas"')
         self.assertNotContains(response, 'target="_blank"')
 
     def test_seed_crea_usuario_debug_admin(self):

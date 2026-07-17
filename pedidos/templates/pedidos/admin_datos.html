@@ -15,6 +15,7 @@
                     class="secondary-link compact print-link"
                     href="{% url 'imprimir_aguas' %}"
                     data-inline-print
+                    data-print-template-id="print-aguas"
                 >Aguas</a>
                 <a class="secondary-link compact" href="{% url 'admin_configuracion' %}">Configuraci&oacute;n</a>
             </div>
@@ -139,4 +140,5 @@
         </table>
     </section>
 </main>
+{% include "pedidos/partials/inline_print_templates.html" with aguas_print=aguas_print %}
 {% endblock %}

@@ -31,6 +31,10 @@ body {
     font-size: 16px;
 }
 
+.inline-print-surface {
+    display: none;
+}
+
 button,
 input,
 select {
