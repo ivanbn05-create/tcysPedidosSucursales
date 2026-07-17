@@ -1,0 +1,77 @@
+{% extends "pedidos/base.html" %}
+
+{% block title %}Aviso de privacidad | Los Tocayos{% endblock %}
+{% block body_class %}privacy-page{% endblock %}
+
+{% block content %}
+<main class="privacy-shell">
+    <article class="privacy-document">
+        <a class="secondary-link compact privacy-back" href="{% url 'home' %}">Volver</a>
+
+        <span class="eyebrow">Los Tocayos</span>
+        <h1>Aviso de privacidad</h1>
+        <p class="privacy-updated">Última actualización: julio de 2026</p>
+
+        <section>
+            <h2>Responsable</h2>
+            <p>
+                Los Tocayos es responsable del uso, resguardo y tratamiento de los datos
+                capturados en este sistema privado de gestión de pedidos. Para dudas,
+                actualizaciones o solicitudes relacionadas con datos personales, contacte a
+                la administración de matriz o escriba a
+                <a href="mailto:tocayos.tacos@gmail.com">tocayos.tacos@gmail.com</a>.
+            </p>
+        </section>
+
+        <section>
+            <h2>Datos tratados</h2>
+            <p>
+                El sistema puede tratar nombre de sucursal o cliente, nombre de usuario,
+                contraseña protegida, correo de recordatorios, historial de pedidos,
+                productos solicitados, cantidades, importes, horarios, estados del pedido,
+                registros de envío de recordatorios y datos técnicos de sesión necesarios
+                para operar la aplicación.
+            </p>
+            <p>No se solicitan datos personales sensibles dentro de este sistema.</p>
+        </section>
+
+        <section>
+            <h2>Finalidades</h2>
+            <p>
+                Los datos se utilizan para autenticar usuarios autorizados, capturar y
+                administrar pedidos, imprimir o descargar pedidos, dar seguimiento operativo,
+                enviar recordatorios, calcular reportes internos, mantener historial de
+                operación y proteger el acceso al sistema.
+            </p>
+        </section>
+
+        <section>
+            <h2>Transferencias y proveedores</h2>
+            <p>
+                Los datos no se venden ni se usan para publicidad. Pueden ser procesados por
+                proveedores necesarios para el funcionamiento del sistema, como hospedaje,
+                base de datos y correo electrónico, así como por autoridades competentes
+                cuando exista una obligación legal aplicable.
+            </p>
+        </section>
+
+        <section>
+            <h2>Cookies técnicas</h2>
+            <p>
+                La aplicación usa cookies técnicas de sesión y seguridad, incluyendo las
+                necesarias para mantener la sesión iniciada y proteger formularios contra
+                solicitudes no autorizadas. No se usan cookies publicitarias.
+            </p>
+        </section>
+
+        <section>
+            <h2>Derechos y cambios</h2>
+            <p>
+                Los usuarios autorizados pueden solicitar acceso, corrección, actualización
+                o baja de sus datos de contacto y usuario mediante la administración de
+                matriz. Cualquier cambio a este aviso se publicará en esta misma página.
+            </p>
+        </section>
+    </article>
+</main>
+{% endblock %}

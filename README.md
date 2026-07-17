@@ -62,9 +62,9 @@ SECRET_KEY=your-secret-key-here
 ALLOWED_HOSTS=tu-app.render.com
 CSRF_TRUSTED_ORIGINS=https://tu-app.render.com
 DATABASE_URL=postgresql://user:password@host:port/database
-EMAIL_HOST_USER=correos@lostocayos.com
+EMAIL_HOST_USER=tocayos.tacos@gmail.com
 EMAIL_HOST_PASSWORD=contraseña-de-aplicacion-de-gmail
-DEFAULT_FROM_EMAIL=Los Tocayos <correos@lostocayos.com>
+DEFAULT_FROM_EMAIL=Los Tocayos <tocayos.tacos@gmail.com>
 SCHEDULER_ENABLED=True
 ```
 

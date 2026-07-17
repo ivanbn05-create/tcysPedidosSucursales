@@ -63,6 +63,11 @@
         min-width: 0;
     }
 
+    .privacy-toplink {
+        font-size: 12px;
+        text-decoration-thickness: 1px;
+    }
+
     .topbar-user span {
         overflow: hidden;
         text-overflow: ellipsis;

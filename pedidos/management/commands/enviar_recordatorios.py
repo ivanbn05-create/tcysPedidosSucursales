@@ -109,6 +109,7 @@ class Command(BaseCommand):
                 "sucursal": sucursal,
                 "hora_fin_pedidos": config.hora_fin_pedidos,
                 "hora_actual": timezone.localtime(),
+                "contacto_correo": settings.REMINDER_CONTACT_EMAIL,
             }
             texto_plano = render_to_string("pedidos/emails/recordatorio.txt", contexto)
             html = render_to_string("pedidos/emails/recordatorio.html", contexto)

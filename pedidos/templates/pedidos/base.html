@@ -6,8 +6,8 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>{% block title %}Los Tocayos Pedidos{% endblock %}</title>
     <link rel="icon" href="{% static 'img/mainlogo.webp' %}">
-    <link rel="stylesheet" href="{% static 'css/styles.css' %}?v=20260717-2">
-    <link rel="stylesheet" href="{% static 'css/responsive.css' %}?v=20260717-2">
+    <link rel="stylesheet" href="{% static 'css/styles.css' %}?v=20260717-3">
+    <link rel="stylesheet" href="{% static 'css/responsive.css' %}?v=20260717-3">
 </head>
 <body class="{% block body_class %}{% endblock %}">
     {% if request.user.is_authenticated %}
@@ -17,6 +17,7 @@
             <span>Pedidos</span>
         </a>
         <div class="topbar-user">
+            <a class="privacy-toplink" href="{% url 'privacidad' %}">Privacidad</a>
             <span>Usuario: {{ request.user.first_name|default:request.user.username }}</span>
             <form method="post" action="{% url 'logout' %}">
                 {% csrf_token %}

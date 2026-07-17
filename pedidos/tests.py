@@ -283,6 +283,21 @@ class PedidoFlowTests(TestCase):
         self.assertContains(response, "Pedidos abiertos")
         self.assertContains(response, "data-password-toggle")
         self.assertContains(response, 'aria-label="Mostrar contraseña"')
+        self.assertContains(response, "Sistema privado de uso exclusivo")
+        self.assertContains(response, 'href="/privacidad/"')
+
+    def test_aviso_privacidad_publico_y_link_interno(self):
+        response = self.client.get("/privacidad/")
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Aviso de privacidad")
+        self.assertContains(response, "Cookies técnicas")
+        self.assertContains(response, "tocayos.tacos@gmail.com")
+
+        self.assertTrue(self.client.login(username="aguilas", password="Aguilas8445"))
+        response = self.client.get("/pedidos/")
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'class="privacy-toplink"')
+        self.assertContains(response, 'href="/privacidad/"')
 
     def test_usuario_no_admin_no_puede_ver_dashboard(self):
         self.assertTrue(self.client.login(username="fortin", password="Fortin9481"))
@@ -648,7 +663,7 @@ class RestriccionHorariaTests(TestCase):
                 "hora_fin_pedidos": "18:00",
                 "hora_envio_recordatorio": "15:30",
                 "dias_recordatorio": ["1", "2", "3", "4", "5"],
-                "email_remitente": "Los Tocayos <correos@lostocayos.com>",
+                "email_remitente": "Los Tocayos <tocayos.tacos@gmail.com>",
                 "recordatorios_habilitados": "on",
             },
         )
@@ -678,6 +693,8 @@ class EnviarRecordatoriosCommandTests(TestCase):
         call_command("enviar_recordatorios", fuerza=True)
         self.assertEqual(len(mail.outbox), 1)
         self.assertIn(self.sucursal.email, mail.outbox[0].to)
+        self.assertIn("tocayos.tacos@gmail.com", mail.outbox[0].from_email)
+        self.assertIn("tocayos.tacos@gmail.com", mail.outbox[0].body)
         self.assertTrue(
             LogRecordatorio.objects.filter(
                 sucursal_cliente=self.sucursal, estado=LogRecordatorio.Estado.ENVIADO

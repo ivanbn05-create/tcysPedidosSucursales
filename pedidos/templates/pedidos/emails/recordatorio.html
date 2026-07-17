@@ -31,12 +31,13 @@ Entra al sistema y captura tu pedido lo antes posible para asegurar tu entrega.
 <p style="margin:0; font-size:13px; color:#6b665d;">
 Este es un recordatorio autom&aacute;tico enviado el {{ hora_actual|date:"d/m/Y" }} a las {{ hora_actual|time:"H:i" }} horas.
 Si ya capturaste tu pedido, puedes ignorar este mensaje.
+<br>Contacto operativo: <a href="mailto:{{ contacto_correo }}" style="color:#e21b23; font-weight:700;">{{ contacto_correo }}</a>.
 </p>
 </td>
 </tr>
 <tr>
 <td style="background:#fffef0; padding:16px 28px; font-size:12px; color:#6b665d; border-top:1px solid #e6e0d2;">
-Los Tocayos &middot; Sistema de gesti&oacute;n de pedidos
+Los Tocayos &middot; Sistema de gesti&oacute;n de pedidos &middot; {{ contacto_correo }}
 </td>
 </tr>
 </table>

@@ -11,6 +11,7 @@ from .models import Configuracion, Precio, Producto, SucursalCliente
 PRINT_GROUP_NAME = "Operador de impresion"
 DEBUG_USER_USERNAME = "ivanprueba"
 DEBUG_USER_PASSWORD = "prueba8989"
+DEFAULT_REMINDER_FROM = "Los Tocayos <tocayos.tacos@gmail.com>"
 
 
 PRODUCTOS_CATALOGO = [
@@ -304,7 +305,10 @@ def seed_demo_data():
                 },
             )
 
-    Configuracion.get_solo()
+    config = Configuracion.get_solo()
+    if not config.email_remitente:
+        config.email_remitente = DEFAULT_REMINDER_FROM
+        config.save(update_fields=["email_remitente"])
 
     return {
         "usuarios": User.objects.count(),

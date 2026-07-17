@@ -10,3 +10,4 @@ Entra al sistema y captura tu pedido lo antes posible para asegurar tu entrega.
 --
 Recordatorio automático enviado el {{ hora_actual|date:"d/m/Y" }} a las {{ hora_actual|time:"H:i" }} horas.
 Si ya capturaste tu pedido, puedes ignorar este mensaje.
+Contacto operativo: {{ contacto_correo }}.

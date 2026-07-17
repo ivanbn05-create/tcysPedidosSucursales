@@ -112,6 +112,10 @@ def home(request):
     return redirect("pedidos")
 
 
+def privacidad_view(request):
+    return render(request, "pedidos/privacidad.html")
+
+
 @require_http_methods(["GET", "POST"])
 def login_view(request):
     """Login compatible con nombres visibles y usernames internos sin espacios."""

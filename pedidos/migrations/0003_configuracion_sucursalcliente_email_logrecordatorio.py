@@ -20,7 +20,7 @@ class Migration(migrations.Migration):
                 ('hora_fin_pedidos', models.TimeField(default=datetime.time(16, 0), help_text='Hora hasta la cual se aceptan pedidos.')),
                 ('hora_envio_recordatorio', models.TimeField(default=datetime.time(14, 0), help_text='Hora a la que se envía el recordatorio diario de pedidos.')),
                 ('dias_recordatorio', models.CharField(default='1,2,3,4,5', help_text='Días ISO (1=lunes ... 7=domingo) separados por coma en que se envía el recordatorio.', max_length=20)),
-                ('email_remitente', models.CharField(blank=True, help_text='Nombre visible del remitente, ej. "Los Tocayos <correos@lostocayos.com>". Si se deja vacío se usa DEFAULT_FROM_EMAIL/EMAIL_HOST_USER.', max_length=255)),
+                ('email_remitente', models.CharField(blank=True, help_text='Nombre visible del remitente, ej. "Los Tocayos <tocayos.tacos@gmail.com>". Si se deja vacío se usa DEFAULT_FROM_EMAIL/EMAIL_HOST_USER.', max_length=255)),
                 ('recordatorios_habilitados', models.BooleanField(default=True, help_text='Habilitar o deshabilitar el envío de recordatorios diarios.')),
                 ('actualizado_en', models.DateTimeField(auto_now=True)),
                 ('actualizado_por', models.CharField(blank=True, max_length=150)),

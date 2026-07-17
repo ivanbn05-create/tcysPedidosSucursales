@@ -267,7 +267,7 @@ class Configuracion(models.Model):
         max_length=255,
         blank=True,
         help_text=(
-            'Nombre visible del remitente, ej. "Los Tocayos <correos@lostocayos.com>". '
+            'Nombre visible del remitente, ej. "Los Tocayos <tocayos.tacos@gmail.com>". '
             "Si se deja vacío se usa DEFAULT_FROM_EMAIL/EMAIL_HOST_USER."
         ),
     )
