@@ -9,8 +9,6 @@ from .models import Configuracion, Precio, Producto, SucursalCliente
 
 
 PRINT_GROUP_NAME = "Operador de impresion"
-DEBUG_USER_USERNAME = "ivanprueba"
-DEBUG_USER_PASSWORD = "prueba8989"
 
 
 PRODUCTOS_CATALOGO = [
@@ -238,14 +236,6 @@ def seed_demo_data():
     printer_user.set_password("imprimir")
     printer_user.save()
     printer_user.groups.add(print_group)
-
-    debug_user, _ = User.objects.get_or_create(username=DEBUG_USER_USERNAME)
-    debug_user.first_name = "Ivan Prueba"
-    debug_user.is_staff = True
-    debug_user.is_superuser = True
-    debug_user.is_active = True
-    debug_user.set_password(DEBUG_USER_PASSWORD)
-    debug_user.save()
 
     productos = {}
     for orden, (

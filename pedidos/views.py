@@ -1,6 +1,5 @@
 import json
 import logging
-from collections import defaultdict
 from datetime import datetime, timedelta
 from decimal import Decimal, InvalidOperation
 from functools import wraps
@@ -29,39 +28,12 @@ from .models import (
     Producto,
     SucursalCliente,
 )
-from .tickets import build_ticket_workbook, format_ticket_quantity, ticket_context
+from .tickets import build_ticket_workbook, ticket_context
 
 logger = logging.getLogger(__name__)
 
 CONFIGURACION_CACHE_TIMEOUT = 300  # 5 minutos
 PRINT_GROUP_NAME = "Operador de impresion"
-ORDER_HISTORY_STATES = [
-    Pedido.Estado.CONFIRMADO,
-    Pedido.Estado.ENVIADO,
-    Pedido.Estado.RECIBIDO,
-]
-AGUAS_SUCURSALES = (
-    ("Estancia", "E"),
-    ("Aguilas", "A"),
-    ("Fortin", "F"),
-)
-AGUAS_PRODUCTOS = (
-    ("1/B", "AGUA HORCHATA BLANCA 1/2"),
-    ("LB", "AGUA HORCHATA BLANCA LT"),
-    ("1/R", "AGUA HORCHATA ROSA 1/2"),
-    ("LR", "AGUA HORCHATA ROSA LT"),
-    ("1/J", "AGUA JAMAICA 1/2"),
-    ("LJ", "AGUA JAMAICA LT"),
-)
-WEEKDAY_LABELS = {
-    1: "Lunes",
-    2: "Martes",
-    3: "Miercoles",
-    4: "Jueves",
-    5: "Viernes",
-    6: "Sabado",
-    7: "Domingo",
-}
 
 
 def is_admin_user(user):
@@ -880,240 +852,6 @@ def admin_configuracion(request):
     )
 
 
-def format_dashboard_quantity(value):
-    decimal_value = Decimal(value or 0)
-    if decimal_value <= 0:
-        return "/"
-    return format_ticket_quantity(decimal_value)
-
-
-def aguas_print_context():
-    source_date = timezone.localdate() - timedelta(days=1)
-    branch_names = [name for name, _ in AGUAS_SUCURSALES]
-    product_names = [name for _, name in AGUAS_PRODUCTOS]
-    totals = defaultdict(Decimal)
-
-    pedidos = (
-        Pedido.objects.filter(
-            eliminado=False,
-            estado__in=ORDER_HISTORY_STATES,
-            fecha_confirmacion__date=source_date,
-            sucursal_cliente__nombre__in=branch_names,
-        )
-        .select_related("sucursal_cliente")
-        .prefetch_related("items__producto")
-    )
-
-    for pedido in pedidos:
-        branch_name = pedido.sucursal_cliente.nombre
-        for item in pedido.items.all():
-            product_name = item.producto.nombre
-            if product_name in product_names:
-                totals[(branch_name, product_name)] += item.cantidad
-
-    rows = []
-    for label, product_name in AGUAS_PRODUCTOS:
-        rows.append(
-            {
-                "label": label,
-                "values": [
-                    format_dashboard_quantity(totals[(branch_name, product_name)])
-                    for branch_name, _ in AGUAS_SUCURSALES
-                ],
-            }
-        )
-
-    return {
-        "source_date": source_date,
-        "print_date": source_date + timedelta(days=1),
-        "branches": [short_name for _, short_name in AGUAS_SUCURSALES],
-        "rows": rows,
-    }
-
-
-def pedido_history_queryset():
-    return (
-        Pedido.objects.filter(eliminado=False, estado__in=ORDER_HISTORY_STATES)
-        .select_related("sucursal_cliente")
-        .prefetch_related("items__producto")
-        .order_by("fecha_confirmacion", "fecha_creacion")
-    )
-
-
-def pedido_local_date(pedido):
-    base_date = pedido.fecha_confirmacion or pedido.fecha_creacion
-    return timezone.localtime(base_date).date()
-
-
-def empty_metric():
-    return {
-        "pedidos": 0,
-        "total": Decimal("0.00"),
-        "productos": 0,
-        "unidades": Decimal("0.000"),
-    }
-
-
-def pct(value, maximum):
-    if not maximum:
-        return 0
-    return int((Decimal(value) / Decimal(maximum)) * 100)
-
-
-def money_decimal(value):
-    return Decimal(value or 0).quantize(Decimal("0.01"))
-
-
-def admin_datos_context(request):
-    sucursales = list(SucursalCliente.objects.filter(activa=True).order_by("tipo", "nombre"))
-    selected_sucursal_id = request.GET.get("sucursal", "").strip()
-    selected_weekday_raw = request.GET.get("dia", "").strip()
-
-    if not selected_sucursal_id and sucursales:
-        selected_sucursal_id = str(sucursales[0].id)
-    try:
-        selected_weekday = int(selected_weekday_raw or timezone.localdate().isoweekday())
-    except ValueError:
-        selected_weekday = timezone.localdate().isoweekday()
-    if selected_weekday not in WEEKDAY_LABELS:
-        selected_weekday = timezone.localdate().isoweekday()
-
-    selected_sucursal = next(
-        (sucursal for sucursal in sucursales if str(sucursal.id) == selected_sucursal_id),
-        sucursales[0] if sucursales else None,
-    )
-
-    pedidos = list(pedido_history_queryset())
-    metrics = defaultdict(empty_metric)
-    weekday_totals = defaultdict(Decimal)
-    branch_totals = defaultdict(Decimal)
-    product_mix = defaultdict(
-        lambda: {
-            "cantidad": Decimal("0.000"),
-            "pedidos": set(),
-            "ultimo": None,
-        }
-    )
-    selected_order_count = 0
-    total_general = Decimal("0.00")
-
-    for pedido in pedidos:
-        local_date = pedido_local_date(pedido)
-        weekday = local_date.isoweekday()
-        branch = pedido.sucursal_cliente
-        items = list(pedido.items.all())
-        item_count = len(items)
-        units = sum((item.cantidad for item in items), Decimal("0.000"))
-        key = (branch.id, weekday)
-
-        metrics[key]["pedidos"] += 1
-        metrics[key]["total"] += pedido.total
-        metrics[key]["productos"] += item_count
-        metrics[key]["unidades"] += units
-        weekday_totals[weekday] += pedido.total
-        branch_totals[branch.id] += pedido.total
-        total_general += pedido.total
-
-        if selected_sucursal and branch.id == selected_sucursal.id and weekday == selected_weekday:
-            selected_order_count += 1
-            for item in items:
-                mix = product_mix[item.producto.nombre]
-                mix["cantidad"] += item.cantidad
-                mix["pedidos"].add(pedido.id)
-                if mix["ultimo"] is None or local_date > mix["ultimo"]:
-                    mix["ultimo"] = local_date
-
-    average_rows = []
-    for sucursal in sucursales:
-        for weekday, weekday_label in WEEKDAY_LABELS.items():
-            metric = metrics[(sucursal.id, weekday)]
-            pedidos_count = metric["pedidos"]
-            average_rows.append(
-                {
-                    "sucursal": sucursal.nombre,
-                    "weekday": weekday_label,
-                    "pedidos": pedidos_count,
-                    "avg_total": money_decimal(metric["total"] / pedidos_count)
-                    if pedidos_count
-                    else Decimal("0.00"),
-                    "avg_products": metric["productos"] / pedidos_count
-                    if pedidos_count
-                    else 0,
-                    "avg_units": metric["unidades"] / pedidos_count
-                    if pedidos_count
-                    else Decimal("0.000"),
-                }
-            )
-
-    max_weekday_total = max(weekday_totals.values(), default=Decimal("0.00"))
-    weekday_chart = [
-        {
-            "label": label,
-            "total": money_decimal(weekday_totals[weekday]),
-            "bar": pct(weekday_totals[weekday], max_weekday_total),
-        }
-        for weekday, label in WEEKDAY_LABELS.items()
-    ]
-
-    branch_chart_raw = [
-        {
-            "label": sucursal.nombre,
-            "total": money_decimal(branch_totals[sucursal.id]),
-        }
-        for sucursal in sucursales
-    ]
-    max_branch_total = max((row["total"] for row in branch_chart_raw), default=Decimal("0.00"))
-    branch_chart = [
-        {
-            **row,
-            "bar": pct(row["total"], max_branch_total),
-        }
-        for row in branch_chart_raw
-    ]
-
-    prediction_rows = []
-    max_prediction_quantity = max(
-        (data["cantidad"] for data in product_mix.values()),
-        default=Decimal("0.000"),
-    )
-    for product_name, data in sorted(
-        product_mix.items(),
-        key=lambda item: (-item[1]["cantidad"], item[0]),
-    )[:12]:
-        pedidos_con_producto = len(data["pedidos"])
-        prediction_rows.append(
-            {
-                "producto": product_name,
-                "cantidad_promedio": data["cantidad"] / selected_order_count
-                if selected_order_count
-                else Decimal("0.000"),
-                "frecuencia": int((pedidos_con_producto / selected_order_count) * 100)
-                if selected_order_count
-                else 0,
-                "ultimo": data["ultimo"],
-                "bar": pct(data["cantidad"], max_prediction_quantity),
-            }
-        )
-
-    total_orders = len(pedidos)
-    return {
-        "sucursales": sucursales,
-        "weekdays": list(WEEKDAY_LABELS.items()),
-        "selected_sucursal": selected_sucursal,
-        "selected_sucursal_id": str(selected_sucursal.id) if selected_sucursal else "",
-        "selected_weekday": selected_weekday,
-        "selected_weekday_label": WEEKDAY_LABELS[selected_weekday],
-        "total_orders": total_orders,
-        "total_revenue": money_decimal(total_general),
-        "avg_ticket": money_decimal(total_general / total_orders) if total_orders else Decimal("0.00"),
-        "average_rows": average_rows,
-        "weekday_chart": weekday_chart,
-        "branch_chart": branch_chart,
-        "prediction_rows": prediction_rows,
-        "selected_order_count": selected_order_count,
-    }
-
-
 @dashboard_required
 def admin_dashboard(request):
     pedidos = (
@@ -1176,17 +914,6 @@ def admin_dashboard(request):
         "can_manage_pedidos": is_admin_user(request.user),
     }
     return render(request, "pedidos/admin_dashboard.html", context)
-
-
-@dashboard_required
-def imprimir_aguas(request):
-    logger.info("Admin %s abrio impresion de aguas", request.user.username)
-    return render(request, "pedidos/aguas_print.html", aguas_print_context())
-
-
-@admin_required
-def admin_datos(request):
-    return render(request, "pedidos/admin_datos.html", admin_datos_context(request))
 
 
 def excel_response_for_pedido(pedido):

@@ -1,4 +1,3 @@
-import sys
 from pathlib import Path
 
 import dj_database_url
@@ -47,9 +46,6 @@ MIDDLEWARE = [
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
 ]
-
-if DEBUG:
-    MIDDLEWARE.remove('whitenoise.middleware.WhiteNoiseMiddleware')
 
 ROOT_URLCONF = 'proyecto.urls'
 
@@ -108,9 +104,6 @@ AUTH_PASSWORD_VALIDATORS = [
     },
 ]
 
-if "test" in sys.argv:
-    PASSWORD_HASHERS = ["django.contrib.auth.hashers.MD5PasswordHasher"]
-
 
 # Internationalization
 # https://docs.djangoproject.com/en/6.0/topics/i18n/
@@ -133,13 +126,7 @@ STATICFILES_DIRS = [BASE_DIR / 'static']
 
 STORAGES = {
     "default": {"BACKEND": "django.core.files.storage.FileSystemStorage"},
-    "staticfiles": {
-        "BACKEND": (
-            "django.contrib.staticfiles.storage.StaticFilesStorage"
-            if DEBUG
-            else "whitenoise.storage.CompressedManifestStaticFilesStorage"
-        )
-    },
+    "staticfiles": {"BACKEND": "whitenoise.storage.CompressedManifestStaticFilesStorage"},
 }
 
 LOGIN_URL = "login"

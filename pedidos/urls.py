@@ -13,9 +13,7 @@ urlpatterns = [
     path("api/pedidos/confirmar/", views.confirmar_pedido, name="api_confirmar_pedido"),
     path("api/horarios/", views.info_horarios, name="info_horarios"),
     path("admin/", views.admin_dashboard, name="admin_dashboard"),
-    path("admin/datos/", views.admin_datos, name="admin_datos"),
     path("admin/configuracion/", views.admin_configuracion, name="admin_configuracion"),
-    path("admin/aguas/imprimir/", views.imprimir_aguas, name="imprimir_aguas"),
     path("admin/pedidos/<int:pedido_id>/excel/", views.descargar_excel, name="descargar_excel"),
     path(
         "admin/pedidos/<int:pedido_id>/descargar/",

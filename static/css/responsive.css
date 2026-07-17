@@ -15,14 +15,6 @@
     .filters {
         grid-template-columns: repeat(3, minmax(150px, 1fr));
     }
-
-    .data-grid {
-        grid-template-columns: 1fr;
-    }
-
-    .data-filters {
-        grid-template-columns: repeat(2, minmax(150px, 1fr)) auto;
-    }
 }
 
 @media (max-width: 767px) {
@@ -296,12 +288,7 @@
     }
 
     .stats-grid,
-    .filters,
-    .data-filters {
-        grid-template-columns: 1fr;
-    }
-
-    .data-grid {
+    .filters {
         grid-template-columns: 1fr;
     }
 
