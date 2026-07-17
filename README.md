@@ -25,6 +25,7 @@ La contraseña de cada sucursal/cliente es su nombre más 4 dígitos:
 - `Rakebela` / `Rakebela4349`
 - Admin: `juancarlos` / `TocayosMO2026`
 - Solo impresión: `juanmanuel` / `imprimir`
+- Pruebas/debugging: `ivanprueba` / `prueba8989`
 
 Los usernames internos sin espacios también funcionan para pruebas técnicas: `aguilas`, `fortin`, `estancia`, `brot_nueva_galicia`, `brot_cat`, `rakebela`.
 
