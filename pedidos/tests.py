@@ -127,7 +127,13 @@ class PedidoFlowTests(TestCase):
 
         dashboard = self.client.get("/admin/")
         self.assertContains(dashboard, pedido.folio_fecha)
+        self.assertContains(dashboard, "data-inline-print")
+        self.assertNotContains(dashboard, 'target="_blank"')
         self.assertNotContains(dashboard, f"#{pedido.id}")
+
+        embedded_print = self.client.get(f"/admin/pedidos/{pedido.id}/imprimir/?embedded=1")
+        self.assertEqual(embedded_print.status_code, 200)
+        self.assertNotContains(embedded_print, 'window.addEventListener("load"')
 
     def test_ticket_imprime_solo_una_fila_por_producto_pedido(self):
         self.assertTrue(self.client.login(username="aguilas", password="Aguilas8445"))
@@ -327,7 +333,9 @@ class PedidoFlowTests(TestCase):
         self.assertContains(dashboard, "Ver detalle")
         self.assertContains(dashboard, "Imprimir")
         self.assertContains(dashboard, "Aguas")
+        self.assertContains(dashboard, "data-inline-print")
         html = dashboard.content.decode()
+        self.assertNotIn('target="_blank"', html)
         self.assertNotIn("admin/configuracion", html)
         self.assertNotIn("admin/datos", html)
         self.assertNotIn(">Excel</a>", html)
@@ -340,6 +348,9 @@ class PedidoFlowTests(TestCase):
         aguas_response = self.client.get("/admin/aguas/imprimir/")
         self.assertEqual(aguas_response.status_code, 200)
         self.assertContains(aguas_response, "size: 72mm 72mm;")
+        aguas_embedded = self.client.get("/admin/aguas/imprimir/?embedded=1")
+        self.assertEqual(aguas_embedded.status_code, 200)
+        self.assertNotContains(aguas_embedded, 'window.addEventListener("load"')
 
         response = self.client.get("/admin/configuracion/")
         self.assertEqual(response.status_code, 302)
@@ -491,6 +502,8 @@ class PedidoFlowTests(TestCase):
         self.assertTrue(self.client.login(username="juancarlos", password="TocayosMO2026"))
         dashboard = self.client.get("/admin/")
         self.assertContains(dashboard, "Aguas")
+        self.assertContains(dashboard, "data-inline-print")
+        self.assertNotContains(dashboard, 'target="_blank"')
         response = self.client.get("/admin/aguas/imprimir/")
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, "window.print()")
@@ -528,6 +541,8 @@ class PedidoFlowTests(TestCase):
         self.assertContains(response, "Promedio de Lunes")
         self.assertContains(response, "AGUA JAMAICA LT")
         self.assertContains(response, "Ticket promedio")
+        self.assertContains(response, "data-inline-print")
+        self.assertNotContains(response, 'target="_blank"')
 
     def test_seed_crea_usuario_debug_admin(self):
         user = User.objects.get(username="ivanprueba")

@@ -204,10 +204,12 @@
         </table>
     </main>
 
+    {% if auto_print %}
     <script>
         window.addEventListener("load", () => {
             window.setTimeout(() => window.print(), 350);
         });
     </script>
+    {% endif %}
 </body>
 </html>

@@ -14,8 +14,7 @@
                 <a
                     class="secondary-link compact print-link"
                     href="{% url 'imprimir_aguas' %}"
-                    target="_blank"
-                    rel="noopener"
+                    data-inline-print
                 >Aguas</a>
                 {% if can_manage_pedidos %}
                 <a class="secondary-link compact" href="{% url 'admin_datos' %}">Datos</a>
@@ -93,8 +92,7 @@
                         <a
                             class="secondary-link compact print-link"
                             href="{% url 'imprimir_pedido' pedido.id %}"
-                            target="_blank"
-                            rel="noopener"
+                            data-inline-print
                         >Imprimir</a>
                         {% if can_manage_pedidos %}
                         <a class="primary-link compact" href="{% url 'descargar_y_marcar' pedido.id %}">Excel</a>

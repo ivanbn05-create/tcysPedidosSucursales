@@ -1185,7 +1185,9 @@ def admin_dashboard(request):
 @dashboard_required
 def imprimir_aguas(request):
     logger.info("Admin %s abrio impresion de aguas", request.user.username)
-    return render(request, "pedidos/aguas_print.html", aguas_print_context())
+    context = aguas_print_context()
+    context["auto_print"] = request.GET.get("embedded") != "1"
+    return render(request, "pedidos/aguas_print.html", context)
 
 
 @admin_required
@@ -1238,7 +1240,9 @@ def imprimir_pedido(request, pedido_id):
         eliminado=False,
     )
     logger.info("Admin %s abrio impresion de pedido #%s", request.user.username, pedido.id)
-    return render(request, "pedidos/ticket_print.html", ticket_context(pedido))
+    context = ticket_context(pedido)
+    context["auto_print"] = request.GET.get("embedded") != "1"
+    return render(request, "pedidos/ticket_print.html", context)
 
 
 @require_POST
