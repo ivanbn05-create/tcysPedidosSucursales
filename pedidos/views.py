@@ -316,6 +316,38 @@ def serializar_pedido(pedido, incluir_precios=False):
     }
 
 
+def pedidos_historial_usuario(sucursal):
+    return (
+        Pedido.objects.filter(
+            sucursal_cliente=sucursal,
+            eliminado=False,
+            estado__in=ORDER_HISTORY_STATES,
+        )
+        .select_related("sucursal_cliente")
+        .prefetch_related("items__producto")
+        .order_by("-fecha_confirmacion", "-fecha_creacion", "-id")
+    )
+
+
+def historial_pedido_context(pedido):
+    fecha_base = pedido.fecha_confirmacion or pedido.fecha_creacion
+    items = [
+        {
+            "producto": item.producto.nombre,
+            "cantidad": format_ticket_quantity(item.cantidad),
+            "unidad": item.producto.unidad_corta,
+        }
+        for item in pedido.items.select_related("producto").all()
+    ]
+    return {
+        "pedido": pedido,
+        "sucursal": pedido.sucursal_cliente,
+        "fecha": timezone.localtime(fecha_base),
+        "items": items,
+        "total": decimal_to_str(pedido.total),
+    }
+
+
 def parse_json_body(request):
     try:
         return json.loads(request.body.decode("utf-8") or "{}")
@@ -380,6 +412,43 @@ def pedidos_view(request):
         },
     }
     return render(request, "pedidos/pedidos.html", context)
+
+
+@login_required
+def historial_pedidos(request):
+    if can_view_admin_dashboard(request.user):
+        return redirect("admin_dashboard")
+
+    sucursal = sucursal_para_usuario(request.user)
+    if sucursal is None:
+        messages.error(request, "Tu usuario no tiene una sucursal o cliente activo.")
+        return redirect("login")
+
+    pedidos = list(pedidos_historial_usuario(sucursal))
+    context = {
+        "sucursal": sucursal,
+        "history_orders": [historial_pedido_context(pedido) for pedido in pedidos],
+    }
+    return render(request, "pedidos/historial_pedidos.html", context)
+
+
+@login_required
+def imprimir_historial_pedido(request, pedido_id):
+    if can_view_admin_dashboard(request.user):
+        return redirect("admin_dashboard")
+
+    sucursal = sucursal_para_usuario(request.user)
+    if sucursal is None:
+        messages.error(request, "Tu usuario no tiene una sucursal o cliente activo.")
+        return redirect("login")
+
+    pedido = get_object_or_404(pedidos_historial_usuario(sucursal), pk=pedido_id)
+    context = {
+        "order": historial_pedido_context(pedido),
+        "pedido": pedido,
+        "auto_print": request.GET.get("embedded") != "1",
+    }
+    return render(request, "pedidos/historial_pedido_print.html", context)
 
 
 @require_POST

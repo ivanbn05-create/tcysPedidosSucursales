@@ -8,6 +8,12 @@ urlpatterns = [
     path("login/", views.login_view, name="login"),
     path("logout/", views.logout_view, name="logout"),
     path("pedidos/", views.pedidos_view, name="pedidos"),
+    path("pedidos/historial/", views.historial_pedidos, name="historial_pedidos"),
+    path(
+        "pedidos/historial/<int:pedido_id>/imprimir/",
+        views.imprimir_historial_pedido,
+        name="imprimir_historial_pedido",
+    ),
     path("api/pedidos/crear-item/", views.crear_item, name="api_crear_item"),
     path("api/pedidos/eliminar-item/", views.eliminar_item, name="api_eliminar_item"),
     path("api/pedidos/limpiar/", views.limpiar_pedido, name="api_limpiar_pedido"),

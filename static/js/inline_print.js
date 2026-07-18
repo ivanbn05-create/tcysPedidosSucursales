@@ -31,7 +31,7 @@ document.addEventListener("DOMContentLoaded", () => {
         }
     }
 
-    function buildPrintCss(widthMm, heightMm) {
+    function buildFixedPrintCss(widthMm, heightMm) {
         return `
             @page {
                 size: ${widthMm}mm ${heightMm}mm;
@@ -180,7 +180,135 @@ document.addEventListener("DOMContentLoaded", () => {
         `;
     }
 
+    function buildAutoPrintCss() {
+        return `
+            @page {
+                size: auto;
+                margin: 10mm;
+            }
+
+            @media print {
+                html,
+                body {
+                    margin: 0 !important;
+                    padding: 0 !important;
+                    background: #fff !important;
+                    color: #000 !important;
+                    overflow: visible !important;
+                }
+
+                body > :not(#inlinePrintSurface) {
+                    display: none !important;
+                }
+
+                #inlinePrintSurface {
+                    display: block !important;
+                    width: auto !important;
+                    margin: 0 !important;
+                    padding: 0 !important;
+                    background: #fff !important;
+                    color: #000 !important;
+                    font-family: Arial, sans-serif !important;
+                }
+
+                .inline-print-sheet {
+                    width: 100% !important;
+                    max-width: none !important;
+                    margin: 0 !important;
+                    background: #fff !important;
+                    break-inside: avoid;
+                    page-break-inside: avoid;
+                }
+
+                .inline-history-receipt,
+                .inline-history-receipt * {
+                    box-sizing: border-box;
+                }
+
+                .inline-history-receipt {
+                    color: #000 !important;
+                    font-size: 11pt;
+                    line-height: 1.25;
+                }
+
+                .inline-history-header {
+                    padding-bottom: 5mm;
+                    border-bottom: 0.4mm solid #000;
+                }
+
+                .inline-history-header h1 {
+                    margin: 0;
+                    font-size: 18pt;
+                    line-height: 1;
+                }
+
+                .inline-history-header p,
+                .inline-history-footer p {
+                    margin: 2mm 0 0;
+                }
+
+                .inline-history-meta {
+                    margin: 5mm 0;
+                    display: grid;
+                    grid-template-columns: repeat(3, 1fr);
+                    gap: 3mm;
+                }
+
+                .inline-history-meta div {
+                    display: grid;
+                    gap: 1mm;
+                }
+
+                .inline-history-meta dt {
+                    font-size: 8pt;
+                    font-weight: 700;
+                    text-transform: uppercase;
+                }
+
+                .inline-history-meta dd {
+                    margin: 0;
+                    font-weight: 700;
+                }
+
+                .inline-history-table {
+                    width: 100%;
+                    border-collapse: collapse;
+                    break-inside: auto;
+                    page-break-inside: auto;
+                }
+
+                .inline-history-table th,
+                .inline-history-table td {
+                    padding: 2.4mm 1.6mm;
+                    border: 0.3mm solid #000;
+                    text-align: left;
+                    vertical-align: top;
+                }
+
+                .inline-history-table th:last-child,
+                .inline-history-table td:last-child {
+                    width: 34mm;
+                    text-align: right;
+                    white-space: nowrap;
+                }
+
+                .inline-history-footer {
+                    margin-top: 5mm;
+                    padding-top: 4mm;
+                    border-top: 0.4mm solid #000;
+                }
+
+                .inline-history-footer strong {
+                    display: block;
+                    font-size: 14pt;
+                    text-align: right;
+                }
+            }
+        `;
+    }
+
     function printTemplate(template) {
+        const printSize = template.dataset.printSize || "fixed";
         const widthMm = Number(template.dataset.printWidth || 72);
         const heightMm = Number(template.dataset.printHeight || 73);
         const style = ensurePrintStyle();
@@ -189,7 +317,8 @@ document.addEventListener("DOMContentLoaded", () => {
         printSurface.innerHTML = "";
         printSurface.appendChild(template.content.cloneNode(true));
         printSurface.setAttribute("aria-hidden", "false");
-        style.textContent = buildPrintCss(widthMm, heightMm);
+        style.textContent =
+            printSize === "auto" ? buildAutoPrintCss() : buildFixedPrintCss(widthMm, heightMm);
 
         cleanupHandler = () => {
             clearPrintSurface();

@@ -281,10 +281,67 @@ class PedidoFlowTests(TestCase):
         response = self.client.get("/pedidos/")
 
         self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'href="/pedidos/historial/"')
+        self.assertContains(response, ">Historial</a>")
+        self.assertNotContains(response, '<span class="brand-title">Pedidos</span>')
         self.assertNotContains(response, "$178.00")
         self.assertNotContains(response, "precio_unitario")
         self.assertNotContains(response, "scheduleStatus")
         self.assertNotContains(response, "Total tentativo")
+
+    def test_usuario_ve_historial_propio_e_imprime_recibo_adaptable(self):
+        ayer = timezone.now() - timedelta(days=1)
+        reciente = self.crear_pedido_confirmado(
+            "Aguilas",
+            [
+                ("LITRO DE BARBACOA", "2"),
+                ("TORTILLA ESPECIAL", "3"),
+            ],
+            timezone.now(),
+        )
+        anterior = self.crear_pedido_confirmado(
+            "Aguilas",
+            [("AGUA JAMAICA LT", "4")],
+            ayer,
+        )
+        otro = self.crear_pedido_confirmado(
+            "Fortin",
+            [("LITRO DE BARBACOA", "5")],
+            timezone.now(),
+        )
+
+        self.assertTrue(self.client.login(username="aguilas", password="Aguilas8445"))
+        response = self.client.get("/pedidos/historial/")
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Historial")
+        self.assertContains(response, f"Pedido #{reciente.id}")
+        self.assertContains(response, f"Pedido #{anterior.id}")
+        self.assertNotContains(response, f"Pedido #{otro.id}")
+        html = response.content.decode()
+        self.assertLess(html.index(f"Pedido #{reciente.id}"), html.index(f"Pedido #{anterior.id}"))
+        self.assertContains(response, 'data-print-size="auto"')
+        self.assertContains(response, f'data-print-template-id="print-history-pedido-{reciente.id}"')
+        self.assertContains(response, "Total provisional")
+        self.assertNotContains(response, "$1.00")
+        self.assertNotContains(response, "precio_unitario")
+
+        print_response = self.client.get(f"/pedidos/historial/{reciente.id}/imprimir/")
+        self.assertEqual(print_response.status_code, 200)
+        self.assertContains(print_response, "size: auto;")
+        self.assertContains(print_response, "window.print()")
+        self.assertContains(print_response, "Aguilas")
+        self.assertContains(print_response, "LITRO DE BARBACOA")
+        self.assertContains(print_response, "2 KG")
+        self.assertContains(print_response, "Total provisional")
+        self.assertNotContains(print_response, "$1.00")
+        self.assertNotContains(print_response, "precio_unitario")
+
+        embedded = self.client.get(f"/pedidos/historial/{reciente.id}/imprimir/?embedded=1")
+        self.assertEqual(embedded.status_code, 200)
+        self.assertNotContains(embedded, 'window.addEventListener("load"')
+
+        forbidden = self.client.get(f"/pedidos/historial/{otro.id}/imprimir/")
+        self.assertEqual(forbidden.status_code, 404)
 
     def test_login_muestra_horario_de_pedidos(self):
         response = self.client.get("/login/")

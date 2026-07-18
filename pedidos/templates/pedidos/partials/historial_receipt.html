@@ -1,0 +1,43 @@
+<article class="inline-print-sheet inline-history-receipt" aria-label="Pedido imprimible">
+    <header class="inline-history-header">
+        <h1>Los Tocayos</h1>
+        <p>{{ order.sucursal.nombre }}</p>
+    </header>
+
+    <dl class="inline-history-meta">
+        <div>
+            <dt>Pedido</dt>
+            <dd>#{{ order.pedido.id }}</dd>
+        </div>
+        <div>
+            <dt>Fecha</dt>
+            <dd>{{ order.fecha|date:"d/m/Y H:i" }}</dd>
+        </div>
+        <div>
+            <dt>Estado</dt>
+            <dd>{{ order.pedido.get_estado_display }}</dd>
+        </div>
+    </dl>
+
+    <table class="inline-history-table">
+        <thead>
+            <tr>
+                <th>Producto</th>
+                <th>Cantidad</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for item in order.items %}
+            <tr>
+                <td>{{ item.producto }}</td>
+                <td>{{ item.cantidad }} {{ item.unidad }}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+
+    <footer class="inline-history-footer">
+        <strong>Total provisional: ${{ order.total }}</strong>
+        <p>El total mostrado es provisional y puede ajustarse en la validacion final del negocio.</p>
+    </footer>
+</article>

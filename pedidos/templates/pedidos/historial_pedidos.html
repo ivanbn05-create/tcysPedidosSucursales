@@ -1,0 +1,68 @@
+{% extends "pedidos/base.html" %}
+
+{% block title %}Historial | Los Tocayos{% endblock %}
+{% block body_class %}history-page{% endblock %}
+
+{% block content %}
+<main class="history-shell">
+    <section class="history-header">
+        <div>
+            <span class="eyebrow">{{ sucursal.nombre }}</span>
+            <h1>Historial</h1>
+        </div>
+        <a class="secondary-link compact" href="{% url 'pedidos' %}">Pedido actual</a>
+    </section>
+
+    {% if history_orders %}
+    <section class="history-list" aria-label="Pedidos realizados">
+        {% for order in history_orders %}
+        <article class="history-card">
+            <details>
+                <summary>
+                    <span>
+                        <strong>Pedido #{{ order.pedido.id }}</strong>
+                        <small>{{ order.fecha|date:"d/m/Y H:i" }} · {{ order.pedido.get_estado_display }}</small>
+                    </span>
+                    <b>${{ order.total }}</b>
+                </summary>
+                <div class="history-detail">
+                    <div class="history-items">
+                        {% for item in order.items %}
+                        <div class="history-item">
+                            <strong>{{ item.producto }}</strong>
+                            <span>{{ item.cantidad }} {{ item.unidad }}</span>
+                        </div>
+                        {% endfor %}
+                    </div>
+                    <p class="history-total-note">Total provisional: ${{ order.total }}</p>
+                    <div class="history-actions">
+                        <a
+                            class="primary-link compact print-link"
+                            href="{% url 'imprimir_historial_pedido' order.pedido.id %}"
+                            data-inline-print
+                            data-print-template-id="print-history-pedido-{{ order.pedido.id }}"
+                        >Imprimir</a>
+                    </div>
+                </div>
+            </details>
+        </article>
+        {% endfor %}
+    </section>
+    {% else %}
+    <section class="history-empty">
+        <p>No hay pedidos confirmados todavia.</p>
+    </section>
+    {% endif %}
+</main>
+
+<div id="inlinePrintSurface" class="inline-print-surface" aria-hidden="true"></div>
+
+{% for order in history_orders %}
+<template
+    id="print-history-pedido-{{ order.pedido.id }}"
+    data-print-size="auto"
+>
+    {% include "pedidos/partials/historial_receipt.html" with order=order %}
+</template>
+{% endfor %}
+{% endblock %}

@@ -1,0 +1,155 @@
+<!doctype html>
+<html lang="es">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Imprimir pedido #{{ pedido.id }}</title>
+    <style>
+        @page {
+            size: auto;
+            margin: 10mm;
+        }
+
+        html,
+        body {
+            margin: 0;
+            padding: 0;
+            background: #fff;
+            color: #000;
+            font-family: Arial, sans-serif;
+        }
+
+        .print-toolbar {
+            display: flex;
+            gap: 8px;
+            max-width: 190mm;
+            margin: 16px auto;
+        }
+
+        .print-toolbar button,
+        .print-toolbar a {
+            border: 0;
+            border-radius: 6px;
+            min-height: 36px;
+            padding: 8px 10px;
+            color: #fff;
+            background: #ed1c24;
+            font: 700 14px Arial, sans-serif;
+            text-decoration: none;
+            cursor: pointer;
+        }
+
+        .print-toolbar a {
+            display: inline-flex;
+            align-items: center;
+            background: #242424;
+        }
+
+        .inline-history-receipt {
+            width: min(100%, 190mm);
+            margin: 0 auto;
+            color: #000;
+            background: #fff;
+            font-size: 11pt;
+        }
+
+        .inline-history-header {
+            padding-bottom: 5mm;
+            border-bottom: 0.4mm solid #000;
+        }
+
+        .inline-history-header h1 {
+            margin: 0;
+            font-size: 18pt;
+            line-height: 1;
+        }
+
+        .inline-history-header p,
+        .inline-history-footer p {
+            margin: 2mm 0 0;
+        }
+
+        .inline-history-meta {
+            margin: 5mm 0;
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 3mm;
+        }
+
+        .inline-history-meta div {
+            display: grid;
+            gap: 1mm;
+        }
+
+        .inline-history-meta dt {
+            font-size: 8pt;
+            font-weight: 700;
+            text-transform: uppercase;
+        }
+
+        .inline-history-meta dd {
+            margin: 0;
+            font-weight: 700;
+        }
+
+        .inline-history-table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+
+        .inline-history-table th,
+        .inline-history-table td {
+            padding: 2.4mm 1.6mm;
+            border: 0.3mm solid #000;
+            text-align: left;
+            vertical-align: top;
+        }
+
+        .inline-history-table th:last-child,
+        .inline-history-table td:last-child {
+            width: 34mm;
+            text-align: right;
+            white-space: nowrap;
+        }
+
+        .inline-history-footer {
+            margin-top: 5mm;
+            padding-top: 4mm;
+            border-top: 0.4mm solid #000;
+        }
+
+        .inline-history-footer strong {
+            display: block;
+            font-size: 14pt;
+            text-align: right;
+        }
+
+        @media print {
+            .print-toolbar {
+                display: none;
+            }
+
+            .inline-history-receipt {
+                width: 100%;
+                margin: 0;
+            }
+        }
+    </style>
+</head>
+<body>
+    <nav class="print-toolbar" aria-label="Acciones de impresion">
+        <button type="button" onclick="window.print()">Imprimir</button>
+        <a href="{% url 'historial_pedidos' %}">Volver</a>
+    </nav>
+
+    {% include "pedidos/partials/historial_receipt.html" with order=order %}
+
+    {% if auto_print %}
+    <script>
+        window.addEventListener("load", () => {
+            window.setTimeout(() => window.print(), 350);
+        });
+    </script>
+    {% endif %}
+</body>
+</html>
