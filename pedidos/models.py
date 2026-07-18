@@ -1,3 +1,4 @@
+import uuid
 from datetime import time
 from decimal import Decimal
 
@@ -135,6 +136,7 @@ class Pedido(models.Model):
         on_delete=models.PROTECT,
         related_name="pedidos",
     )
+    codigo_publico = models.UUIDField(default=uuid.uuid4, unique=True, editable=False)
     usuario_nombre = models.CharField(max_length=150)
     fecha_creacion = models.DateTimeField(auto_now_add=True)
     fecha_confirmacion = models.DateTimeField(null=True, blank=True)

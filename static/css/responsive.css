@@ -26,9 +26,8 @@
 }
 
 @media (max-width: 767px) {
-    html,
     body.order-page {
-        height: 100%;
+        height: 100dvh;
         overflow: hidden;
     }
 
@@ -449,7 +448,6 @@
 }
 
 @media (min-width: 768px) {
-    html,
     body.order-page {
         min-height: 100%;
     }

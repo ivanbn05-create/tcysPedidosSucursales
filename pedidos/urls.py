@@ -10,7 +10,7 @@ urlpatterns = [
     path("pedidos/", views.pedidos_view, name="pedidos"),
     path("pedidos/historial/", views.historial_pedidos, name="historial_pedidos"),
     path(
-        "pedidos/historial/<int:pedido_id>/imprimir/",
+        "pedidos/historial/<uuid:codigo_publico>/imprimir/",
         views.imprimir_historial_pedido,
         name="imprimir_historial_pedido",
     ),

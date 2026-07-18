@@ -20,8 +20,8 @@
             <details>
                 <summary>
                     <span>
-                        <strong>Pedido #{{ order.pedido.id }}</strong>
-                        <small>{{ order.fecha|date:"d/m/Y H:i" }} · {{ order.pedido.get_estado_display }}</small>
+                        <strong>Pedido {{ order.folio }}</strong>
+                        <small>{{ order.pedido.get_estado_display }} · Clave {{ order.codigo_corto }}</small>
                     </span>
                     <b>${{ order.total }}</b>
                 </summary>
@@ -38,9 +38,9 @@
                     <div class="history-actions">
                         <a
                             class="primary-link compact print-link"
-                            href="{% url 'imprimir_historial_pedido' order.pedido.id %}"
+                            href="{% url 'imprimir_historial_pedido' order.codigo_publico %}"
                             data-inline-print
-                            data-print-template-id="print-history-pedido-{{ order.pedido.id }}"
+                            data-print-template-id="print-history-pedido-{{ order.codigo_publico }}"
                         >Imprimir</a>
                     </div>
                 </div>
@@ -59,7 +59,7 @@
 
 {% for order in history_orders %}
 <template
-    id="print-history-pedido-{{ order.pedido.id }}"
+    id="print-history-pedido-{{ order.codigo_publico }}"
     data-print-size="auto"
 >
     {% include "pedidos/partials/historial_receipt.html" with order=order %}

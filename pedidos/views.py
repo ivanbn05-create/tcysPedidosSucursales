@@ -343,6 +343,9 @@ def historial_pedido_context(pedido):
         "pedido": pedido,
         "sucursal": pedido.sucursal_cliente,
         "fecha": timezone.localtime(fecha_base),
+        "folio": pedido.folio_fecha,
+        "codigo_publico": pedido.codigo_publico,
+        "codigo_corto": str(pedido.codigo_publico).split("-")[0].upper(),
         "items": items,
         "total": decimal_to_str(pedido.total),
     }
@@ -433,7 +436,7 @@ def historial_pedidos(request):
 
 
 @login_required
-def imprimir_historial_pedido(request, pedido_id):
+def imprimir_historial_pedido(request, codigo_publico):
     if can_view_admin_dashboard(request.user):
         return redirect("admin_dashboard")
 
@@ -442,7 +445,7 @@ def imprimir_historial_pedido(request, pedido_id):
         messages.error(request, "Tu usuario no tiene una sucursal o cliente activo.")
         return redirect("login")
 
-    pedido = get_object_or_404(pedidos_historial_usuario(sucursal), pk=pedido_id)
+    pedido = get_object_or_404(pedidos_historial_usuario(sucursal), codigo_publico=codigo_publico)
     context = {
         "order": historial_pedido_context(pedido),
         "pedido": pedido,
