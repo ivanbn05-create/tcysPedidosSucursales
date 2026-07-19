@@ -40,6 +40,7 @@ ORDER_HISTORY_STATES = [
     Pedido.Estado.ENVIADO,
     Pedido.Estado.RECIBIDO,
 ]
+REPORT_COUNTABLE_STATES = {Pedido.Estado.CONFIRMADO}
 AGUAS_SUCURSALES = (
     ("Estancia", "E"),
     ("Aguilas", "A"),
@@ -1121,9 +1122,13 @@ def latest_report_orders(branch_names, generated_at=None):
     )
 
     latest_orders = {}
+    seen_branches = set()
     for pedido in pedidos:
         branch_name = pedido.sucursal_cliente.nombre
-        if branch_name not in latest_orders:
+        if branch_name in seen_branches:
+            continue
+        seen_branches.add(branch_name)
+        if pedido.estado in REPORT_COUNTABLE_STATES:
             latest_orders[branch_name] = pedido
 
     return latest_orders, generated_at, cutoff

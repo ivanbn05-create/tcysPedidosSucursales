@@ -53,12 +53,18 @@ class PedidoFlowTests(TestCase):
         self.assertNotIn("html,\n    body.order-page", responsive_css.replace("\r\n", "\n"))
         self.assertIn("body.order-page {\n        height: 100dvh;", responsive_css.replace("\r\n", "\n"))
 
-    def crear_pedido_confirmado(self, sucursal_nombre, items, fecha_confirmacion=None):
+    def crear_pedido_confirmado(
+        self,
+        sucursal_nombre,
+        items,
+        fecha_confirmacion=None,
+        estado=Pedido.Estado.CONFIRMADO,
+    ):
         sucursal = SucursalCliente.objects.get(nombre=sucursal_nombre)
         pedido = Pedido.objects.create(
             sucursal_cliente=sucursal,
             usuario_nombre=sucursal.nombre,
-            estado=Pedido.Estado.CONFIRMADO,
+            estado=estado,
             fecha_confirmacion=fecha_confirmacion or timezone.now(),
         )
         for producto_nombre, cantidad in items:
@@ -684,7 +690,13 @@ class PedidoFlowTests(TestCase):
         self.crear_pedido_confirmado(
             "Fortin",
             [("AGUA HORCHATA BLANCA 1/2", "4")],
-            fecha_antigua,
+            fecha_reciente,
+        )
+        self.crear_pedido_confirmado(
+            "Fortin",
+            [("AGUA HORCHATA BLANCA 1/2", "9")],
+            fecha_mas_reciente,
+            estado=Pedido.Estado.ENVIADO,
         )
 
         self.assertTrue(self.client.login(username="juancarlos", password="TocayosMO2026"))
@@ -698,7 +710,11 @@ class PedidoFlowTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, "window.print()")
         self.assertContains(response, "size: 72mm 72mm;")
-        self.assertContains(response, "<td>1/B</td>", html=True)
+        self.assertContains(
+            response,
+            "<tr><td>1/B</td><td>2</td><td>5</td><td>/</td><td>7</td></tr>",
+            html=True,
+        )
         self.assertContains(response, "<td>2</td>", html=True)
         self.assertContains(response, "<td>5</td>", html=True)
         self.assertContains(response, "<td>7</td>", html=True)
@@ -706,6 +722,7 @@ class PedidoFlowTests(TestCase):
         self.assertNotContains(response, "99")
         self.assertNotContains(response, "<td>8</td>", html=True)
         self.assertNotContains(response, "<td>4</td>", html=True)
+        self.assertNotContains(response, "<td>9</td>", html=True)
         self.assertContains(response, "<td>LR</td>", html=True)
         self.assertContains(response, "<td>3</td>", html=True)
         self.assertContains(response, "<td>LJ</td>", html=True)
@@ -762,7 +779,17 @@ class PedidoFlowTests(TestCase):
                 ("TORTILLA ESPECIAL", "4"),
                 ("CONSOMÉ", "4"),
             ],
-            fecha_antigua,
+            fecha_reciente,
+        )
+        self.crear_pedido_confirmado(
+            "Aguilas",
+            [
+                ("LITRO DE BARBACOA", "12"),
+                ("TORTILLA ESPECIAL", "12"),
+                ("CONSOMÉ", "12"),
+            ],
+            fecha_mas_reciente,
+            estado=Pedido.Estado.ENVIADO,
         )
 
         self.assertTrue(self.client.login(username="juancarlos", password="TocayosMO2026"))
@@ -782,12 +809,18 @@ class PedidoFlowTests(TestCase):
         self.assertContains(response, "<th>GORDA</th>", html=True)
         self.assertContains(response, "<th>CONSO</th>", html=True)
         self.assertContains(response, "<td>ESTANCIA</td>", html=True)
+        self.assertContains(
+            response,
+            "<tr><td>AGUILAS</td><td>/</td><td>/</td><td>/</td></tr>",
+            html=True,
+        )
         self.assertContains(response, "<td>BROT NVA G</td>", html=True)
         self.assertContains(response, "<td>STA ANITA</td>", html=True)
         self.assertContains(response, "<td>7</td>", html=True)
         self.assertContains(response, "<td>9</td>", html=True)
         self.assertContains(response, "<td>11</td>", html=True)
         self.assertNotContains(response, "99")
+        self.assertNotContains(response, "<td>12</td>", html=True)
 
     def test_admin_datos_muestra_promedios_y_prediccion(self):
         lunes = timezone.make_aware(datetime(2026, 7, 13, 10, 0))
