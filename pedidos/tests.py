@@ -645,16 +645,33 @@ class PedidoFlowTests(TestCase):
         self.assertEqual(pedido.sucursal_cliente, sucursal)
         self.assertEqual(pedido.estado, Pedido.Estado.CONFIRMADO)
 
-    def test_admin_imprime_aguas_de_pedidos_del_dia_anterior(self):
-        ayer = timezone.localdate() - timedelta(days=1)
-        fecha_ayer = timezone.make_aware(datetime.combine(ayer, time(11, 0)))
+    def test_admin_imprime_aguas_del_ultimo_pedido_por_sucursal_en_24_horas(self):
+        fecha_antigua = timezone.now() - timedelta(hours=25)
+        fecha_reciente = timezone.now() - timedelta(hours=2)
+        fecha_mas_reciente = timezone.now() - timedelta(minutes=20)
+        self.crear_pedido_confirmado(
+            "Estancia",
+            [
+                ("AGUA HORCHATA BLANCA 1/2", "99"),
+                ("AGUA HORCHATA ROSA LT", "99"),
+            ],
+            fecha_antigua,
+        )
+        self.crear_pedido_confirmado(
+            "Estancia",
+            [
+                ("AGUA HORCHATA BLANCA 1/2", "8"),
+                ("AGUA HORCHATA ROSA LT", "8"),
+            ],
+            fecha_reciente,
+        )
         self.crear_pedido_confirmado(
             "Estancia",
             [
                 ("AGUA HORCHATA BLANCA 1/2", "2"),
                 ("AGUA HORCHATA ROSA LT", "3"),
             ],
-            fecha_ayer,
+            fecha_mas_reciente,
         )
         self.crear_pedido_confirmado(
             "Aguilas",
@@ -662,12 +679,12 @@ class PedidoFlowTests(TestCase):
                 ("AGUA HORCHATA BLANCA 1/2", "5"),
                 ("AGUA JAMAICA LT", "1"),
             ],
-            fecha_ayer,
+            fecha_reciente,
         )
         self.crear_pedido_confirmado(
             "Fortin",
-            [("LITRO DE BARBACOA", "4")],
-            fecha_ayer,
+            [("AGUA HORCHATA BLANCA 1/2", "4")],
+            fecha_antigua,
         )
 
         self.assertTrue(self.client.login(username="juancarlos", password="TocayosMO2026"))
@@ -686,14 +703,36 @@ class PedidoFlowTests(TestCase):
         self.assertContains(response, "<td>5</td>", html=True)
         self.assertContains(response, "<td>7</td>", html=True)
         self.assertContains(response, "<td>/</td>", html=True)
+        self.assertNotContains(response, "99")
+        self.assertNotContains(response, "<td>8</td>", html=True)
+        self.assertNotContains(response, "<td>4</td>", html=True)
         self.assertContains(response, "<td>LR</td>", html=True)
         self.assertContains(response, "<td>3</td>", html=True)
         self.assertContains(response, "<td>LJ</td>", html=True)
         self.assertContains(response, "<td>1</td>", html=True)
 
-    def test_admin_imprime_reporte_sucursales_de_pedidos_del_dia_anterior(self):
-        ayer = timezone.localdate() - timedelta(days=1)
-        fecha_ayer = timezone.make_aware(datetime.combine(ayer, time(11, 0)))
+    def test_admin_imprime_reporte_sucursales_del_ultimo_pedido_en_24_horas(self):
+        fecha_antigua = timezone.now() - timedelta(hours=25)
+        fecha_reciente = timezone.now() - timedelta(hours=2)
+        fecha_mas_reciente = timezone.now() - timedelta(minutes=20)
+        self.crear_pedido_confirmado(
+            "Estancia",
+            [
+                ("LITRO DE BARBACOA", "99"),
+                ("TORTILLA ESPECIAL", "99"),
+                ("CONSOMÉ", "99"),
+            ],
+            fecha_antigua,
+        )
+        self.crear_pedido_confirmado(
+            "Estancia",
+            [
+                ("LITRO DE BARBACOA", "8"),
+                ("TORTILLA ESPECIAL", "8"),
+                ("CONSOMÉ", "8"),
+            ],
+            fecha_reciente,
+        )
         self.crear_pedido_confirmado(
             "Estancia",
             [
@@ -701,7 +740,7 @@ class PedidoFlowTests(TestCase):
                 ("TORTILLA ESPECIAL", "3"),
                 ("CONSOMÉ", "4"),
             ],
-            fecha_ayer,
+            fecha_mas_reciente,
         )
         self.crear_pedido_confirmado(
             "Brot Nueva Galicia",
@@ -709,12 +748,21 @@ class PedidoFlowTests(TestCase):
                 ("LITRO DE BARBACOA", "5"),
                 ("TORTILLA ESPECIAL", "6"),
             ],
-            fecha_ayer,
+            fecha_reciente,
         )
         self.crear_pedido_confirmado(
             "Santa Anita",
             [("CONSOMÉ", "7")],
-            fecha_ayer,
+            fecha_reciente,
+        )
+        self.crear_pedido_confirmado(
+            "Aguilas",
+            [
+                ("LITRO DE BARBACOA", "4"),
+                ("TORTILLA ESPECIAL", "4"),
+                ("CONSOMÉ", "4"),
+            ],
+            fecha_antigua,
         )
 
         self.assertTrue(self.client.login(username="juancarlos", password="TocayosMO2026"))
@@ -739,6 +787,7 @@ class PedidoFlowTests(TestCase):
         self.assertContains(response, "<td>7</td>", html=True)
         self.assertContains(response, "<td>9</td>", html=True)
         self.assertContains(response, "<td>11</td>", html=True)
+        self.assertNotContains(response, "99")
 
     def test_admin_datos_muestra_promedios_y_prediccion(self):
         lunes = timezone.make_aware(datetime(2026, 7, 13, 10, 0))

@@ -1104,25 +1104,38 @@ def format_dashboard_quantity(value):
     return format_ticket_quantity(decimal_value)
 
 
-def aguas_print_context():
-    source_date = timezone.localdate() - timedelta(days=1)
-    branch_names = [name for name, _ in AGUAS_SUCURSALES]
-    product_names = [name for _, name in AGUAS_PRODUCTOS]
-    totals = defaultdict(Decimal)
-
+def latest_report_orders(branch_names, generated_at=None):
+    generated_at = generated_at or timezone.now()
+    cutoff = generated_at - timedelta(hours=24)
     pedidos = (
         Pedido.objects.filter(
             eliminado=False,
             estado__in=ORDER_HISTORY_STATES,
-            fecha_confirmacion__date=source_date,
+            fecha_confirmacion__gte=cutoff,
+            fecha_confirmacion__lte=generated_at,
             sucursal_cliente__nombre__in=branch_names,
         )
         .select_related("sucursal_cliente")
         .prefetch_related("items__producto")
+        .order_by("sucursal_cliente__nombre", "-fecha_confirmacion", "-fecha_creacion", "-id")
     )
 
+    latest_orders = {}
     for pedido in pedidos:
         branch_name = pedido.sucursal_cliente.nombre
+        if branch_name not in latest_orders:
+            latest_orders[branch_name] = pedido
+
+    return latest_orders, generated_at, cutoff
+
+
+def aguas_print_context():
+    branch_names = [name for name, _ in AGUAS_SUCURSALES]
+    product_names = [name for _, name in AGUAS_PRODUCTOS]
+    totals = defaultdict(Decimal)
+    latest_orders, generated_at, cutoff = latest_report_orders(branch_names)
+
+    for branch_name, pedido in latest_orders.items():
         for item in pedido.items.all():
             product_name = item.producto.nombre
             if product_name in product_names:
@@ -1144,32 +1157,21 @@ def aguas_print_context():
         )
 
     return {
-        "source_date": source_date,
-        "print_date": source_date + timedelta(days=1),
+        "source_date": timezone.localtime(cutoff).date(),
+        "source_since": cutoff,
+        "print_date": timezone.localtime(generated_at).date(),
         "branches": [short_name for _, short_name in AGUAS_SUCURSALES],
         "rows": rows,
     }
 
 
 def sucursales_print_context():
-    source_date = timezone.localdate() - timedelta(days=1)
     branch_names = [name for name, _ in SUCURSALES_REPORTE_BRANCHES]
     product_names = [name for _, name in SUCURSALES_REPORTE_PRODUCTOS]
     totals = defaultdict(Decimal)
+    latest_orders, generated_at, cutoff = latest_report_orders(branch_names)
 
-    pedidos = (
-        Pedido.objects.filter(
-            eliminado=False,
-            estado__in=ORDER_HISTORY_STATES,
-            fecha_confirmacion__date=source_date,
-            sucursal_cliente__nombre__in=branch_names,
-        )
-        .select_related("sucursal_cliente")
-        .prefetch_related("items__producto")
-    )
-
-    for pedido in pedidos:
-        branch_name = pedido.sucursal_cliente.nombre
+    for branch_name, pedido in latest_orders.items():
         for item in pedido.items.all():
             product_name = item.producto.nombre
             if product_name in product_names:
@@ -1196,8 +1198,9 @@ def sucursales_print_context():
         total_values.append(format_dashboard_quantity(product_total))
 
     return {
-        "source_date": source_date,
-        "print_date": source_date + timedelta(days=1),
+        "source_date": timezone.localtime(cutoff).date(),
+        "source_since": cutoff,
+        "print_date": timezone.localtime(generated_at).date(),
         "headers": [label for label, _ in SUCURSALES_REPORTE_PRODUCTOS],
         "rows": rows,
         "total_values": total_values,
