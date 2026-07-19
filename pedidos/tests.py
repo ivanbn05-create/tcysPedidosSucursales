@@ -557,6 +557,94 @@ class PedidoFlowTests(TestCase):
             SucursalCliente.objects.filter(nombre="Sucursal Prueba", usuario=created_user).exists()
         )
 
+    def test_admin_levanta_pedido_para_sucursal_sin_limite_horario(self):
+        config = Configuracion.get_solo()
+        config.hora_inicio_pedidos = time(0, 0)
+        config.hora_fin_pedidos = time(0, 1)
+        config.save()
+        cache.delete(CONFIGURACION_CACHE_KEY)
+
+        sucursal = SucursalCliente.objects.get(nombre="Plaza del Sol")
+        producto = Producto.objects.get(nombre="LITRO DE BARBACOA")
+        self.assertTrue(self.client.login(username="juancarlos", password="TocayosMO2026"))
+
+        page = self.client.get(f"/admin/pedidos/nuevo/?sucursal={sucursal.id}")
+        self.assertEqual(page.status_code, 200)
+        self.assertContains(page, "Levantar pedido para")
+        self.assertContains(page, "Plaza del Sol")
+        self.assertContains(page, "/admin/api/pedidos/crear-item/")
+
+        response = self.client.post(
+            "/admin/api/pedidos/crear-item/",
+            data=json.dumps(
+                {
+                    "sucursal_id": sucursal.id,
+                    "producto_id": producto.id,
+                    "cantidad": "2",
+                }
+            ),
+            content_type="application/json",
+        )
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertTrue(data["success"])
+        item_id = data["item_id"]
+
+        response = self.client.post(
+            "/admin/api/pedidos/eliminar-item/",
+            data=json.dumps({"sucursal_id": sucursal.id, "item_id": item_id}),
+            content_type="application/json",
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["pedido"]["items"], [])
+
+        response = self.client.post(
+            "/admin/api/pedidos/crear-item/",
+            data=json.dumps(
+                {
+                    "sucursal_id": sucursal.id,
+                    "producto_id": producto.id,
+                    "cantidad": "2",
+                }
+            ),
+            content_type="application/json",
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.json()["success"])
+
+        response = self.client.post(
+            "/admin/api/pedidos/limpiar/",
+            data=json.dumps({"sucursal_id": sucursal.id}),
+            content_type="application/json",
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["pedido"]["items"], [])
+
+        response = self.client.post(
+            "/admin/api/pedidos/crear-item/",
+            data=json.dumps(
+                {
+                    "sucursal_id": sucursal.id,
+                    "producto_id": producto.id,
+                    "cantidad": "2",
+                }
+            ),
+            content_type="application/json",
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.json()["success"])
+
+        response = self.client.post(
+            "/admin/api/pedidos/confirmar/",
+            data=json.dumps({"sucursal_id": sucursal.id}),
+            content_type="application/json",
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.json()["success"])
+        pedido = Pedido.objects.get(id=response.json()["pedido_id"])
+        self.assertEqual(pedido.sucursal_cliente, sucursal)
+        self.assertEqual(pedido.estado, Pedido.Estado.CONFIRMADO)
+
     def test_admin_imprime_aguas_de_pedidos_del_dia_anterior(self):
         ayer = timezone.localdate() - timedelta(days=1)
         fecha_ayer = timezone.make_aware(datetime.combine(ayer, time(11, 0)))
@@ -585,6 +673,7 @@ class PedidoFlowTests(TestCase):
         self.assertTrue(self.client.login(username="juancarlos", password="TocayosMO2026"))
         dashboard = self.client.get("/admin/")
         self.assertContains(dashboard, "Aguas")
+        self.assertContains(dashboard, "Sucursales")
         self.assertContains(dashboard, "data-inline-print")
         self.assertContains(dashboard, 'id="print-aguas"')
         self.assertNotContains(dashboard, 'target="_blank"')
@@ -595,11 +684,59 @@ class PedidoFlowTests(TestCase):
         self.assertContains(response, "<td>1/B</td>", html=True)
         self.assertContains(response, "<td>2</td>", html=True)
         self.assertContains(response, "<td>5</td>", html=True)
+        self.assertContains(response, "<td>7</td>", html=True)
         self.assertContains(response, "<td>/</td>", html=True)
         self.assertContains(response, "<td>LR</td>", html=True)
         self.assertContains(response, "<td>3</td>", html=True)
         self.assertContains(response, "<td>LJ</td>", html=True)
         self.assertContains(response, "<td>1</td>", html=True)
+
+    def test_admin_imprime_reporte_sucursales_de_pedidos_del_dia_anterior(self):
+        ayer = timezone.localdate() - timedelta(days=1)
+        fecha_ayer = timezone.make_aware(datetime.combine(ayer, time(11, 0)))
+        self.crear_pedido_confirmado(
+            "Estancia",
+            [
+                ("LITRO DE BARBACOA", "2"),
+                ("TORTILLA ESPECIAL", "3"),
+                ("CONSOMÉ", "4"),
+            ],
+            fecha_ayer,
+        )
+        self.crear_pedido_confirmado(
+            "Brot Nueva Galicia",
+            [
+                ("LITRO DE BARBACOA", "5"),
+                ("TORTILLA ESPECIAL", "6"),
+            ],
+            fecha_ayer,
+        )
+        self.crear_pedido_confirmado(
+            "Santa Anita",
+            [("CONSOMÉ", "7")],
+            fecha_ayer,
+        )
+
+        self.assertTrue(self.client.login(username="juancarlos", password="TocayosMO2026"))
+        dashboard = self.client.get("/admin/")
+        self.assertContains(dashboard, "Sucursales")
+        self.assertContains(dashboard, 'data-print-template-id="print-sucursales"')
+        self.assertContains(dashboard, 'id="print-sucursales"')
+
+        response = self.client.get("/admin/sucursales/imprimir/")
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "window.print()")
+        self.assertContains(response, "size: 72mm 72mm;")
+        self.assertContains(response, "<th>SUCURSAL</th>", html=True)
+        self.assertContains(response, "<th>BBQ</th>", html=True)
+        self.assertContains(response, "<th>GORDA</th>", html=True)
+        self.assertContains(response, "<th>CONSO</th>", html=True)
+        self.assertContains(response, "<td>ESTANCIA</td>", html=True)
+        self.assertContains(response, "<td>BROT NVA G</td>", html=True)
+        self.assertContains(response, "<td>STA ANITA</td>", html=True)
+        self.assertContains(response, "<td>7</td>", html=True)
+        self.assertContains(response, "<td>9</td>", html=True)
+        self.assertContains(response, "<td>11</td>", html=True)
 
     def test_admin_datos_muestra_promedios_y_prediccion(self):
         lunes = timezone.make_aware(datetime(2026, 7, 13, 10, 0))
@@ -628,6 +765,8 @@ class PedidoFlowTests(TestCase):
         self.assertContains(response, "data-inline-print")
         self.assertContains(response, 'data-print-template-id="print-aguas"')
         self.assertContains(response, 'id="print-aguas"')
+        self.assertContains(response, 'data-print-template-id="print-sucursales"')
+        self.assertContains(response, 'id="print-sucursales"')
         self.assertNotContains(response, 'target="_blank"')
 
     def test_seed_crea_usuario_debug_admin(self):
@@ -676,11 +815,27 @@ class PedidoFlowTests(TestCase):
         response = self.client.get("/pedidos/")
         self.assertNotContains(response, f'data-product-id="{producto.id}"')
 
-    def test_seed_crea_seis_clientes_demo(self):
-        self.assertEqual(SucursalCliente.objects.count(), 6)
+    def test_seed_crea_diez_clientes_demo(self):
+        self.assertEqual(SucursalCliente.objects.count(), 10)
         for nombre, _, _ in CLIENTES_DEMO:
             sucursal = SucursalCliente.objects.get(nombre=nombre)
             self.assertTrue(sucursal.usuario.check_password(password_for_cliente(nombre)))
+        self.assertTrue(
+            SucursalCliente.objects.get(nombre="Eventos Edgar").usuario.check_password(
+                "Eventos Edgar4437"
+            )
+        )
+        self.assertTrue(
+            SucursalCliente.objects.get(nombre="Eventos MO").usuario.check_password("Eventos MO6924")
+        )
+        self.assertTrue(
+            SucursalCliente.objects.get(nombre="Plaza del Sol").usuario.check_password(
+                "Plaza del Sol3186"
+            )
+        )
+        self.assertTrue(
+            SucursalCliente.objects.get(nombre="Santa Anita").usuario.check_password("Santa Anita5702")
+        )
 
 
 class RestriccionHorariaTests(TestCase):

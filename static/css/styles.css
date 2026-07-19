@@ -516,6 +516,41 @@ button.password-toggle:active {
     gap: 16px;
 }
 
+.admin-order-switcher {
+    width: min(100%, 540px);
+    margin: 12px auto 0;
+    padding: 10px;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    background: #fff;
+    box-shadow: var(--shadow);
+}
+
+.admin-order-switcher form {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto auto;
+    gap: 8px;
+    align-items: end;
+}
+
+.admin-order-switcher label {
+    grid-column: 1 / -1;
+    color: var(--muted);
+    font-size: 12px;
+    font-weight: 900;
+    text-transform: uppercase;
+}
+
+.admin-order-switcher select {
+    width: 100%;
+    min-height: 38px;
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    padding: 8px 10px;
+    background: #fff;
+    color: var(--text);
+}
+
 .history-page {
     background: var(--yellow);
 }

@@ -1,10 +1,25 @@
 {% extends "pedidos/base.html" %}
 {% load static %}
 
-{% block title %}Nuevo pedido | Los Tocayos{% endblock %}
+{% block title %}{% if admin_order_mode %}Levantar pedido{% else %}Nuevo pedido{% endif %} | Los Tocayos{% endblock %}
 {% block body_class %}order-page{% endblock %}
 
 {% block content %}
+{% if admin_order_mode %}
+<section class="admin-order-switcher" aria-label="Levantar pedido como usuario">
+    <form method="get" action="{% url 'admin_crear_pedido' %}">
+        <label for="adminSucursal">Levantar pedido para</label>
+        <select id="adminSucursal" name="sucursal" onchange="this.form.submit()">
+            {% for item in admin_sucursales %}
+            <option value="{{ item.id }}" {% if item.id == sucursal.id %}selected{% endif %}>{{ item.nombre }}</option>
+            {% endfor %}
+        </select>
+        <button class="primary-button compact" type="submit">Cambiar</button>
+        <a class="secondary-link compact" href="{% url 'admin_dashboard' %}">Volver</a>
+    </form>
+</section>
+{% endif %}
+
 <main class="order-shell">
     <section class="product-panel" aria-label="Productos">
         <button class="mobile-panel-tab" type="button" data-mobile-panel="products" aria-label="Abrir productos"><span>Productos</span></button>
@@ -91,5 +106,5 @@
 
 {% block scripts %}
 {{ initial_data|json_script:"initial-data" }}
-<script src="{% static 'js/pedidos.js' %}?v=20260715-3" defer></script>
+<script src="{% static 'js/pedidos.js' %}?v=20260718-1" defer></script>
 {% endblock %}

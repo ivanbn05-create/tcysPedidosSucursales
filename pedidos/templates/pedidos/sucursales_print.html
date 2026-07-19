@@ -3,7 +3,7 @@
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>Imprimir aguas {{ print_date|date:"d/m/Y" }}</title>
+    <title>Imprimir sucursales {{ print_date|date:"d/m/Y" }}</title>
     <style>
         @page {
             size: 72mm 72mm;
@@ -16,7 +16,7 @@
             padding: 0;
             background: #fff;
             color: #000;
-            font-family: "Aptos Narrow", Arial, sans-serif;
+            font-family: Calibri, Arial, sans-serif;
         }
 
         .print-toolbar {
@@ -45,47 +45,59 @@
             background: #16a65f;
         }
 
-        .aguas-sheet {
+        .sucursales-sheet,
+        .sucursales-table {
             width: 72mm;
             height: 72mm;
+        }
+
+        .sucursales-sheet {
             margin: 0 auto;
             background: #fff;
         }
 
-        .aguas-table {
-            width: 72mm;
-            height: 72mm;
+        .sucursales-table {
             table-layout: fixed;
             border-collapse: collapse;
             border-spacing: 0;
         }
 
-        .aguas-table,
-        .aguas-table * {
+        .sucursales-table,
+        .sucursales-table * {
             box-sizing: border-box;
         }
 
-        .aguas-table col.label {
-            width: 16mm;
+        .sucursales-table col.label {
+            width: 27mm;
         }
 
-        .aguas-table col.branch,
-        .aguas-table col.blank {
-            width: 14mm;
+        .sucursales-table col.product {
+            width: 15mm;
         }
 
-        .aguas-table th,
-        .aguas-table td {
-            height: calc(72mm / 7);
+        .sucursales-table th,
+        .sucursales-table td {
+            height: 6mm;
             padding: 0;
-            border: 0.35mm solid #000;
+            border: 0.3mm solid #000;
             color: #000;
-            font-size: 16pt;
-            font-weight: 400;
+            font-size: 8pt;
+            font-weight: 700;
             line-height: 1;
             text-align: center;
             vertical-align: middle;
             white-space: nowrap;
+        }
+
+        .sucursales-table th:first-child,
+        .sucursales-table td:first-child {
+            padding-left: 0.8mm;
+            text-align: left;
+        }
+
+        .sucursales-table .total-row td {
+            font-size: 10pt;
+            font-weight: 900;
         }
 
         @media screen {
@@ -95,7 +107,7 @@
                 background: #f3f4f6;
             }
 
-            .aguas-sheet {
+            .sucursales-sheet {
                 box-shadow: 0 12px 34px rgba(0, 0, 0, 0.16);
             }
         }
@@ -114,7 +126,7 @@
                 display: none;
             }
 
-            .aguas-sheet {
+            .sucursales-sheet {
                 margin: 0;
                 box-shadow: none;
                 break-inside: avoid;
@@ -129,22 +141,20 @@
         <a href="{% url 'admin_dashboard' %}">Volver</a>
     </nav>
 
-    <main class="aguas-sheet" aria-label="Resumen imprimible de aguas">
-        <table class="aguas-table">
+    <main class="sucursales-sheet" aria-label="Resumen imprimible de sucursales">
+        <table class="sucursales-table">
             <colgroup>
                 <col class="label">
-                <col class="branch">
-                <col class="branch">
-                <col class="branch">
-                <col class="blank">
+                {% for header in headers %}
+                <col class="product">
+                {% endfor %}
             </colgroup>
             <tbody>
                 <tr>
-                    <th></th>
-                    {% for branch in branches %}
-                    <th>{{ branch }}</th>
+                    <th>SUCURSAL</th>
+                    {% for header in headers %}
+                    <th>{{ header }}</th>
                     {% endfor %}
-                    <th>=</th>
                 </tr>
                 {% for row in rows %}
                 <tr>
@@ -152,9 +162,14 @@
                     {% for value in row.values %}
                     <td>{{ value }}</td>
                     {% endfor %}
-                    <td>{{ row.total }}</td>
                 </tr>
                 {% endfor %}
+                <tr class="total-row">
+                    <td>TOTAL</td>
+                    {% for value in total_values %}
+                    <td>{{ value }}</td>
+                    {% endfor %}
+                </tr>
             </tbody>
         </table>
     </main>

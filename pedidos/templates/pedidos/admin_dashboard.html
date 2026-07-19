@@ -17,7 +17,14 @@
                     data-inline-print
                     data-print-template-id="print-aguas"
                 >Aguas</a>
+                <a
+                    class="secondary-link compact print-link"
+                    href="{% url 'imprimir_sucursales' %}"
+                    data-inline-print
+                    data-print-template-id="print-sucursales"
+                >Sucursales</a>
                 {% if can_manage_pedidos %}
+                <a class="primary-link compact" href="{% url 'admin_crear_pedido' %}">Levantar pedido</a>
                 <a class="secondary-link compact" href="{% url 'admin_datos' %}">Datos</a>
                 <a class="secondary-link compact" href="{% url 'admin_configuracion' %}">Configuraci&oacute;n</a>
                 {% endif %}
@@ -135,7 +142,7 @@
         </div>
     </div>
 </div>
-{% include "pedidos/partials/inline_print_templates.html" with inline_print_pedidos=pedidos aguas_print=aguas_print %}
+{% include "pedidos/partials/inline_print_templates.html" with inline_print_pedidos=pedidos aguas_print=aguas_print sucursales_print=sucursales_print %}
 {% endblock %}
 
 {% block scripts %}

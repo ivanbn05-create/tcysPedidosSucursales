@@ -29,9 +29,50 @@
                     {% for value in row.values %}
                     <td>{{ value }}</td>
                     {% endfor %}
-                    <td></td>
+                    <td>{{ row.total }}</td>
                 </tr>
                 {% endfor %}
+            </tbody>
+        </table>
+    </main>
+</template>
+{% endif %}
+
+{% if sucursales_print %}
+<template
+    id="print-sucursales"
+    data-print-width="72"
+    data-print-height="72"
+>
+    <main class="inline-print-sheet inline-sucursales-sheet" aria-label="Resumen imprimible de sucursales">
+        <table class="inline-sucursales-table">
+            <colgroup>
+                <col class="label">
+                {% for header in sucursales_print.headers %}
+                <col class="product">
+                {% endfor %}
+            </colgroup>
+            <tbody>
+                <tr>
+                    <th>SUCURSAL</th>
+                    {% for header in sucursales_print.headers %}
+                    <th>{{ header }}</th>
+                    {% endfor %}
+                </tr>
+                {% for row in sucursales_print.rows %}
+                <tr>
+                    <td>{{ row.label }}</td>
+                    {% for value in row.values %}
+                    <td>{{ value }}</td>
+                    {% endfor %}
+                </tr>
+                {% endfor %}
+                <tr class="total-row">
+                    <td>TOTAL</td>
+                    {% for value in sucursales_print.total_values %}
+                    <td>{{ value }}</td>
+                    {% endfor %}
+                </tr>
             </tbody>
         </table>
     </main>

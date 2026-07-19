@@ -6,8 +6,8 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>{% block title %}Los Tocayos Pedidos{% endblock %}</title>
     <link rel="icon" href="{% static 'img/mainlogo.webp' %}">
-    <link rel="stylesheet" href="{% static 'css/styles.css' %}?v=20260718-2">
-    <link rel="stylesheet" href="{% static 'css/responsive.css' %}?v=20260718-2">
+    <link rel="stylesheet" href="{% static 'css/styles.css' %}?v=20260718-3">
+    <link rel="stylesheet" href="{% static 'css/responsive.css' %}?v=20260718-3">
 </head>
 <body class="{% block body_class %}{% endblock %}">
     {% if request.user.is_authenticated %}
@@ -45,7 +45,7 @@
     {% endif %}
 
     {% block content %}{% endblock %}
-    <script src="{% static 'js/inline_print.js' %}?v=20260718-1" defer></script>
+    <script src="{% static 'js/inline_print.js' %}?v=20260718-2" defer></script>
     {% block scripts %}{% endblock %}
 </body>
 </html>

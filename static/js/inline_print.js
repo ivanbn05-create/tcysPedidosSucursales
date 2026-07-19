@@ -76,7 +76,8 @@ document.addEventListener("DOMContentLoaded", () => {
                 }
 
                 .inline-ticket-table,
-                .inline-aguas-table {
+                .inline-aguas-table,
+                .inline-sucursales-table {
                     width: 100%;
                     table-layout: fixed;
                     border-collapse: collapse;
@@ -88,7 +89,9 @@ document.addEventListener("DOMContentLoaded", () => {
                 .inline-ticket-table,
                 .inline-ticket-table *,
                 .inline-aguas-table,
-                .inline-aguas-table * {
+                .inline-aguas-table *,
+                .inline-sucursales-table,
+                .inline-sucursales-table * {
                     box-sizing: border-box;
                 }
 
@@ -175,6 +178,46 @@ document.addEventListener("DOMContentLoaded", () => {
                     text-align: center;
                     vertical-align: middle;
                     white-space: nowrap;
+                }
+
+                .inline-sucursales-sheet,
+                .inline-sucursales-table {
+                    width: 72mm !important;
+                    height: 72mm !important;
+                }
+
+                .inline-sucursales-table col.label {
+                    width: 27mm;
+                }
+
+                .inline-sucursales-table col.product {
+                    width: 15mm;
+                }
+
+                .inline-sucursales-table th,
+                .inline-sucursales-table td {
+                    height: 6mm;
+                    padding: 0;
+                    border: 0.3mm solid #000;
+                    color: #000;
+                    font-family: Calibri, Arial, sans-serif;
+                    font-size: 8pt;
+                    font-weight: 700;
+                    line-height: 1;
+                    text-align: center;
+                    vertical-align: middle;
+                    white-space: nowrap;
+                }
+
+                .inline-sucursales-table th:first-child,
+                .inline-sucursales-table td:first-child {
+                    padding-left: 0.8mm;
+                    text-align: left;
+                }
+
+                .inline-sucursales-table .total-row td {
+                    font-size: 10pt;
+                    font-weight: 900;
                 }
             }
         `;

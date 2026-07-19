@@ -1,6 +1,9 @@
 document.addEventListener("DOMContentLoaded", () => {
     const initialData = JSON.parse(document.getElementById("initial-data").textContent);
     const products = initialData.productos || [];
+    const apiUrls = initialData.api_urls || {};
+    const isAdminOrder = Boolean(initialData.admin_order_mode);
+    const selectedSucursalId = initialData.sucursal_id || null;
     let order = initialData.pedido || { items: [], total: "0.00" };
     let selectedProduct = products[0] || null;
     let selectedItemId = null;
@@ -75,13 +78,17 @@ document.addEventListener("DOMContentLoaded", () => {
     }
 
     async function postJson(url, payload = {}) {
+        const requestPayload =
+            isAdminOrder && selectedSucursalId
+                ? { ...payload, sucursal_id: selectedSucursalId }
+                : payload;
         const response = await fetch(url, {
             method: "POST",
             headers: {
                 "Content-Type": "application/json",
                 "X-CSRFToken": csrfToken(),
             },
-            body: JSON.stringify(payload),
+            body: JSON.stringify(requestPayload),
         });
         const data = await response.json().catch(() => ({
             success: false,
@@ -242,7 +249,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
         try {
             setBusy(true);
-            const data = await postJson("/api/pedidos/crear-item/", {
+            const data = await postJson(apiUrls.crear_item || "/api/pedidos/crear-item/", {
                 producto_id: selectedProduct.id,
                 cantidad: quantityInput,
             });
@@ -264,7 +271,9 @@ document.addEventListener("DOMContentLoaded", () => {
     async function removeItem(itemId) {
         try {
             setBusy(true);
-            const data = await postJson("/api/pedidos/eliminar-item/", { item_id: itemId });
+            const data = await postJson(apiUrls.eliminar_item || "/api/pedidos/eliminar-item/", {
+                item_id: itemId,
+            });
             order = data.pedido;
             selectedItemId = null;
             quantityInput = "";
@@ -297,7 +306,7 @@ document.addEventListener("DOMContentLoaded", () => {
         if (!window.confirm("Limpiar el pedido actual?")) return;
         try {
             setBusy(true);
-            const data = await postJson("/api/pedidos/limpiar/");
+            const data = await postJson(apiUrls.limpiar_pedido || "/api/pedidos/limpiar/");
             order = data.pedido;
             selectedItemId = null;
             quantityInput = "";
@@ -326,7 +335,7 @@ document.addEventListener("DOMContentLoaded", () => {
         if (!window.confirm(confirmation)) return;
         try {
             setBusy(true);
-            const data = await postJson("/api/pedidos/confirmar/");
+            const data = await postJson(apiUrls.confirmar_pedido || "/api/pedidos/confirmar/");
             order = { items: [], total: "0.00" };
             selectedItemId = null;
             quantityInput = "";

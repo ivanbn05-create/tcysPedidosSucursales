@@ -180,18 +180,26 @@ CLIENTES_DEMO = [
     ("Aguilas", SucursalCliente.Tipo.SUCURSAL, "aguilas"),
     ("Fortin", SucursalCliente.Tipo.SUCURSAL, "sucursal_general"),
     ("Estancia", SucursalCliente.Tipo.SUCURSAL, "sucursal_general"),
+    ("Eventos MO", SucursalCliente.Tipo.SUCURSAL, "sucursal_general"),
+    ("Plaza del Sol", SucursalCliente.Tipo.SUCURSAL, "sucursal_general"),
+    ("Santa Anita", SucursalCliente.Tipo.SUCURSAL, "sucursal_general"),
     ("Brot Nueva Galicia", SucursalCliente.Tipo.CLIENTE_MAYORISTA, "mayoreo"),
     ("Brot CAT", SucursalCliente.Tipo.CLIENTE_MAYORISTA, "mayoreo"),
     ("Rakebela", SucursalCliente.Tipo.CLIENTE_MAYORISTA, "mayoreo"),
+    ("Eventos Edgar", SucursalCliente.Tipo.CLIENTE_MAYORISTA, "mayoreo"),
 ]
 
 CLIENTE_PASSWORD_SUFFIXES = {
     "Aguilas": "8445",
     "Fortin": "9481",
     "Estancia": "7608",
+    "Eventos MO": "6924",
+    "Plaza del Sol": "3186",
+    "Santa Anita": "5702",
     "Brot Nueva Galicia": "0846",
     "Brot CAT": "7721",
     "Rakebela": "4349",
+    "Eventos Edgar": "4437",
 }
 
 

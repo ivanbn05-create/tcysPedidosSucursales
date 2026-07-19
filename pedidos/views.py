@@ -53,6 +53,23 @@ AGUAS_PRODUCTOS = (
     ("1/J", "AGUA JAMAICA 1/2"),
     ("LJ", "AGUA JAMAICA LT"),
 )
+SUCURSALES_REPORTE_BRANCHES = (
+    ("Estancia", "ESTANCIA"),
+    ("Aguilas", "AGUILAS"),
+    ("Eventos MO", "EVENTO MO"),
+    ("Fortin", "FORTIN"),
+    ("Brot CAT", "BROT CAT"),
+    ("Brot Nueva Galicia", "BROT NVA G"),
+    ("Rakebela", "RAKEBELA"),
+    ("Eventos Edgar", "EDGAR"),
+    ("Santa Anita", "STA ANITA"),
+    ("Plaza del Sol", "PZA SOL"),
+)
+SUCURSALES_REPORTE_PRODUCTOS = (
+    ("BBQ", "LITRO DE BARBACOA"),
+    ("GORDA", "TORTILLA ESPECIAL"),
+    ("CONSO", "CONSOMÉ"),
+)
 WEEKDAY_LABELS = {
     1: "Lunes",
     2: "Martes",
@@ -192,6 +209,70 @@ def pedido_pendiente(sucursal, crear=False):
             usuario_nombre=sucursal.nombre,
         )
     return pedido
+
+
+def productos_disponibles_para_pedido(sucursal, pedido=None):
+    productos_query = Producto.objects.filter(
+        activo=True,
+        precios__sucursal_cliente=sucursal,
+        precios__fecha_vigencia__lte=timezone.localdate(),
+    )
+    if pedido is not None:
+        productos_query = Producto.objects.filter(
+            Q(
+                activo=True,
+                precios__sucursal_cliente=sucursal,
+                precios__fecha_vigencia__lte=timezone.localdate(),
+            )
+            | Q(items_pedido__pedido=pedido)
+        )
+    return list(productos_query.distinct())
+
+
+def productos_data_para_sucursal(sucursal, productos):
+    productos_data = []
+    for producto in productos:
+        precio = precio_vigente(producto, sucursal)
+        productos_data.append(
+            {
+                "id": producto.id,
+                "nombre": producto.nombre,
+                "nombre_ticket": precio.etiqueta_ticket if precio else producto.etiqueta_ticket,
+                "unidad": producto.unidad_corta,
+            }
+        )
+    return productos_data
+
+
+def pedido_page_context(sucursal, pedido, admin_order_mode=False, sucursales=None):
+    productos = productos_disponibles_para_pedido(sucursal, pedido)
+    api_urls = {
+        "crear_item": reverse("api_crear_item"),
+        "eliminar_item": reverse("api_eliminar_item"),
+        "limpiar_pedido": reverse("api_limpiar_pedido"),
+        "confirmar_pedido": reverse("api_confirmar_pedido"),
+    }
+    if admin_order_mode:
+        api_urls = {
+            "crear_item": reverse("admin_api_crear_item"),
+            "eliminar_item": reverse("admin_api_eliminar_item"),
+            "limpiar_pedido": reverse("admin_api_limpiar_pedido"),
+            "confirmar_pedido": reverse("admin_api_confirmar_pedido"),
+        }
+
+    return {
+        "sucursal": sucursal,
+        "productos": productos,
+        "admin_order_mode": admin_order_mode,
+        "admin_sucursales": sucursales or [],
+        "initial_data": {
+            "productos": productos_data_para_sucursal(sucursal, productos),
+            "pedido": serializar_pedido(pedido),
+            "sucursal_id": sucursal.id,
+            "admin_order_mode": admin_order_mode,
+            "api_urls": api_urls,
+        },
+    }
 
 
 def get_configuracion():
@@ -368,6 +449,129 @@ def parse_cantidad(value):
     return cantidad
 
 
+def sucursal_desde_payload(payload):
+    sucursal_id = payload.get("sucursal_id") if payload else None
+    return get_object_or_404(SucursalCliente, pk=sucursal_id, activa=True)
+
+
+def guardar_item_pedido(sucursal, payload):
+    producto = get_object_or_404(Producto, pk=payload.get("producto_id"))
+    cantidad = parse_cantidad(payload.get("cantidad"))
+    if cantidad is None:
+        return JsonResponse({"success": False, "mensaje": "Cantidad inválida."}, status=400)
+
+    precio = precio_vigente(producto, sucursal)
+    if precio is None:
+        return JsonResponse({"success": False, "mensaje": "No hay precio vigente."}, status=400)
+
+    with transaction.atomic():
+        pedido = pedido_pendiente(sucursal, crear=True)
+        item, created = ItemPedido.objects.select_for_update().get_or_create(
+            pedido=pedido,
+            producto=producto,
+            defaults={
+                "cantidad": cantidad,
+                "precio_unitario": precio.precio_unitario,
+            },
+        )
+        if not created:
+            item.cantidad = cantidad
+            item.precio_unitario = precio.precio_unitario
+            item.save()
+        pedido.recalcular_total()
+
+    return JsonResponse(
+        {
+            "success": True,
+            "mensaje": "Cantidad guardada.",
+            "item_id": item.id,
+            "total_pedido": decimal_to_str(pedido.total),
+            "pedido": serializar_pedido(pedido),
+        }
+    )
+
+
+def eliminar_item_pedido(sucursal, payload):
+    pedido = pedido_pendiente(sucursal)
+    item = get_object_or_404(
+        ItemPedido,
+        pk=payload.get("item_id"),
+        pedido=pedido,
+        pedido__estado=Pedido.Estado.PENDIENTE,
+    )
+    item.delete()
+    pedido.recalcular_total()
+    return JsonResponse(
+        {
+            "success": True,
+            "total_pedido": decimal_to_str(pedido.total),
+            "pedido": serializar_pedido(pedido),
+        }
+    )
+
+
+def limpiar_pedido_sucursal(sucursal):
+    pedido = pedido_pendiente(sucursal)
+    if pedido:
+        pedido.items.all().delete()
+        pedido.recalcular_total()
+    return JsonResponse({"success": True, "pedido": {"items": [], "total": "0.00"}})
+
+
+def confirmar_pedido_sucursal(sucursal, validar_horario=True, validar_espera=True):
+    if validar_horario:
+        es_valido, mensaje_horario = validar_horario_pedidos()
+        if not es_valido:
+            return JsonResponse({"success": False, "mensaje": mensaje_horario}, status=400)
+
+    if validar_espera:
+        limite = timezone.now() - timedelta(seconds=60)
+        if Pedido.objects.filter(
+            sucursal_cliente=sucursal,
+            fecha_confirmacion__gte=limite,
+            estado__in=[Pedido.Estado.CONFIRMADO, Pedido.Estado.ENVIADO, Pedido.Estado.RECIBIDO],
+            eliminado=False,
+        ).exists():
+            return JsonResponse(
+                {"success": False, "mensaje": "Espera un minuto antes de confirmar otro pedido."},
+                status=429,
+            )
+
+    with transaction.atomic():
+        pedido = (
+            Pedido.objects.select_for_update()
+            .filter(
+                sucursal_cliente=sucursal,
+                estado=Pedido.Estado.PENDIENTE,
+                eliminado=False,
+            )
+            .prefetch_related("items")
+            .order_by("-fecha_creacion")
+            .first()
+        )
+        if pedido is None or not pedido.items.exists():
+            return JsonResponse(
+                {"success": False, "mensaje": "No hay productos en el pedido."},
+                status=400,
+            )
+
+        pedido.recalcular_total()
+        pedido.estado = Pedido.Estado.CONFIRMADO
+        pedido.fecha_confirmacion = timezone.now()
+        pedido.save(update_fields=["estado", "fecha_confirmacion"])
+
+    logger.info("Pedido confirmado #%s por %s", pedido.id, sucursal.nombre)
+    return JsonResponse(
+        {
+            "success": True,
+            "pedido_id": pedido.id,
+            "pedido_folio": pedido.folio_fecha,
+            "total": decimal_to_str(pedido.total),
+            "mensaje": f"Pedido confirmado {pedido.folio_fecha}.",
+        }
+    )
+
+
 @login_required
 def pedidos_view(request):
     if can_view_admin_dashboard(request.user):
@@ -379,41 +583,25 @@ def pedidos_view(request):
         return redirect("login")
 
     pedido = pedido_pendiente(sucursal)
-    productos_query = Producto.objects.filter(
-        activo=True,
-        precios__sucursal_cliente=sucursal,
-        precios__fecha_vigencia__lte=timezone.localdate(),
-    )
-    if pedido is not None:
-        productos_query = Producto.objects.filter(
-            Q(
-                activo=True,
-                precios__sucursal_cliente=sucursal,
-                precios__fecha_vigencia__lte=timezone.localdate(),
-            )
-            | Q(items_pedido__pedido=pedido)
-        ).distinct()
-    productos = list(productos_query.distinct())
-    productos_data = []
-    for producto in productos:
-        precio = precio_vigente(producto, sucursal)
-        productos_data.append(
-            {
-                "id": producto.id,
-                "nombre": producto.nombre,
-                "nombre_ticket": precio.etiqueta_ticket if precio else producto.etiqueta_ticket,
-                "unidad": producto.unidad_corta,
-            }
-        )
+    return render(request, "pedidos/pedidos.html", pedido_page_context(sucursal, pedido))
 
-    context = {
-        "sucursal": sucursal,
-        "productos": productos,
-        "initial_data": {
-            "productos": productos_data,
-            "pedido": serializar_pedido(pedido),
-        },
-    }
+
+@admin_required
+def admin_crear_pedido_view(request):
+    sucursales = list(SucursalCliente.objects.filter(activa=True).order_by("tipo", "nombre"))
+    if not sucursales:
+        messages.error(request, "No hay sucursales o clientes activos para levantar pedidos.")
+        return redirect("admin_dashboard")
+
+    sucursal_id = request.GET.get("sucursal", "").strip()
+    selected = next((item for item in sucursales if str(item.id) == sucursal_id), sucursales[0])
+    pedido = pedido_pendiente(selected)
+    context = pedido_page_context(
+        selected,
+        pedido,
+        admin_order_mode=True,
+        sucursales=sucursales,
+    )
     return render(request, "pedidos/pedidos.html", context)
 
 
@@ -468,46 +656,7 @@ def crear_item(request):
     if payload is None:
         return JsonResponse({"success": False, "mensaje": "JSON inválido."}, status=400)
 
-    producto = get_object_or_404(Producto, pk=payload.get("producto_id"))
-    cantidad = parse_cantidad(payload.get("cantidad"))
-    if cantidad is None:
-        return JsonResponse({"success": False, "mensaje": "Cantidad inválida."}, status=400)
-
-    precio = precio_vigente(producto, sucursal)
-    if precio is None:
-        return JsonResponse({"success": False, "mensaje": "No hay precio vigente."}, status=400)
-
-    with transaction.atomic():
-        pedido = pedido_pendiente(sucursal, crear=True)
-        item, created = ItemPedido.objects.select_for_update().get_or_create(
-            pedido=pedido,
-            producto=producto,
-            defaults={
-                "cantidad": cantidad,
-                "precio_unitario": precio.precio_unitario,
-            },
-        )
-        if not created:
-            nueva_cantidad = cantidad
-            if nueva_cantidad > Decimal("999.999"):
-                return JsonResponse(
-                    {"success": False, "mensaje": "La cantidad máxima es 999.999."},
-                    status=400,
-                )
-            item.cantidad = nueva_cantidad
-            item.precio_unitario = precio.precio_unitario
-            item.save()
-        pedido.recalcular_total()
-
-    return JsonResponse(
-        {
-            "success": True,
-            "mensaje": "Cantidad guardada.",
-            "item_id": item.id,
-            "total_pedido": decimal_to_str(pedido.total),
-            "pedido": serializar_pedido(pedido),
-        }
-    )
+    return guardar_item_pedido(sucursal, payload)
 
 
 @require_POST
@@ -559,54 +708,46 @@ def confirmar_pedido(request):
     if sucursal is None:
         return JsonResponse({"success": False, "mensaje": "Usuario sin sucursal activa."}, status=403)
 
-    es_valido, mensaje_horario = validar_horario_pedidos()
-    if not es_valido:
-        return JsonResponse({"success": False, "mensaje": mensaje_horario}, status=400)
+    return confirmar_pedido_sucursal(sucursal)
 
-    limite = timezone.now() - timedelta(seconds=60)
-    if Pedido.objects.filter(
-        sucursal_cliente=sucursal,
-        fecha_confirmacion__gte=limite,
-        estado__in=[Pedido.Estado.CONFIRMADO, Pedido.Estado.ENVIADO, Pedido.Estado.RECIBIDO],
-        eliminado=False,
-    ).exists():
-        return JsonResponse(
-            {"success": False, "mensaje": "Espera un minuto antes de confirmar otro pedido."},
-            status=429,
-        )
 
-    with transaction.atomic():
-        pedido = (
-            Pedido.objects.select_for_update()
-            .filter(
-                sucursal_cliente=sucursal,
-                estado=Pedido.Estado.PENDIENTE,
-                eliminado=False,
-            )
-            .prefetch_related("items")
-            .order_by("-fecha_creacion")
-            .first()
-        )
-        if pedido is None or not pedido.items.exists():
-            return JsonResponse(
-                {"success": False, "mensaje": "No hay productos en el pedido."},
-                status=400,
-            )
+@require_POST
+@admin_required
+def admin_crear_item(request):
+    payload = parse_json_body(request)
+    if payload is None:
+        return JsonResponse({"success": False, "mensaje": "JSON inválido."}, status=400)
+    return guardar_item_pedido(sucursal_desde_payload(payload), payload)
 
-        pedido.recalcular_total()
-        pedido.estado = Pedido.Estado.CONFIRMADO
-        pedido.fecha_confirmacion = timezone.now()
-        pedido.save(update_fields=["estado", "fecha_confirmacion"])
 
-    logger.info("Pedido confirmado #%s por %s", pedido.id, sucursal.nombre)
-    return JsonResponse(
-        {
-            "success": True,
-            "pedido_id": pedido.id,
-            "pedido_folio": pedido.folio_fecha,
-            "total": decimal_to_str(pedido.total),
-            "mensaje": f"Pedido confirmado {pedido.folio_fecha}.",
-        }
+@require_POST
+@admin_required
+def admin_eliminar_item(request):
+    payload = parse_json_body(request)
+    if payload is None:
+        return JsonResponse({"success": False, "mensaje": "Solicitud inválida."}, status=400)
+    return eliminar_item_pedido(sucursal_desde_payload(payload), payload)
+
+
+@require_POST
+@admin_required
+def admin_limpiar_pedido(request):
+    payload = parse_json_body(request)
+    if payload is None:
+        return JsonResponse({"success": False, "mensaje": "Solicitud inválida."}, status=400)
+    return limpiar_pedido_sucursal(sucursal_desde_payload(payload))
+
+
+@require_POST
+@admin_required
+def admin_confirmar_pedido(request):
+    payload = parse_json_body(request)
+    if payload is None:
+        return JsonResponse({"success": False, "mensaje": "Solicitud inválida."}, status=400)
+    return confirmar_pedido_sucursal(
+        sucursal_desde_payload(payload),
+        validar_horario=False,
+        validar_espera=False,
     )
 
 
@@ -989,13 +1130,16 @@ def aguas_print_context():
 
     rows = []
     for label, product_name in AGUAS_PRODUCTOS:
+        values = [
+            format_dashboard_quantity(totals[(branch_name, product_name)])
+            for branch_name, _ in AGUAS_SUCURSALES
+        ]
+        total = sum(totals[(branch_name, product_name)] for branch_name, _ in AGUAS_SUCURSALES)
         rows.append(
             {
                 "label": label,
-                "values": [
-                    format_dashboard_quantity(totals[(branch_name, product_name)])
-                    for branch_name, _ in AGUAS_SUCURSALES
-                ],
+                "values": values,
+                "total": format_dashboard_quantity(total),
             }
         )
 
@@ -1004,6 +1148,59 @@ def aguas_print_context():
         "print_date": source_date + timedelta(days=1),
         "branches": [short_name for _, short_name in AGUAS_SUCURSALES],
         "rows": rows,
+    }
+
+
+def sucursales_print_context():
+    source_date = timezone.localdate() - timedelta(days=1)
+    branch_names = [name for name, _ in SUCURSALES_REPORTE_BRANCHES]
+    product_names = [name for _, name in SUCURSALES_REPORTE_PRODUCTOS]
+    totals = defaultdict(Decimal)
+
+    pedidos = (
+        Pedido.objects.filter(
+            eliminado=False,
+            estado__in=ORDER_HISTORY_STATES,
+            fecha_confirmacion__date=source_date,
+            sucursal_cliente__nombre__in=branch_names,
+        )
+        .select_related("sucursal_cliente")
+        .prefetch_related("items__producto")
+    )
+
+    for pedido in pedidos:
+        branch_name = pedido.sucursal_cliente.nombre
+        for item in pedido.items.all():
+            product_name = item.producto.nombre
+            if product_name in product_names:
+                totals[(branch_name, product_name)] += item.cantidad
+
+    rows = []
+    for branch_name, short_name in SUCURSALES_REPORTE_BRANCHES:
+        rows.append(
+            {
+                "label": short_name,
+                "values": [
+                    format_dashboard_quantity(totals[(branch_name, product_name)])
+                    for _, product_name in SUCURSALES_REPORTE_PRODUCTOS
+                ],
+            }
+        )
+
+    total_values = []
+    for _, product_name in SUCURSALES_REPORTE_PRODUCTOS:
+        product_total = sum(
+            totals[(branch_name, product_name)]
+            for branch_name, _ in SUCURSALES_REPORTE_BRANCHES
+        )
+        total_values.append(format_dashboard_quantity(product_total))
+
+    return {
+        "source_date": source_date,
+        "print_date": source_date + timedelta(days=1),
+        "headers": [label for label, _ in SUCURSALES_REPORTE_PRODUCTOS],
+        "rows": rows,
+        "total_values": total_values,
     }
 
 
@@ -1188,6 +1385,7 @@ def admin_datos_context(request):
         "prediction_rows": prediction_rows,
         "selected_order_count": selected_order_count,
         "aguas_print": aguas_print_context(),
+        "sucursales_print": sucursales_print_context(),
     }
 
 
@@ -1253,6 +1451,7 @@ def admin_dashboard(request):
         },
         "can_manage_pedidos": is_admin_user(request.user),
         "aguas_print": aguas_print_context(),
+        "sucursales_print": sucursales_print_context(),
     }
     return render(request, "pedidos/admin_dashboard.html", context)
 
@@ -1263,6 +1462,14 @@ def imprimir_aguas(request):
     context = aguas_print_context()
     context["auto_print"] = request.GET.get("embedded") != "1"
     return render(request, "pedidos/aguas_print.html", context)
+
+
+@dashboard_required
+def imprimir_sucursales(request):
+    logger.info("Admin %s abrio impresion de reporte sucursales", request.user.username)
+    context = sucursales_print_context()
+    context["auto_print"] = request.GET.get("embedded") != "1"
+    return render(request, "pedidos/sucursales_print.html", context)
 
 
 @admin_required
