@@ -42,7 +42,7 @@
 <template
     id="print-sucursales"
     data-print-width="72"
-    data-print-height="72"
+    data-print-height="96"
 >
     <main class="inline-print-sheet inline-sucursales-sheet" aria-label="Resumen imprimible de sucursales">
         <table class="inline-sucursales-table">
@@ -67,7 +67,7 @@
                     {% endfor %}
                 </tr>
                 {% endfor %}
-                <tr class="total-row">
+                <tr class="report-total-row">
                     <td>TOTAL</td>
                     {% for value in sucursales_print.total_values %}
                     <td>{{ value }}</td>

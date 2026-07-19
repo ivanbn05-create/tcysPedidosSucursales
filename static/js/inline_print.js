@@ -183,26 +183,26 @@ document.addEventListener("DOMContentLoaded", () => {
                 .inline-sucursales-sheet,
                 .inline-sucursales-table {
                     width: 72mm !important;
-                    height: 72mm !important;
+                    height: 96mm !important;
                 }
 
                 .inline-sucursales-table col.label {
-                    width: 27mm;
+                    width: 30mm;
                 }
 
                 .inline-sucursales-table col.product {
-                    width: 15mm;
+                    width: 14mm;
                 }
 
                 .inline-sucursales-table th,
                 .inline-sucursales-table td {
-                    height: 6mm;
+                    height: 8mm;
                     padding: 0;
                     border: 0.3mm solid #000;
                     color: #000;
                     font-family: Calibri, Arial, sans-serif;
-                    font-size: 8pt;
-                    font-weight: 700;
+                    font-size: 11pt;
+                    font-weight: 800;
                     line-height: 1;
                     text-align: center;
                     vertical-align: middle;
@@ -211,12 +211,16 @@ document.addEventListener("DOMContentLoaded", () => {
 
                 .inline-sucursales-table th:first-child,
                 .inline-sucursales-table td:first-child {
-                    padding-left: 0.8mm;
+                    padding-left: 1mm;
                     text-align: left;
                 }
 
-                .inline-sucursales-table .total-row td {
-                    font-size: 10pt;
+                .inline-sucursales-table .report-total-row {
+                    display: table-row !important;
+                }
+
+                .inline-sucursales-table .report-total-row td {
+                    font-size: 11.5pt;
                     font-weight: 900;
                 }
             }

@@ -6,7 +6,7 @@
     <title>Imprimir sucursales {{ print_date|date:"d/m/Y" }}</title>
     <style>
         @page {
-            size: 72mm 72mm;
+            size: 72mm 96mm;
             margin: 0;
         }
 
@@ -48,7 +48,7 @@
         .sucursales-sheet,
         .sucursales-table {
             width: 72mm;
-            height: 72mm;
+            height: 96mm;
         }
 
         .sucursales-sheet {
@@ -68,21 +68,21 @@
         }
 
         .sucursales-table col.label {
-            width: 27mm;
+            width: 30mm;
         }
 
         .sucursales-table col.product {
-            width: 15mm;
+            width: 14mm;
         }
 
         .sucursales-table th,
         .sucursales-table td {
-            height: 6mm;
+            height: 8mm;
             padding: 0;
             border: 0.3mm solid #000;
             color: #000;
-            font-size: 8pt;
-            font-weight: 700;
+            font-size: 11pt;
+            font-weight: 800;
             line-height: 1;
             text-align: center;
             vertical-align: middle;
@@ -91,12 +91,16 @@
 
         .sucursales-table th:first-child,
         .sucursales-table td:first-child {
-            padding-left: 0.8mm;
+            padding-left: 1mm;
             text-align: left;
         }
 
-        .sucursales-table .total-row td {
-            font-size: 10pt;
+        .sucursales-table .report-total-row {
+            display: table-row;
+        }
+
+        .sucursales-table .report-total-row td {
+            font-size: 11.5pt;
             font-weight: 900;
         }
 
@@ -116,9 +120,9 @@
             html,
             body {
                 width: 72mm;
-                height: 72mm;
+                height: 96mm;
                 min-width: 72mm;
-                min-height: 72mm;
+                min-height: 96mm;
                 background: #fff;
             }
 
@@ -164,7 +168,7 @@
                     {% endfor %}
                 </tr>
                 {% endfor %}
-                <tr class="total-row">
+                <tr class="report-total-row">
                     <td>TOTAL</td>
                     {% for value in total_values %}
                     <td>{{ value }}</td>
