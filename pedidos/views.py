@@ -218,15 +218,6 @@ def productos_disponibles_para_pedido(sucursal, pedido=None):
         precios__sucursal_cliente=sucursal,
         precios__fecha_vigencia__lte=timezone.localdate(),
     )
-    if pedido is not None:
-        productos_query = Producto.objects.filter(
-            Q(
-                activo=True,
-                precios__sucursal_cliente=sucursal,
-                precios__fecha_vigencia__lte=timezone.localdate(),
-            )
-            | Q(items_pedido__pedido=pedido)
-        )
     return list(productos_query.distinct())
 
 

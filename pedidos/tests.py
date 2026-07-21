@@ -862,7 +862,7 @@ class PedidoFlowTests(TestCase):
         response = self.client.get("/admin/configuracion/")
         self.assertEqual(response.status_code, 200)
 
-    def test_producto_inactivo_solo_permanece_en_pedido_pendiente(self):
+    def test_producto_inactivo_no_aparece_en_lista_de_pedido(self):
         producto = Producto.objects.get(nombre="LITRO DE BARBACOA")
         self.assertTrue(self.client.login(username="aguilas", password="Aguilas8445"))
         response = self.client.post(
@@ -888,11 +888,14 @@ class PedidoFlowTests(TestCase):
             },
         )
         self.assertRedirects(response, "/admin/configuracion/")
+        producto.refresh_from_db()
+        self.assertFalse(producto.activo)
 
         self.client.logout()
         self.assertTrue(self.client.login(username="aguilas", password="Aguilas8445"))
         response = self.client.get("/pedidos/")
-        self.assertContains(response, f'data-product-id="{producto.id}"')
+        self.assertNotContains(response, f'data-product-id="{producto.id}"')
+        self.assertContains(response, producto.nombre)
 
         self.client.logout()
         self.assertTrue(self.client.login(username="fortin", password="Fortin9481"))
