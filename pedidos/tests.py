@@ -9,7 +9,9 @@ from django.contrib.auth.models import User
 from django.core import mail
 from django.core.cache import cache
 from django.core.management import call_command
+from django.db import connection
 from django.test import TestCase
+from django.test.utils import CaptureQueriesContext
 from django.utils import timezone
 from openpyxl import load_workbook
 
@@ -450,6 +452,31 @@ class PedidoFlowTests(TestCase):
         response = self.client.post(f"/admin/pedidos/{pedido_id}/eliminar/")
         self.assertEqual(response.status_code, 302)
         self.assertFalse(Pedido.objects.get(id=pedido_id).eliminado)
+
+    def test_admin_dashboard_pagina_y_evitar_consultas_por_item(self):
+        fecha_base = timezone.make_aware(datetime(2026, 7, 20, 10, 0))
+        for index in range(55):
+            self.crear_pedido_confirmado(
+                "Aguilas",
+                [("LITRO DE BARBACOA", "1")],
+                fecha_base + timedelta(minutes=index),
+            )
+
+        self.assertTrue(self.client.login(username="juancarlos", password="TocayosMO2026"))
+        with CaptureQueriesContext(connection) as captured:
+            response = self.client.get("/admin/")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Pagina 1 de 2")
+        html = response.content.decode()
+        self.assertEqual(html.count('<template\n    id="print-pedido-'), 50)
+        self.assertLess(len(captured), 75)
+
+        response = self.client.get("/admin/?page=2")
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Pagina 2 de 2")
+        html = response.content.decode()
+        self.assertEqual(html.count('<template\n    id="print-pedido-'), 5)
 
     def test_admin_configura_ticket_precio_y_password(self):
         self.assertTrue(self.client.login(username="juancarlos", password="TocayosMO2026"))

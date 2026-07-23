@@ -1081,6 +1081,37 @@ button.password-toggle:active {
     overflow: auto;
 }
 
+.pagination {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    flex-wrap: wrap;
+    gap: 10px;
+}
+
+.pagination-status,
+.pagination-disabled {
+    min-height: 36px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 8px 12px;
+    border-radius: 6px;
+    font-size: 14px;
+    font-weight: 900;
+}
+
+.pagination-status {
+    color: var(--blue);
+    background: #fff;
+    border: 1px solid var(--line);
+}
+
+.pagination-disabled {
+    color: var(--muted);
+    background: #f2f2f2;
+}
+
 .orders-table {
     width: 100%;
     border-collapse: collapse;

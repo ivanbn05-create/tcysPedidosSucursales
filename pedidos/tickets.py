@@ -64,11 +64,15 @@ def format_ticket_quantity(value):
     return format(decimal_value, "f").rstrip("0").rstrip(".")
 
 
-def ticket_label_for_item(item, fecha):
+def ticket_label_for_item(item, fecha, pedido=None, etiqueta_ticket=None):
+    if etiqueta_ticket is not None:
+        return etiqueta_ticket.upper()
+
+    pedido = pedido or item.pedido
     precio = (
         Precio.objects.filter(
-            producto=item.producto,
-            sucursal_cliente=item.pedido.sucursal_cliente,
+            producto_id=item.producto_id,
+            sucursal_cliente_id=pedido.sucursal_cliente_id,
             fecha_vigencia__lte=fecha,
         )
         .order_by("-fecha_vigencia")
@@ -88,20 +92,30 @@ def ticket_title(pedido):
     return pedido.sucursal_cliente.nombre.upper()
 
 
-def ticket_items(pedido):
+def ticket_items(pedido, items=None, etiquetas_por_item=None):
     fecha = ticket_date(pedido)
+    items = items if items is not None else pedido.items.select_related("producto").all()
+    etiquetas_por_item = etiquetas_por_item or {}
     return [
         {
-            "producto": ticket_label_for_item(item, fecha),
+            "producto": ticket_label_for_item(
+                item,
+                fecha,
+                pedido=pedido,
+                etiqueta_ticket=etiquetas_por_item.get(item.id),
+            ),
             "cantidad": format_ticket_quantity_with_unit(item, fecha),
         }
-        for item in pedido.items.select_related("producto").all()
+        for item in items
     ]
 
 
-def ticket_context(pedido):
+def ticket_context(pedido, items=None, etiquetas_por_item=None):
     rows = []
-    for index, row in enumerate(ticket_items(pedido), start=3):
+    for index, row in enumerate(
+        ticket_items(pedido, items=items, etiquetas_por_item=etiquetas_por_item),
+        start=3,
+    ):
         rows.append(
             {
                 **row,

@@ -11,6 +11,7 @@ from django.contrib.auth.decorators import login_required
 from django.contrib.auth.models import User
 from django.core.cache import cache
 from django.core.exceptions import ValidationError
+from django.core.paginator import Paginator
 from django.db import IntegrityError, transaction
 from django.db.models import Q, Sum
 from django.http import HttpResponse, JsonResponse
@@ -35,6 +36,7 @@ logger = logging.getLogger(__name__)
 
 CONFIGURACION_CACHE_TIMEOUT = 300  # 5 minutos
 PRINT_GROUP_NAME = "Operador de impresion"
+ADMIN_DASHBOARD_PAGE_SIZE = 50
 ORDER_HISTORY_STATES = [
     Pedido.Estado.CONFIRMADO,
     Pedido.Estado.ENVIADO,
@@ -185,8 +187,8 @@ def sucursal_para_usuario(user):
 def precio_vigente(producto, sucursal):
     return (
         Precio.objects.filter(
-            producto=producto,
-            sucursal_cliente=sucursal,
+            producto_id=producto.id,
+            sucursal_cliente_id=sucursal.id,
             fecha_vigencia__lte=timezone.localdate(),
         )
         .order_by("-fecha_vigencia")
@@ -222,14 +224,30 @@ def productos_disponibles_para_pedido(sucursal, pedido=None):
 
 
 def productos_data_para_sucursal(sucursal, productos):
+    fecha = timezone.localdate()
+    productos = list(productos)
+    precios_por_producto = {}
+    for precio in (
+        Precio.objects.filter(
+            producto_id__in=[producto.id for producto in productos],
+            sucursal_cliente_id=sucursal.id,
+            fecha_vigencia__lte=fecha,
+        )
+        .only("producto_id", "nombre_ticket", "fecha_vigencia")
+        .order_by("producto_id", "-fecha_vigencia")
+    ):
+        precios_por_producto.setdefault(precio.producto_id, precio)
+
     productos_data = []
     for producto in productos:
-        precio = precio_vigente(producto, sucursal)
+        precio = precios_por_producto.get(producto.id)
         productos_data.append(
             {
                 "id": producto.id,
                 "nombre": producto.nombre,
-                "nombre_ticket": precio.etiqueta_ticket if precio else producto.etiqueta_ticket,
+                "nombre_ticket": etiqueta_desde_precio(precio, producto)
+                if precio
+                else producto.etiqueta_ticket,
                 "unidad": producto.unidad_corta,
             }
         )
@@ -335,20 +353,62 @@ def parse_filter_date(value):
     return None
 
 
+def etiqueta_desde_precio(precio, producto):
+    return (precio.nombre_ticket.strip() or producto.etiqueta_ticket)[:24]
+
+
 def etiqueta_ticket_para_item(item, fecha=None):
     fecha = fecha or timezone.localdate()
+    pedido = item.pedido
     precio = (
         Precio.objects.filter(
-            producto=item.producto,
-            sucursal_cliente=item.pedido.sucursal_cliente,
+            producto_id=item.producto_id,
+            sucursal_cliente_id=pedido.sucursal_cliente_id,
             fecha_vigencia__lte=fecha,
         )
         .order_by("-fecha_vigencia")
         .first()
     )
     if precio is not None:
-        return precio.etiqueta_ticket
+        return etiqueta_desde_precio(precio, item.producto)
     return item.producto.etiqueta_ticket
+
+
+def etiquetas_ticket_para_item_refs(item_refs):
+    item_refs = list(item_refs)
+    if not item_refs:
+        return {}
+
+    producto_ids = {item.producto_id for item, _, _ in item_refs}
+    sucursal_ids = {pedido.sucursal_cliente_id for _, pedido, _ in item_refs}
+    fecha_maxima = max(fecha for _, _, fecha in item_refs)
+    precios_por_clave = defaultdict(list)
+
+    precios = (
+        Precio.objects.filter(
+            producto_id__in=producto_ids,
+            sucursal_cliente_id__in=sucursal_ids,
+            fecha_vigencia__lte=fecha_maxima,
+        )
+        .only("producto_id", "sucursal_cliente_id", "nombre_ticket", "fecha_vigencia")
+        .order_by("producto_id", "sucursal_cliente_id", "-fecha_vigencia")
+    )
+    for precio in precios:
+        precios_por_clave[(precio.producto_id, precio.sucursal_cliente_id)].append(precio)
+
+    etiquetas = {}
+    for item, pedido, fecha in item_refs:
+        precios_item = precios_por_clave.get((item.producto_id, pedido.sucursal_cliente_id), [])
+        precio_vigente_item = next(
+            (precio for precio in precios_item if precio.fecha_vigencia <= fecha),
+            None,
+        )
+        etiquetas[item.id] = (
+            etiqueta_desde_precio(precio_vigente_item, item.producto)
+            if precio_vigente_item
+            else item.producto.etiqueta_ticket
+        )
+    return etiquetas
 
 
 def fecha_referencia_pedido(pedido):
@@ -356,14 +416,14 @@ def fecha_referencia_pedido(pedido):
     return timezone.localtime(base).date()
 
 
-def serializar_item(item, incluir_precios=False):
-    fecha_pedido = fecha_referencia_pedido(item.pedido)
+def serializar_item(item, incluir_precios=False, nombre_ticket=None, fecha_pedido=None):
+    fecha_pedido = fecha_pedido or fecha_referencia_pedido(item.pedido)
     cantidad_promocion = item.cantidad_bonificacion(fecha_pedido)
     data = {
         "id": item.id,
         "producto_id": item.producto_id,
         "producto": item.producto.nombre,
-        "nombre_ticket": etiqueta_ticket_para_item(item, fecha_pedido),
+        "nombre_ticket": nombre_ticket or etiqueta_ticket_para_item(item, fecha_pedido),
         "unidad": item.producto.unidad_corta,
         "cantidad": decimal_to_str(item.cantidad, "0.001"),
         "cantidad_ticket": decimal_to_str(item.cantidad_con_promocion(fecha_pedido), "0.001"),
@@ -382,9 +442,22 @@ def serializar_item(item, incluir_precios=False):
 def serializar_pedido(pedido, incluir_precios=False):
     if not pedido:
         return {"items": [], "total": "0.00"}
-    items = pedido.items.select_related("producto").all()
+    items = list(pedido.items.select_related("producto").all())
+    fecha_pedido = fecha_referencia_pedido(pedido)
+    etiquetas = etiquetas_ticket_para_item_refs(
+        (item, pedido, fecha_pedido)
+        for item in items
+    )
     return {
-        "items": [serializar_item(item, incluir_precios=incluir_precios) for item in items],
+        "items": [
+            serializar_item(
+                item,
+                incluir_precios=incluir_precios,
+                nombre_ticket=etiquetas.get(item.id),
+                fecha_pedido=fecha_pedido,
+            )
+            for item in items
+        ],
         "total": decimal_to_str(pedido.total),
     }
 
@@ -1420,12 +1493,41 @@ def admin_dashboard(request):
             )
         pedidos = pedidos.filter(filtro)
 
-    pedidos_list = list(pedidos)
+    paginator = Paginator(pedidos, ADMIN_DASHBOARD_PAGE_SIZE)
+    page_obj = paginator.get_page(request.GET.get("page"))
+    pedidos_list = list(page_obj.object_list)
+
+    items_por_pedido = {}
+    item_refs = []
     for pedido in pedidos_list:
+        fecha_pedido = fecha_referencia_pedido(pedido)
+        pedido_items = list(pedido.items.all())
+        items_por_pedido[pedido.id] = pedido_items
+        item_refs.extend((item, pedido, fecha_pedido) for item in pedido_items)
+
+    etiquetas_por_item = etiquetas_ticket_para_item_refs(item_refs)
+    for pedido in pedidos_list:
+        fecha_pedido = fecha_referencia_pedido(pedido)
+        pedido_items = items_por_pedido[pedido.id]
         pedido.items_json = json.dumps(
-            [serializar_item(item, incluir_precios=True) for item in pedido.items.all()]
+            [
+                serializar_item(
+                    item,
+                    incluir_precios=True,
+                    nombre_ticket=etiquetas_por_item.get(item.id),
+                    fecha_pedido=fecha_pedido,
+                )
+                for item in pedido_items
+            ]
         )
-        pedido.print_context = ticket_context(pedido)
+        pedido.print_context = ticket_context(
+            pedido,
+            items=pedido_items,
+            etiquetas_por_item=etiquetas_por_item,
+        )
+
+    pagination_query = request.GET.copy()
+    pagination_query.pop("page", None)
 
     hoy = timezone.localdate()
     stats_base = Pedido.objects.filter(eliminado=False)
@@ -1438,6 +1540,9 @@ def admin_dashboard(request):
 
     context = {
         "pedidos": pedidos_list,
+        "page_obj": page_obj,
+        "pagination_query": pagination_query.urlencode(),
+        "page_size": ADMIN_DASHBOARD_PAGE_SIZE,
         "sucursales": SucursalCliente.objects.filter(activa=True),
         "estados": Pedido.Estado.choices,
         "stats": stats,

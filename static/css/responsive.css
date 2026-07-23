@@ -407,6 +407,10 @@
         width: 100%;
     }
 
+    .pagination {
+        justify-content: center;
+    }
+
     .settings-header {
         gap: 12px;
     }
