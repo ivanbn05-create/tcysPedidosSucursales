@@ -14,6 +14,7 @@ COMANDOS_SIN_SCHEDULER = {
     "shell_plus",
     "collectstatic",
     "seed_demo",
+    "compactar_precios",
     "createsuperuser",
     "check",
     "dbshell",

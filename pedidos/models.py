@@ -107,6 +107,12 @@ class Precio(models.Model):
 
     class Meta:
         ordering = ["producto__orden", "-fecha_vigencia"]
+        indexes = [
+            models.Index(
+                fields=["producto", "sucursal_cliente", "-fecha_vigencia"],
+                name="precio_vigente_idx",
+            ),
+        ]
         constraints = [
             models.UniqueConstraint(
                 fields=["producto", "sucursal_cliente", "fecha_vigencia"],

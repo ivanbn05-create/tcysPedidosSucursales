@@ -23,7 +23,7 @@ PRODUCTOS_CATALOGO = [
     ("CEBOLLA GUISADA", "C. GUISADA", "KILOGRAMO (KG)", "KG", "1.000", False),
     ("CHILE GüERO", "CHILE", "PIEZA (PZA)", "PZA", "30.000", False),
     ("SALSA DE TOMATE", "S. ROJA", "LITRO (LT)", "LT", "1.000", False),
-    ("SALSA DE AGUACATE", "S. VERDE", "LITRO (LT)", "LT", "1.000", False),
+    ("SALSA DE AGUACATE", "S. AGUACATE", "LITRO (LT)", "LT", "1.000", False),
     ("SALSA DE CHIPOTLE", "S. CHIPOTLE", "LITRO (LT)", "LT", "1.000", False),
     ("SALSA DE SERRANO", "S. SERRANO", "LITRO (LT)", "LT", "1.000", False),
     ("SALSA VERDE SIN CHILE", "S. VERDE S/CH", "LITRO (LT)", "LT", "1.000", False),
@@ -41,10 +41,10 @@ PRODUCTOS_CATALOGO = [
     ("BISTEK", "BISTEK", "KILOGRAMO (KG)", "KG", "1.000", False),
     ("ARRACHERA", "ARRACHERA", "KILOGRAMO (KG)", "KG", "1.000", False),
     ("CHORIZO", "CHORIZO", "KILOGRAMO (KG)", "KG", "1.000", False),
-    ("AGUA HORCHATA ROSA 1/2", "HR 1/2", "PIEZA (PZA)", "PZA", "1.000", False),
-    ("AGUA HORCHATA ROSA LT", "HR LT", "PIEZA (PZA)", "PZA", "1.000", False),
     ("AGUA HORCHATA BLANCA 1/2", "HB 1/2", "PIEZA (PZA)", "PZA", "1.000", False),
     ("AGUA HORCHATA BLANCA LT", "HB LT", "PIEZA (PZA)", "PZA", "1.000", False),
+    ("AGUA HORCHATA ROSA 1/2", "HR 1/2", "PIEZA (PZA)", "PZA", "1.000", False),
+    ("AGUA HORCHATA ROSA LT", "HR LT", "PIEZA (PZA)", "PZA", "1.000", False),
     ("AGUA JAMAICA 1/2", "JAM 1/2", "PIEZA (PZA)", "PZA", "1.000", False),
     ("AGUA JAMAICA LT", "JAM LT", "PIEZA (PZA)", "PZA", "1.000", False),
     ("SERVILLETAS", "SERVILLETA", "PIEZA (PZA)", "PZA", "1.000", False),
@@ -57,7 +57,7 @@ PRODUCTOS_CATALOGO = [
 
 PRECIOS_POR_GRUPO = {
     "sucursal_general": {
-        "LITRO DE BARBACOA": ("178", "BARBACOA"),
+        "LITRO DE BARBACOA": ("193", "BARBACOA"),
         "TORTILLA ESPECIAL": ("25.5", "TORTILLA"),
         "BOLILLO": ("9", "BOLILLO"),
         "QUESO": ("160", "QUESO"),
@@ -65,7 +65,7 @@ PRECIOS_POR_GRUPO = {
         "CEBOLLA GUISADA": ("60", "C. GUISADA"),
         "CHILE GüERO": ("64", "CHILE"),
         "SALSA DE TOMATE": ("60", "S. ROJA"),
-        "SALSA DE AGUACATE": ("60", "S. VERDE"),
+        "SALSA DE AGUACATE": ("60", "S. AGUACATE"),
         "SALSA DE CHIPOTLE": ("56", "S. CHIPOTLE"),
         "SALSA DE SERRANO": ("56", "S. SERRANO"),
         "SALSA VERDE SIN CHILE": ("55", "S. VERDE S/CH"),
@@ -83,12 +83,12 @@ PRECIOS_POR_GRUPO = {
         "BISTEK": ("220", "BISTEK"),
         "ARRACHERA": ("220", "ARRACHERA"),
         "CHORIZO": ("125", "CHORIZO"),
-        "AGUA HORCHATA ROSA 1/2": ("17.5", "HR 1/2"),
-        "AGUA HORCHATA ROSA LT": ("29", "HR LT"),
-        "AGUA HORCHATA BLANCA 1/2": ("17.5", "HB 1/2"),
-        "AGUA HORCHATA BLANCA LT": ("29", "HB LT"),
-        "AGUA JAMAICA 1/2": ("17.5", "JAM 1/2"),
-        "AGUA JAMAICA LT": ("29", "JAM LT"),
+        "AGUA HORCHATA ROSA 1/2": ("19", "HR 1/2"),
+        "AGUA HORCHATA ROSA LT": ("32", "HR LT"),
+        "AGUA HORCHATA BLANCA 1/2": ("19", "HB 1/2"),
+        "AGUA HORCHATA BLANCA LT": ("32", "HB LT"),
+        "AGUA JAMAICA 1/2": ("19", "JAM 1/2"),
+        "AGUA JAMAICA LT": ("32", "JAM LT"),
         "SERVILLETAS": ("39", "SERVILLETA"),
         "VASO 8 TÉRMICO DART": ("16.5", "VASO 8 oz"),
         "CUCHARA CHICA ECONÓMICA": ("9.5", "CUCHARA"),
@@ -97,7 +97,7 @@ PRECIOS_POR_GRUPO = {
         "HOAGIE REYMA": ("151", "HOAGIE"),
     },
     "aguilas": {
-        "LITRO DE BARBACOA": ("178", "BARBACOA"),
+        "LITRO DE BARBACOA": ("193", "BARBACOA"),
         "TORTILLA ESPECIAL": ("25.5", "TORTILLA"),
         "BOLILLO": ("9", "BOLILLO"),
         "QUESO": ("160", "QUESO"),
@@ -105,7 +105,7 @@ PRECIOS_POR_GRUPO = {
         "CEBOLLA GUISADA": ("60", "C. GUISADA"),
         "CHILE GüERO": ("64", "CHILE"),
         "SALSA DE TOMATE": ("60", "S. ROJA"),
-        "SALSA DE AGUACATE": ("60", "S. VERDE"),
+        "SALSA DE AGUACATE": ("60", "S. AGUACATE"),
         "SALSA DE CHIPOTLE": ("56", "S. CHIPOTLE"),
         "SALSA DE SERRANO": ("56", "S. SERRANO"),
         "SALSA VERDE SIN CHILE": ("55", "S. VERDE S/CH"),
@@ -123,12 +123,12 @@ PRECIOS_POR_GRUPO = {
         "BISTEK": ("200", "BISTEK"),
         "ARRACHERA": ("220", "ARRACHERA"),
         "CHORIZO": ("125", "CHORIZO"),
-        "AGUA HORCHATA ROSA 1/2": ("17.5", "HR 1/2"),
-        "AGUA HORCHATA ROSA LT": ("29", "HR LT"),
-        "AGUA HORCHATA BLANCA 1/2": ("17.5", "HB 1/2"),
-        "AGUA HORCHATA BLANCA LT": ("29", "HB LT"),
-        "AGUA JAMAICA 1/2": ("17.5", "JAM 1/2"),
-        "AGUA JAMAICA LT": ("29", "JAM LT"),
+        "AGUA HORCHATA ROSA 1/2": ("19", "HR 1/2"),
+        "AGUA HORCHATA ROSA LT": ("32", "HR LT"),
+        "AGUA HORCHATA BLANCA 1/2": ("19", "HB 1/2"),
+        "AGUA HORCHATA BLANCA LT": ("32", "HB LT"),
+        "AGUA JAMAICA 1/2": ("19", "JAM 1/2"),
+        "AGUA JAMAICA LT": ("32", "JAM LT"),
         "SERVILLETAS": ("39", "SERVILLETA"),
         "VASO 8 TÉRMICO DART": ("16.5", "VASO 8 oz"),
         "CUCHARA CHICA ECONÓMICA": ("9.5", "CUCHARA"),
@@ -137,7 +137,7 @@ PRECIOS_POR_GRUPO = {
         "HOAGIE REYMA": ("151", "HOAGIE"),
     },
     "mayoreo": {
-        "LITRO DE BARBACOA": ("190", "BARBACOA .M"),
+        "LITRO DE BARBACOA": ("203", "BARBACOA .M"),
         "TORTILLA ESPECIAL": ("26.5", "TORTILLA .M"),
         "BOLILLO": ("9", "BOLILLO"),
         "QUESO": ("160", "QUESO"),
@@ -145,7 +145,7 @@ PRECIOS_POR_GRUPO = {
         "CEBOLLA GUISADA": ("60", "C. GUISADA"),
         "CHILE GüERO": ("64", "CHILE"),
         "SALSA DE TOMATE": ("60", "S. ROJA"),
-        "SALSA DE AGUACATE": ("60", "S. VERDE"),
+        "SALSA DE AGUACATE": ("60", "S. AGUACATE"),
         "SALSA DE CHIPOTLE": ("56", "S. CHIPOTLE"),
         "SALSA DE SERRANO": ("56", "S. SERRANO"),
         "SALSA VERDE SIN CHILE": ("55", "S. VERDE S/CH"),
@@ -161,12 +161,12 @@ PRECIOS_POR_GRUPO = {
         "GRASA": ("30", "GRASA .M"),
         "CONSOMÉ": ("15", "CONSOMÉ .M"),
         "BISTEK": ("220", "BISTEK"),
-        "AGUA HORCHATA ROSA 1/2": ("18", "HR 1/2 .M"),
-        "AGUA HORCHATA ROSA LT": ("31", "HR LT .M"),
-        "AGUA HORCHATA BLANCA 1/2": ("18", "HB 1/2 .M"),
-        "AGUA HORCHATA BLANCA LT": ("31", "HB LT .M"),
-        "AGUA JAMAICA 1/2": ("18", "JAM 1/2 .M"),
-        "AGUA JAMAICA LT": ("31", "JAM LT .M"),
+        "AGUA HORCHATA ROSA 1/2": ("19", "HR 1/2 .M"),
+        "AGUA HORCHATA ROSA LT": ("32", "HR LT .M"),
+        "AGUA HORCHATA BLANCA 1/2": ("19", "HB 1/2 .M"),
+        "AGUA HORCHATA BLANCA LT": ("32", "HB LT .M"),
+        "AGUA JAMAICA 1/2": ("19", "JAM 1/2 .M"),
+        "AGUA JAMAICA LT": ("32", "JAM LT .M"),
         "SERVILLETAS": ("39", "SERVILLETA"),
         "VASO 8 TÉRMICO DART": ("16.5", "VASO 8 oz"),
         "CUCHARA CHICA ECONÓMICA": ("9.5", "CUCHARA"),
@@ -214,6 +214,47 @@ def password_for_cliente(nombre):
 def ensure_password(user, password):
     if not user.has_usable_password():
         user.set_password(password)
+
+
+def ensure_demo_price(producto, sucursal, precio_unitario, nombre_ticket, fecha_vigencia):
+    """Crea historial de precios solo cuando el valor vigente cambia."""
+
+    precio_unitario = Decimal(precio_unitario).quantize(Decimal("0.01"))
+    nombre_ticket = nombre_ticket[:24]
+    precio_vigente = (
+        Precio.objects.filter(
+            producto=producto,
+            sucursal_cliente=sucursal,
+            fecha_vigencia__lte=fecha_vigencia,
+        )
+        .order_by("-fecha_vigencia")
+        .first()
+    )
+    if (
+        precio_vigente is not None
+        and precio_vigente.precio_unitario == precio_unitario
+        and precio_vigente.nombre_ticket == nombre_ticket
+    ):
+        return precio_vigente
+
+    precio_hoy = Precio.objects.filter(
+        producto=producto,
+        sucursal_cliente=sucursal,
+        fecha_vigencia=fecha_vigencia,
+    ).first()
+    if precio_hoy is not None:
+        precio_hoy.precio_unitario = precio_unitario
+        precio_hoy.nombre_ticket = nombre_ticket
+        precio_hoy.save(update_fields=["precio_unitario", "nombre_ticket"])
+        return precio_hoy
+
+    return Precio.objects.create(
+        producto=producto,
+        sucursal_cliente=sucursal,
+        fecha_vigencia=fecha_vigencia,
+        precio_unitario=precio_unitario,
+        nombre_ticket=nombre_ticket,
+    )
 
 
 def seed_demo_data():
@@ -303,15 +344,7 @@ def seed_demo_data():
             if nombre_producto not in precios_grupo:
                 continue
             precio_unitario, nombre_ticket = precios_grupo[nombre_producto]
-            Precio.objects.update_or_create(
-                producto=producto,
-                sucursal_cliente=sucursal,
-                fecha_vigencia=hoy,
-                defaults={
-                    "precio_unitario": Decimal(precio_unitario),
-                    "nombre_ticket": nombre_ticket,
-                },
-            )
+            ensure_demo_price(producto, sucursal, precio_unitario, nombre_ticket, hoy)
 
     config = Configuracion.get_solo()
     if not config.email_remitente:

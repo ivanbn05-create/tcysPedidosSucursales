@@ -1,8 +1,9 @@
 import json
 from datetime import datetime, time, timedelta
 from decimal import Decimal
-from io import BytesIO
+from io import BytesIO, StringIO
 from pathlib import Path
+from unittest.mock import patch
 
 from django.conf import settings
 from django.contrib.auth.models import User
@@ -15,6 +16,7 @@ from django.test.utils import CaptureQueriesContext
 from django.utils import timezone
 from openpyxl import load_workbook
 
+from .apps import COMANDOS_SIN_SCHEDULER
 from .models import (
     CONFIGURACION_CACHE_KEY,
     Configuracion,
@@ -47,6 +49,7 @@ class PedidoFlowTests(TestCase):
 
     def test_configuracion_estaticos_mantiene_whitenoise(self):
         self.assertIn("whitenoise.middleware.WhiteNoiseMiddleware", settings.MIDDLEWARE)
+        self.assertIn("compactar_precios", COMANDOS_SIN_SCHEDULER)
 
     def test_css_movil_no_bloquea_scroll_global(self):
         responsive_css = Path(settings.BASE_DIR, "static", "css", "responsive.css").read_text(
@@ -92,7 +95,7 @@ class PedidoFlowTests(TestCase):
         self.assertEqual(response.status_code, 200)
         data = response.json()
         self.assertTrue(data["success"])
-        self.assertEqual(data["total_pedido"], "445.00")
+        self.assertEqual(data["total_pedido"], "482.50")
 
         response = self.client.post("/api/pedidos/confirmar/", content_type="application/json")
         self.assertEqual(response.status_code, 200)
@@ -103,7 +106,7 @@ class PedidoFlowTests(TestCase):
 
         pedido = Pedido.objects.get(id=data["pedido_id"])
         self.assertEqual(pedido.estado, Pedido.Estado.CONFIRMADO)
-        self.assertEqual(pedido.total, Decimal("445.00"))
+        self.assertEqual(pedido.total, Decimal("482.50"))
 
         self.client.logout()
         self.assertTrue(self.client.login(username="juancarlos", password="TocayosMO2026"))
@@ -139,7 +142,7 @@ class PedidoFlowTests(TestCase):
         self.assertContains(print_response, "AGUILAS")
         self.assertContains(print_response, "BARBACOA")
         self.assertContains(print_response, "2.5 KG")
-        self.assertNotContains(print_response, "$445.00")
+        self.assertNotContains(print_response, "$482.50")
 
         dashboard = self.client.get("/admin/")
         self.assertContains(dashboard, pedido.folio_fecha)
@@ -234,7 +237,7 @@ class PedidoFlowTests(TestCase):
             content_type="application/json",
         )
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(response.json()["total_pedido"], "3560.00")
+        self.assertEqual(response.json()["total_pedido"], "3860.00")
         response = self.client.post("/api/pedidos/confirmar/", content_type="application/json")
         pedido_id = response.json()["pedido_id"]
 
@@ -249,7 +252,7 @@ class PedidoFlowTests(TestCase):
         workbook = load_workbook(BytesIO(response.content))
         sheet = workbook.active
         self.assertEqual(sheet["B3"].value, "25 KG")
-        self.assertEqual(pedido.total, Decimal("3560.00"))
+        self.assertEqual(pedido.total, Decimal("3860.00"))
 
     def test_agregar_producto_existente_reemplaza_cantidad(self):
         self.assertTrue(self.client.login(username="aguilas", password="Aguilas8445"))
@@ -269,7 +272,7 @@ class PedidoFlowTests(TestCase):
         self.assertEqual(first.status_code, 200)
         self.assertEqual(second.status_code, 200)
         data = second.json()
-        self.assertEqual(data["total_pedido"], "534.00")
+        self.assertEqual(data["total_pedido"], "579.00")
         self.assertEqual(len(data["pedido"]["items"]), 1)
         self.assertEqual(data["pedido"]["items"][0]["cantidad"], "3.000")
 
@@ -292,6 +295,134 @@ class PedidoFlowTests(TestCase):
         self.assertEqual(data["pedido"]["items"][0]["producto"], "SALSA DE AGUACATE")
         self.assertEqual(data["pedido"]["items"][0]["cantidad"], "1.000")
 
+    def test_seed_actualiza_precios_etiqueta_aguacate_y_orden_aguas(self):
+        aguilas = SucursalCliente.objects.get(nombre="Aguilas")
+        mayorista = SucursalCliente.objects.get(nombre="Brot Nueva Galicia")
+        barbacoa = Producto.objects.get(nombre="LITRO DE BARBACOA")
+        salsa_aguacate = Producto.objects.get(nombre="SALSA DE AGUACATE")
+        aguas = [
+            "AGUA HORCHATA BLANCA 1/2",
+            "AGUA HORCHATA BLANCA LT",
+            "AGUA HORCHATA ROSA 1/2",
+            "AGUA HORCHATA ROSA LT",
+            "AGUA JAMAICA 1/2",
+            "AGUA JAMAICA LT",
+        ]
+
+        self.assertEqual(salsa_aguacate.nombre_ticket, "S. AGUACATE")
+        self.assertEqual(
+            list(Producto.objects.filter(nombre__in=aguas).order_by("orden").values_list("nombre", flat=True)),
+            aguas,
+        )
+        self.assertEqual(
+            Precio.objects.get(producto=barbacoa, sucursal_cliente=aguilas).precio_unitario,
+            Decimal("193.00"),
+        )
+        self.assertEqual(
+            Precio.objects.get(producto=barbacoa, sucursal_cliente=mayorista).precio_unitario,
+            Decimal("203.00"),
+        )
+        for sucursal in (aguilas, mayorista):
+            self.assertEqual(
+                Precio.objects.get(producto__nombre="AGUA HORCHATA BLANCA 1/2", sucursal_cliente=sucursal).precio_unitario,
+                Decimal("19.00"),
+            )
+            self.assertEqual(
+                Precio.objects.get(producto__nombre="AGUA JAMAICA LT", sucursal_cliente=sucursal).precio_unitario,
+                Decimal("32.00"),
+            )
+            self.assertEqual(
+                Precio.objects.get(producto=salsa_aguacate, sucursal_cliente=sucursal).nombre_ticket,
+                "S. AGUACATE",
+            )
+
+        self.assertTrue(self.client.login(username="aguilas", password="Aguilas8445"))
+        for product_name in (
+            "AGUA HORCHATA ROSA 1/2",
+            "AGUA JAMAICA 1/2",
+            "AGUA HORCHATA BLANCA 1/2",
+        ):
+            producto = Producto.objects.get(nombre=product_name)
+            response = self.client.post(
+                "/api/pedidos/crear-item/",
+                data=json.dumps({"producto_id": producto.id, "cantidad": "1"}),
+                content_type="application/json",
+            )
+            self.assertEqual(response.status_code, 200)
+
+        response = self.client.post("/api/pedidos/confirmar/", content_type="application/json")
+        pedido_id = response.json()["pedido_id"]
+        self.client.logout()
+        self.assertTrue(self.client.login(username="juancarlos", password="TocayosMO2026"))
+
+        print_response = self.client.get(f"/admin/pedidos/{pedido_id}/imprimir/?embedded=1")
+        html = print_response.content.decode()
+        self.assertLess(html.index("HB 1/2"), html.index("HR 1/2"))
+        self.assertLess(html.index("HR 1/2"), html.index("JAM 1/2"))
+
+    def test_seed_no_duplica_precios_si_no_cambia_el_valor_vigente(self):
+        total_inicial = Precio.objects.count()
+        manana = timezone.localdate() + timedelta(days=1)
+
+        with patch("pedidos.seed.timezone.localdate", return_value=manana):
+            seed_demo_data()
+
+        self.assertEqual(Precio.objects.count(), total_inicial)
+
+    def test_seed_crea_historial_de_precio_solo_si_cambia_el_valor(self):
+        aguilas = SucursalCliente.objects.get(nombre="Aguilas")
+        barbacoa = Producto.objects.get(nombre="LITRO DE BARBACOA")
+        precio_actual = Precio.objects.get(producto=barbacoa, sucursal_cliente=aguilas)
+        precio_actual.precio_unitario = Decimal("178.00")
+        precio_actual.save(update_fields=["precio_unitario"])
+        total_inicial = Precio.objects.count()
+        manana = timezone.localdate() + timedelta(days=1)
+
+        with patch("pedidos.seed.timezone.localdate", return_value=manana):
+            seed_demo_data()
+
+        self.assertEqual(Precio.objects.count(), total_inicial + 1)
+        self.assertTrue(
+            Precio.objects.filter(
+                producto=barbacoa,
+                sucursal_cliente=aguilas,
+                fecha_vigencia=manana,
+                precio_unitario=Decimal("193.00"),
+                nombre_ticket="BARBACOA",
+            ).exists()
+        )
+
+    def test_compactar_precios_dry_run_y_elimina_solo_redundantes(self):
+        aguilas = SucursalCliente.objects.get(nombre="Aguilas")
+        barbacoa = Producto.objects.get(nombre="LITRO DE BARBACOA")
+        hoy = timezone.localdate()
+        precio_conservado = Precio.objects.create(
+            producto=barbacoa,
+            sucursal_cliente=aguilas,
+            fecha_vigencia=hoy - timedelta(days=2),
+            precio_unitario=Decimal("178.00"),
+            nombre_ticket="BARBACOA",
+        )
+        precio_redundante = Precio.objects.create(
+            producto=barbacoa,
+            sucursal_cliente=aguilas,
+            fecha_vigencia=hoy - timedelta(days=1),
+            precio_unitario=Decimal("178.00"),
+            nombre_ticket="BARBACOA",
+        )
+        precio_vigente = Precio.objects.get(producto=barbacoa, sucursal_cliente=aguilas, fecha_vigencia=hoy)
+
+        salida = StringIO()
+        call_command("compactar_precios", dry_run=True, stdout=salida)
+        self.assertIn("DRY-RUN", salida.getvalue())
+        self.assertTrue(Precio.objects.filter(id=precio_redundante.id).exists())
+
+        call_command("compactar_precios", stdout=StringIO())
+
+        self.assertTrue(Precio.objects.filter(id=precio_conservado.id).exists())
+        self.assertFalse(Precio.objects.filter(id=precio_redundante.id).exists())
+        self.assertTrue(Precio.objects.filter(id=precio_vigente.id).exists())
+
     def test_pantalla_pedidos_no_muestra_precios_unitarios(self):
         self.assertTrue(self.client.login(username="aguilas", password="Aguilas8445"))
         response = self.client.get("/pedidos/")
@@ -300,7 +431,7 @@ class PedidoFlowTests(TestCase):
         self.assertContains(response, 'href="/pedidos/historial/"')
         self.assertContains(response, ">Historial</a>")
         self.assertNotContains(response, '<span class="brand-title">Pedidos</span>')
-        self.assertNotContains(response, "$178.00")
+        self.assertNotContains(response, "$193.00")
         self.assertNotContains(response, "precio_unitario")
         self.assertNotContains(response, "scheduleStatus")
         self.assertNotContains(response, "Total tentativo")
