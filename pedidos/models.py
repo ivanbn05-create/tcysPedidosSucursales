@@ -69,7 +69,6 @@ class Producto(models.Model):
             "Ejemplo: chile guero = 30 piezas por kilo."
         ),
     )
-    promo_aguilas_martes = models.BooleanField(default=False)
     orden = models.PositiveSmallIntegerField(default=0)
     activo = models.BooleanField(default=True)
 
@@ -221,23 +220,6 @@ class ItemPedido(models.Model):
     def calcular_subtotal(self):
         divisor = self.producto.cantidad_por_precio or Decimal("1.000")
         return ((self.cantidad / divisor) * self.precio_unitario).quantize(Decimal("0.01"))
-
-    def aplica_promo_aguilas_martes(self, fecha=None):
-        fecha = fecha or timezone.localdate()
-        return (
-            self.producto.promo_aguilas_martes
-            and self.pedido.sucursal_cliente.nombre.strip().casefold() == "aguilas"
-            and fecha.isoweekday() == 2
-        )
-
-    def cantidad_bonificacion(self, fecha=None):
-        if not self.aplica_promo_aguilas_martes(fecha):
-            return Decimal("0.000")
-        paquetes = self.cantidad // Decimal("20.000")
-        return (paquetes * Decimal("5.000")).quantize(Decimal("0.001"))
-
-    def cantidad_con_promocion(self, fecha=None):
-        return (self.cantidad + self.cantidad_bonificacion(fecha)).quantize(Decimal("0.001"))
 
     def save(self, *args, **kwargs):
         self.subtotal = self.calcular_subtotal()

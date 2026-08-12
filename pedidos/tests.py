@@ -228,7 +228,10 @@ class PedidoFlowTests(TestCase):
         workbook = load_workbook(BytesIO(response.content))
         self.assertEqual(workbook.active["A3"].value, "BARBACOA .M")
 
-    def test_promo_martes_aguilas_agrega_cinco_por_cada_veinte_en_ticket(self):
+    def test_ticket_imprime_la_cantidad_capturada_sin_bonificaciones(self):
+        """La promoción de martes de Águilas se eliminó por completo: el ticket
+        debe mostrar exactamente lo capturado, cualquier día de la semana."""
+
         self.assertTrue(self.client.login(username="aguilas", password="Aguilas8445"))
         producto = Producto.objects.get(nombre="LITRO DE BARBACOA")
         response = self.client.post(
@@ -251,8 +254,23 @@ class PedidoFlowTests(TestCase):
         response = self.client.get(f"/admin/pedidos/{pedido_id}/excel/")
         workbook = load_workbook(BytesIO(response.content))
         sheet = workbook.active
-        self.assertEqual(sheet["B3"].value, "25 KG")
+        self.assertEqual(sheet["B3"].value, "20 KG")
         self.assertEqual(pedido.total, Decimal("3860.00"))
+
+    def test_promocion_martes_no_existe_en_ninguna_capa(self):
+        self.assertFalse(hasattr(Producto, "promo_aguilas_martes"))
+        self.assertNotIn(
+            "promo_aguilas_martes",
+            [campo.name for campo in Producto._meta.get_fields()],
+        )
+        self.assertFalse(hasattr(ItemPedido, "cantidad_con_promocion"))
+        self.assertFalse(hasattr(ItemPedido, "cantidad_bonificacion"))
+        self.assertFalse(hasattr(ItemPedido, "aplica_promo_aguilas_martes"))
+
+        self.assertTrue(self.client.login(username="juancarlos", password="TocayosMO2026"))
+        response = self.client.get("/admin/configuracion/")
+        self.assertNotContains(response, "promo_aguilas_martes")
+        self.assertNotContains(response, "Promo martes")
 
     def test_agregar_producto_existente_reemplaza_cantidad(self):
         self.assertTrue(self.client.login(username="aguilas", password="Aguilas8445"))

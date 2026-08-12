@@ -277,11 +277,7 @@ document.addEventListener("DOMContentLoaded", () => {
             const meta = document.createElement("div");
             name.textContent = item.producto;
             meta.className = "item-meta";
-            if (Number(item.cantidad_promocion || 0) > 0) {
-                meta.textContent = `Cantidad: ${quantity(item.cantidad_ticket)} ${item.unidad} (${quantity(item.cantidad_promocion)} promo)`;
-            } else {
-                meta.textContent = `Cantidad: ${quantity(item.cantidad)} ${item.unidad}`;
-            }
+            meta.textContent = `Cantidad: ${quantity(item.cantidad)} ${item.unidad}`;
             content.append(name, meta);
             row.append(content);
             itemsList.appendChild(row);

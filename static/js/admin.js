@@ -22,9 +22,6 @@ document.addEventListener("DOMContentLoaded", () => {
 
     function quantityWithUnit(item) {
         const unit = item.unidad || "";
-        if (Number(item.cantidad_promocion || 0) > 0) {
-            return `${quantity(item.cantidad_ticket)} ${unit} (${quantity(item.cantidad_promocion)} promo)`;
-        }
         return `${quantity(item.cantidad)} ${unit}`;
     }
 

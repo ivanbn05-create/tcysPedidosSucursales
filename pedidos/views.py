@@ -425,7 +425,6 @@ def fecha_referencia_pedido(pedido):
 
 def serializar_item(item, incluir_precios=False, nombre_ticket=None, fecha_pedido=None):
     fecha_pedido = fecha_pedido or fecha_referencia_pedido(item.pedido)
-    cantidad_promocion = item.cantidad_bonificacion(fecha_pedido)
     data = {
         "id": item.id,
         "producto_id": item.producto_id,
@@ -433,8 +432,6 @@ def serializar_item(item, incluir_precios=False, nombre_ticket=None, fecha_pedid
         "nombre_ticket": nombre_ticket or etiqueta_ticket_para_item(item, fecha_pedido),
         "unidad": item.producto.unidad_corta,
         "cantidad": decimal_to_str(item.cantidad, "0.001"),
-        "cantidad_ticket": decimal_to_str(item.cantidad_con_promocion(fecha_pedido), "0.001"),
-        "cantidad_promocion": decimal_to_str(cantidad_promocion, "0.001"),
     }
     if incluir_precios:
         data.update(
@@ -919,7 +916,6 @@ def update_products_from_post(request):
         producto.cantidad_por_precio = parse_factor_precio(
             request.POST.get(f"{prefix}cantidad_por_precio", "1")
         )
-        producto.promo_aguilas_martes = f"{prefix}promo_aguilas_martes" in request.POST
         producto.orden = parse_admin_order(request.POST.get(f"{prefix}orden"))
         producto.activo = f"{prefix}activo" in request.POST
         producto.full_clean()
@@ -942,7 +938,6 @@ def create_product_from_post(request):
         cantidad_por_precio=parse_factor_precio(
             request.POST.get("nuevo_cantidad_por_precio", "1")
         ),
-        promo_aguilas_martes="nuevo_promo_aguilas_martes" in request.POST,
         orden=parse_admin_order(request.POST.get("nuevo_orden", "0")),
         activo=True,
     )

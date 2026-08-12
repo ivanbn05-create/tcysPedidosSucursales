@@ -83,8 +83,8 @@ def ticket_label_for_item(item, fecha, pedido=None, etiqueta_ticket=None):
     return item.producto.etiqueta_ticket.upper()
 
 
-def format_ticket_quantity_with_unit(item, fecha):
-    quantity = format_ticket_quantity(item.cantidad_con_promocion(fecha))
+def format_ticket_quantity_with_unit(item):
+    quantity = format_ticket_quantity(item.cantidad)
     return f"{quantity} {item.producto.unidad_corta}".strip()
 
 
@@ -104,7 +104,7 @@ def ticket_items(pedido, items=None, etiquetas_por_item=None):
                 pedido=pedido,
                 etiqueta_ticket=etiquetas_por_item.get(item.id),
             ),
-            "cantidad": format_ticket_quantity_with_unit(item, fecha),
+            "cantidad": format_ticket_quantity_with_unit(item),
         }
         for item in items
     ]

@@ -42,7 +42,6 @@
                             <th>Unidad</th>
                             <th>Abrev.</th>
                             <th>Divisor precio</th>
-                            <th>Promo martes</th>
                             <th>Orden</th>
                             <th>Activo</th>
                         </tr>
@@ -58,7 +57,6 @@
                             <td><input name="producto_{{ producto.id }}_unidad" value="{{ producto.unidad_medida }}" maxlength="40" aria-label="Unidad de {{ producto.nombre }}"></td>
                             <td><input class="short-input" name="producto_{{ producto.id }}_unidad_abreviatura" value="{{ producto.unidad_abreviatura }}" maxlength="8" aria-label="Abreviatura de unidad de {{ producto.nombre }}"></td>
                             <td><input class="short-input" name="producto_{{ producto.id }}_cantidad_por_precio" type="number" min="0.001" max="999.999" step="0.001" value="{{ producto.cantidad_por_precio|unlocalize }}" required aria-label="Divisor de precio de {{ producto.nombre }}"></td>
-                            <td class="toggle-cell"><input name="producto_{{ producto.id }}_promo_aguilas_martes" type="checkbox" {% if producto.promo_aguilas_martes %}checked{% endif %} aria-label="Promo martes para {{ producto.nombre }}"></td>
                             <td><input class="short-input" name="producto_{{ producto.id }}_orden" type="number" min="0" max="32767" value="{{ producto.orden }}" required aria-label="Orden de {{ producto.nombre }}"></td>
                             <td class="toggle-cell"><input name="producto_{{ producto.id }}_activo" type="checkbox" {% if producto.activo %}checked{% endif %} aria-label="Producto {{ producto.nombre }} activo"></td>
                         </tr>
@@ -79,10 +77,6 @@
             <input name="nuevo_unidad" maxlength="40" placeholder="Unidad de medida" value="PIEZA (PZA)" aria-label="Unidad del nuevo producto">
             <input class="short-input" name="nuevo_unidad_abreviatura" maxlength="8" placeholder="Abrev." value="PZA" aria-label="Abreviatura de unidad del nuevo producto">
             <input class="short-input" name="nuevo_cantidad_por_precio" type="number" min="0.001" max="999.999" step="0.001" value="1.000" required aria-label="Divisor de precio del nuevo producto">
-            <label class="inline-toggle">
-                <input name="nuevo_promo_aguilas_martes" type="checkbox">
-                Promo martes
-            </label>
             <input class="short-input" name="nuevo_orden" type="number" min="0" max="32767" value="0" required aria-label="Orden del nuevo producto">
             <button class="secondary-button" type="submit">Agregar producto</button>
         </form>

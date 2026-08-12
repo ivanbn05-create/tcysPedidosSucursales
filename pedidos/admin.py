@@ -27,7 +27,6 @@ class ProductoAdmin(admin.ModelAdmin):
         "nombre_ticket",
         "unidad_abreviatura",
         "cantidad_por_precio",
-        "promo_aguilas_martes",
         "orden",
         "activo",
     )
@@ -35,11 +34,10 @@ class ProductoAdmin(admin.ModelAdmin):
         "nombre_ticket",
         "unidad_abreviatura",
         "cantidad_por_precio",
-        "promo_aguilas_martes",
         "orden",
         "activo",
     )
-    list_filter = ("activo", "promo_aguilas_martes", "unidad_abreviatura")
+    list_filter = ("activo", "unidad_abreviatura")
     search_fields = ("nombre", "nombre_ticket")
 
 
