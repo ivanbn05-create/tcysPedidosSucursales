@@ -1646,6 +1646,22 @@ button.password-toggle:active {
     color: var(--muted);
 }
 
+/* El texto de #confirmModal llega con saltos de linea desde el JS. */
+#confirmText {
+    white-space: pre-line;
+}
+
+.modal-actions {
+    display: flex;
+    gap: 12px;
+    margin-top: 18px;
+}
+
+.modal-actions button {
+    flex: 1;
+    min-height: 48px; /* area tactil comoda en movil */
+}
+
 .icon-button {
     width: 42px;
     min-height: 42px;

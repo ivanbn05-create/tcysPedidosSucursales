@@ -436,6 +436,48 @@ class PedidoFlowTests(TestCase):
         self.assertNotContains(response, "scheduleStatus")
         self.assertNotContains(response, "Total tentativo")
 
+    def test_pedidos_confirma_con_modal_propio_y_no_con_window_confirm(self):
+        """En navegadores in-app de iOS `window.confirm()` puede devolver false sin
+        mostrar diálogo, dejando "Confirmar pedido" y "Limpiar pedido" mudos."""
+
+        self.assertTrue(self.client.login(username="aguilas", password="Aguilas8445"))
+        response = self.client.get("/pedidos/")
+
+        self.assertContains(response, 'id="confirmModal"')
+        self.assertContains(response, 'id="confirmAccept"')
+        self.assertContains(response, 'id="confirmCancel"')
+
+        pedidos_js = Path(settings.BASE_DIR, "static", "js", "pedidos.js").read_text(
+            encoding="utf-8"
+        )
+        self.assertNotIn("window.confirm(", pedidos_js)
+        self.assertIn("askConfirm(", pedidos_js)
+        self.assertIn("AbortController", pedidos_js)
+
+    def test_log_cliente_registra_evento_y_no_toca_el_pedido(self):
+        self.assertTrue(self.client.login(username="aguilas", password="Aguilas8445"))
+        pedidos_antes = Pedido.objects.count()
+
+        with self.assertLogs("pedidos.views", level="INFO") as registro:
+            response = self.client.post(
+                "/api/pedidos/log-cliente/",
+                data=json.dumps({"evento": "confirmar_click", "items": 3}),
+                content_type="application/json",
+            )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.json()["success"])
+        self.assertIn("confirmar_click", "\n".join(registro.output))
+        self.assertEqual(Pedido.objects.count(), pedidos_antes)
+
+    def test_log_cliente_requiere_sesion(self):
+        response = self.client.post(
+            "/api/pedidos/log-cliente/",
+            data=json.dumps({"evento": "confirmar_click"}),
+            content_type="application/json",
+        )
+        self.assertEqual(response.status_code, 302)
+
     def test_usuario_ve_historial_propio_e_imprime_recibo_adaptable(self):
         fecha_reciente = timezone.make_aware(datetime(2026, 7, 17, 12, 0))
         fecha_anterior = timezone.make_aware(datetime(2026, 7, 16, 12, 0))

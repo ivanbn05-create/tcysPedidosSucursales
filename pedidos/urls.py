@@ -18,6 +18,7 @@ urlpatterns = [
     path("api/pedidos/eliminar-item/", views.eliminar_item, name="api_eliminar_item"),
     path("api/pedidos/limpiar/", views.limpiar_pedido, name="api_limpiar_pedido"),
     path("api/pedidos/confirmar/", views.confirmar_pedido, name="api_confirmar_pedido"),
+    path("api/pedidos/log-cliente/", views.log_cliente, name="api_log_cliente"),
     path("api/horarios/", views.info_horarios, name="info_horarios"),
     path("admin/", views.admin_dashboard, name="admin_dashboard"),
     path("admin/pedidos/nuevo/", views.admin_crear_pedido_view, name="admin_crear_pedido"),

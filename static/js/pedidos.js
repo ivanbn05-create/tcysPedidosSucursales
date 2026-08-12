@@ -29,6 +29,10 @@ document.addEventListener("DOMContentLoaded", () => {
     const deleteSelectedButton = document.getElementById("deleteSelected");
     const modal = document.getElementById("successModal");
     const successText = document.getElementById("successText");
+    const confirmModal = document.getElementById("confirmModal");
+    const confirmText = document.getElementById("confirmText");
+    const confirmAccept = document.getElementById("confirmAccept");
+    const confirmCancel = document.getElementById("confirmCancel");
     const mobilePanelTabs = [...document.querySelectorAll("[data-mobile-panel]")];
 
     function money(value) {
@@ -77,19 +81,61 @@ document.addEventListener("DOMContentLoaded", () => {
         return token ? decodeURIComponent(token.split("=")[1]) : "";
     }
 
+    function trace(evento, extra = {}) {
+        // Bitacora de clics: permite ver en los logs de Render un clic que NO
+        // produjo su peticion de negocio. Nunca debe romper la UI.
+        if (!apiUrls.log_cliente) return;
+        try {
+            fetch(apiUrls.log_cliente, {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json",
+                    "X-CSRFToken": csrfToken(),
+                },
+                body: JSON.stringify({ evento, ...extra, ua: navigator.userAgent }),
+                keepalive: true,
+            }).catch(() => {});
+        } catch (error) {
+            /* nunca romper la UI por telemetria */
+        }
+    }
+
     async function postJson(url, payload = {}) {
         const requestPayload =
             isAdminOrder && selectedSucursalId
                 ? { ...payload, sucursal_id: selectedSucursalId }
                 : payload;
-        const response = await fetch(url, {
-            method: "POST",
-            headers: {
-                "Content-Type": "application/json",
-                "X-CSRFToken": csrfToken(),
-            },
-            body: JSON.stringify(requestPayload),
-        });
+
+        // Sin timeout, un fetch colgado (cold start de Render, red movil mala)
+        // deja los cuatro botones deshabilitados de forma indefinida.
+        const controller = new AbortController();
+        const timeoutId = window.setTimeout(() => controller.abort(), 20000);
+
+        let response;
+        try {
+            response = await fetch(url, {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json",
+                    "X-CSRFToken": csrfToken(),
+                },
+                body: JSON.stringify(requestPayload),
+                signal: controller.signal,
+            });
+        } catch (error) {
+            if (error.name === "AbortError") {
+                throw new Error("El servidor tardo demasiado. Revisa tu conexion e intenta de nuevo.");
+            }
+            throw new Error("Sin conexion con el servidor. Intenta de nuevo.");
+        } finally {
+            window.clearTimeout(timeoutId);
+        }
+
+        // Sesion caducada: el fetch sigue el 302 y devuelve el HTML del login.
+        if (response.redirected && response.url.includes("/login")) {
+            throw new Error("Tu sesion expiro. Vuelve a iniciar sesion.");
+        }
+
         const data = await response.json().catch(() => ({
             success: false,
             mensaje: "Respuesta invalida del servidor.",
@@ -110,11 +156,42 @@ document.addEventListener("DOMContentLoaded", () => {
         }, 3200);
     }
 
+    let pendingConfirm = null;
+
+    function askConfirm(message) {
+        // Fallback: si el modal no existe en el DOM, no bloqueamos la accion.
+        if (!confirmModal || !confirmText) return Promise.resolve(true);
+
+        // Si quedara un dialogo abierto, lo cerramos como "cancelar".
+        if (pendingConfirm) pendingConfirm(false);
+
+        confirmText.textContent = message;
+        confirmModal.hidden = false;
+
+        return new Promise((resolve) => {
+            pendingConfirm = (answer) => {
+                confirmModal.hidden = true;
+                pendingConfirm = null;
+                resolve(answer);
+            };
+        });
+    }
+
+    let busyGuard = null;
+
     function setBusy(isBusy) {
-        addButton.disabled = isBusy;
-        clearButton.disabled = isBusy;
-        confirmButton.disabled = isBusy;
-        deleteSelectedButton.disabled = isBusy;
+        [addButton, clearButton, confirmButton, deleteSelectedButton].forEach((button) => {
+            if (button) button.disabled = isBusy;
+        });
+        window.clearTimeout(busyGuard);
+        if (isBusy) {
+            // Red de seguridad: si algo se cuelga sin pasar por el finally,
+            // los botones no se quedan bloqueados para siempre.
+            busyGuard = window.setTimeout(() => {
+                setBusy(false);
+                showNotice("La operacion tardo demasiado. Intenta de nuevo.", "error");
+            }, 25000);
+        }
     }
 
     function setMobilePanel(panelName) {
@@ -299,11 +376,14 @@ document.addEventListener("DOMContentLoaded", () => {
     }
 
     async function clearOrder() {
+        trace("limpiar_click", { items: (order.items || []).length });
         if (!(order.items || []).length) {
             showNotice("El pedido ya esta vacio.", "error");
             return;
         }
-        if (!window.confirm("Limpiar el pedido actual?")) return;
+        const aceptado = await askConfirm("¿Limpiar el pedido actual?");
+        trace("limpiar_respuesta", { aceptado });
+        if (!aceptado) return;
         try {
             setBusy(true);
             const data = await postJson(apiUrls.limpiar_pedido || "/api/pedidos/limpiar/");
@@ -322,6 +402,7 @@ document.addEventListener("DOMContentLoaded", () => {
     }
 
     async function confirmOrder() {
+        trace("confirmar_click", { items: (order.items || []).length });
         if (!(order.items || []).length) {
             showNotice("Agrega al menos un producto.", "error");
             return;
@@ -332,7 +413,9 @@ document.addEventListener("DOMContentLoaded", () => {
             "",
             "¿Confirmar pedido?",
         ].join("\n");
-        if (!window.confirm(confirmation)) return;
+        const aceptado = await askConfirm(confirmation);
+        trace("confirmar_respuesta", { aceptado });
+        if (!aceptado) return;
         try {
             setBusy(true);
             const data = await postJson(apiUrls.confirmar_pedido || "/api/pedidos/confirmar/");
@@ -378,6 +461,12 @@ document.addEventListener("DOMContentLoaded", () => {
     confirmButton.addEventListener("click", confirmOrder);
     document.getElementById("closeSuccess").addEventListener("click", () => {
         modal.hidden = true;
+    });
+
+    confirmAccept?.addEventListener("click", () => pendingConfirm?.(true));
+    confirmCancel?.addEventListener("click", () => pendingConfirm?.(false));
+    confirmModal?.addEventListener("click", (event) => {
+        if (event.target === confirmModal) pendingConfirm?.(false);
     });
 
     selectProduct(selectedProduct?.id);

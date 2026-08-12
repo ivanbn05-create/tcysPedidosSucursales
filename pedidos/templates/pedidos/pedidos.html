@@ -102,9 +102,22 @@
         <button class="primary-button" type="button" id="closeSuccess">Listo</button>
     </div>
 </div>
+
+{# Modal propio: reemplaza a window.confirm(), que en navegadores in-app de iOS
+   (app de Google, WhatsApp, Facebook) puede devolver false sin mostrar diálogo. #}
+<div class="modal-backdrop" id="confirmModal" hidden>
+    <div class="modal" role="dialog" aria-modal="true" aria-labelledby="confirmTitle">
+        <h2 id="confirmTitle">Confirmar</h2>
+        <p id="confirmText"></p>
+        <div class="modal-actions">
+            <button class="secondary-button" type="button" id="confirmCancel">Cancelar</button>
+            <button class="primary-button success" type="button" id="confirmAccept">Aceptar</button>
+        </div>
+    </div>
+</div>
 {% endblock %}
 
 {% block scripts %}
 {{ initial_data|json_script:"initial-data" }}
-<script src="{% static 'js/pedidos.js' %}?v=20260718-1" defer></script>
+<script src="{% static 'js/pedidos.js' %}?v=20260812-1" defer></script>
 {% endblock %}

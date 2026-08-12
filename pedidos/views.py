@@ -261,6 +261,7 @@ def pedido_page_context(sucursal, pedido, admin_order_mode=False, sucursales=Non
         "eliminar_item": reverse("api_eliminar_item"),
         "limpiar_pedido": reverse("api_limpiar_pedido"),
         "confirmar_pedido": reverse("api_confirmar_pedido"),
+        "log_cliente": reverse("api_log_cliente"),
     }
     if admin_order_mode:
         api_urls = {
@@ -268,6 +269,7 @@ def pedido_page_context(sucursal, pedido, admin_order_mode=False, sucursales=Non
             "eliminar_item": reverse("admin_api_eliminar_item"),
             "limpiar_pedido": reverse("admin_api_limpiar_pedido"),
             "confirmar_pedido": reverse("admin_api_confirmar_pedido"),
+            "log_cliente": reverse("api_log_cliente"),
         }
 
     return {
@@ -774,6 +776,38 @@ def confirmar_pedido(request):
         return JsonResponse({"success": False, "mensaje": "Usuario sin sucursal activa."}, status=403)
 
     return confirmar_pedido_sucursal(sucursal)
+
+
+@require_POST
+@login_required
+def log_cliente(request):
+    """Bitácora ligera de clics del navegador de la sucursal.
+
+    Solo escribe a `logging`: no toca la base de datos ni regresa datos. Existe
+    para poder correlacionar en los logs un clic del usuario con la petición de
+    negocio que debería seguirlo. Si aparece `confirmar_click` sin su
+    `POST /api/pedidos/confirmar/`, el fallo está en el navegador, no aquí.
+    """
+    payload = parse_json_body(request) or {}
+    if not isinstance(payload, dict):
+        payload = {}
+
+    evento = str(payload.get("evento") or "desconocido")[:60]
+    user_agent = str(payload.get("ua") or request.META.get("HTTP_USER_AGENT", ""))[:200]
+    detalle = {
+        str(clave)[:30]: str(valor)[:60]
+        for clave, valor in list(payload.items())[:8]
+        if clave not in ("evento", "ua")
+    }
+
+    logger.info(
+        "cliente-evento usuario=%s evento=%s detalle=%s ua=%s",
+        request.user.username,
+        evento,
+        detalle,
+        user_agent,
+    )
+    return JsonResponse({"success": True})
 
 
 @require_POST
