@@ -43,7 +43,7 @@
                 </button>
             </div>
 
-            <button class="primary-button" type="submit">Entrar</button>
+            <button class="primary-button" type="submit" data-login-submit>Entrar</button>
         </form>
         <p class="login-legal">
             Sistema privado de uso exclusivo para sucursales, clientes autorizados y personal de Los Tocayos.
@@ -74,6 +74,47 @@
             toggle.setAttribute("aria-label", label);
             toggle.title = label;
             passwordInput.focus({ preventScroll: true });
+        });
+    })();
+
+    (() => {
+        // Con el cold start de Render (30-60s la primera petición del día) el
+        // usuario no ve ninguna señal de que su tap se registró y vuelve a
+        // pulsar "Entrar": en los logs del 11/08 hubo 19 envíos en 58 segundos.
+        const form = document.querySelector(".login-form");
+        const submitButton = document.querySelector("[data-login-submit]");
+        if (!form || !submitButton) {
+            return;
+        }
+
+        const etiquetaOriginal = submitButton.textContent;
+        let enviando = false;
+        let reintentoTimer = null;
+
+        function liberar() {
+            window.clearTimeout(reintentoTimer);
+            enviando = false;
+            submitButton.disabled = false;
+            submitButton.textContent = etiquetaOriginal;
+        }
+
+        form.addEventListener("submit", (event) => {
+            if (enviando) {
+                event.preventDefault();
+                return;
+            }
+            enviando = true;
+            submitButton.disabled = true;
+            submitButton.textContent = "Entrando...";
+            // Nunca dejarlo bloqueado: si la navegación no ocurre (WebView in-app,
+            // red caída), el usuario tiene que poder reintentar por su cuenta.
+            reintentoTimer = window.setTimeout(liberar, 15000);
+        });
+
+        // Los navegadores in-app restauran la página desde bfcache al volver;
+        // sin esto el botón reaparecería deshabilitado y con "Entrando...".
+        window.addEventListener("pageshow", (event) => {
+            if (event.persisted) liberar();
         });
     })();
 </script>

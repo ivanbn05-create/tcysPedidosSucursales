@@ -436,6 +436,39 @@ class PedidoFlowTests(TestCase):
         self.assertNotContains(response, "scheduleStatus")
         self.assertNotContains(response, "Total tentativo")
 
+    def test_paginas_de_sesion_no_se_pueden_cachear(self):
+        """Sin `Cache-Control: no-store` el WebView in-app puede volver a mostrar
+        una copia guardada de /login/ o /pedidos/ (con datos de otra sesión), y la
+        petición ni siquiera llega al servidor."""
+
+        self.assertTrue(self.client.login(username="aguilas", password="Aguilas8445"))
+        rutas = ["/pedidos/", "/pedidos/historial/", "/api/horarios/"]
+        for ruta in rutas:
+            with self.subTest(ruta=ruta):
+                response = self.client.get(ruta)
+                self.assertIn("no-store", response.headers.get("Cache-Control", ""))
+
+        self.client.logout()
+        for ruta in ["/", "/login/"]:
+            with self.subTest(ruta=ruta):
+                response = self.client.get(ruta)
+                self.assertIn("no-store", response.headers.get("Cache-Control", ""))
+
+    def test_cookies_de_sesion_usan_samesite_lax(self):
+        """Con "Strict" la cookie no viaja al abrir el sistema desde un link de
+        WhatsApp o de la app de Google, y la sucursal caería siempre en el login."""
+
+        self.assertEqual(settings.SESSION_COOKIE_SAMESITE, "Lax")
+        self.assertEqual(settings.CSRF_COOKIE_SAMESITE, "Lax")
+
+    def test_login_bloquea_el_doble_envio_del_formulario(self):
+        response = self.client.get("/login/")
+        self.assertContains(response, "data-login-submit")
+        self.assertContains(response, "Entrando...")
+        # El bloqueo se libera solo: ni bfcache ni una red caída deben dejar al
+        # usuario sin poder reintentar.
+        self.assertContains(response, "pageshow")
+
     def test_pedidos_confirma_con_modal_propio_y_no_con_window_confirm(self):
         """En navegadores in-app de iOS `window.confirm()` puede devolver false sin
         mostrar diálogo, dejando "Confirmar pedido" y "Limpiar pedido" mudos."""

@@ -19,6 +19,7 @@ from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
 from django.utils import timezone
 from django.utils.text import slugify
+from django.views.decorators.cache import never_cache
 from django.views.decorators.http import require_http_methods, require_POST
 
 from .models import (
@@ -124,6 +125,7 @@ def dashboard_required(view_func):
     return wrapped
 
 
+@never_cache
 def home(request):
     if not request.user.is_authenticated:
         return redirect("login")
@@ -136,6 +138,7 @@ def privacidad_view(request):
     return render(request, "pedidos/privacidad.html")
 
 
+@never_cache
 @require_http_methods(["GET", "POST"])
 def login_view(request):
     """Login compatible con nombres visibles y usernames internos sin espacios."""
@@ -170,6 +173,7 @@ def login_view(request):
     return render(request, "pedidos/login.html", horario_login_context())
 
 
+@never_cache
 @require_http_methods(["GET", "POST"])
 def logout_view(request):
     logout(request)
@@ -324,6 +328,7 @@ def horario_login_context():
     }
 
 
+@never_cache
 def info_horarios(request):
     """Endpoint público (sin auth) que informa el horario vigente de aceptación
     de pedidos, para que el frontend habilite/deshabilite el botón de confirmar."""
@@ -639,6 +644,7 @@ def confirmar_pedido_sucursal(sucursal, validar_horario=True, validar_espera=Tru
     )
 
 
+@never_cache
 @login_required
 def pedidos_view(request):
     if can_view_admin_dashboard(request.user):
@@ -653,6 +659,7 @@ def pedidos_view(request):
     return render(request, "pedidos/pedidos.html", pedido_page_context(sucursal, pedido))
 
 
+@never_cache
 @admin_required
 def admin_crear_pedido_view(request):
     sucursales = list(SucursalCliente.objects.filter(activa=True).order_by("tipo", "nombre"))
@@ -672,6 +679,7 @@ def admin_crear_pedido_view(request):
     return render(request, "pedidos/pedidos.html", context)
 
 
+@never_cache
 @login_required
 def historial_pedidos(request):
     if can_view_admin_dashboard(request.user):
@@ -690,6 +698,7 @@ def historial_pedidos(request):
     return render(request, "pedidos/historial_pedidos.html", context)
 
 
+@never_cache
 @login_required
 def imprimir_historial_pedido(request, codigo_publico):
     if can_view_admin_dashboard(request.user):
@@ -1166,6 +1175,7 @@ def admin_configuration_context(request):
     }
 
 
+@never_cache
 @admin_required
 @require_http_methods(["GET", "POST"])
 def admin_configuracion(request):
@@ -1495,6 +1505,7 @@ def admin_datos_context(request):
     }
 
 
+@never_cache
 @dashboard_required
 def admin_dashboard(request):
     pedidos = (
@@ -1594,6 +1605,7 @@ def admin_dashboard(request):
     return render(request, "pedidos/admin_dashboard.html", context)
 
 
+@never_cache
 @dashboard_required
 def imprimir_aguas(request):
     logger.info("Admin %s abrio impresion de aguas", request.user.username)
@@ -1602,6 +1614,7 @@ def imprimir_aguas(request):
     return render(request, "pedidos/aguas_print.html", context)
 
 
+@never_cache
 @dashboard_required
 def imprimir_sucursales(request):
     logger.info("Admin %s abrio impresion de reporte sucursales", request.user.username)
@@ -1610,6 +1623,7 @@ def imprimir_sucursales(request):
     return render(request, "pedidos/sucursales_print.html", context)
 
 
+@never_cache
 @admin_required
 def admin_datos(request):
     return render(request, "pedidos/admin_datos.html", admin_datos_context(request))
@@ -1652,6 +1666,7 @@ def descargar_y_marcar(request, pedido_id):
     return excel_response_for_pedido(pedido)
 
 
+@never_cache
 @dashboard_required
 def imprimir_pedido(request, pedido_id):
     pedido = get_object_or_404(

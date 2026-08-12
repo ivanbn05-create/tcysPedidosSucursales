@@ -171,6 +171,13 @@ SCHEDULER_ENABLED = config("SCHEDULER_ENABLED", default=True, cast=bool)
 SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
 SESSION_COOKIE_SECURE = not DEBUG
 CSRF_COOKIE_SECURE = not DEBUG
+
+# Explícito a propósito: "Lax" es el default de Django, pero las sucursales abren
+# el sistema desde un link en WhatsApp o en la app de Google, y con "Strict" la
+# cookie NO viajaría en esa primera navegación (el usuario caería siempre en el
+# login). No lo subas a "Strict" sin probar antes desde un navegador in-app.
+SESSION_COOKIE_SAMESITE = "Lax"
+CSRF_COOKIE_SAMESITE = "Lax"
 SECURE_SSL_REDIRECT = config("SECURE_SSL_REDIRECT", default=not DEBUG, cast=bool)
 SECURE_HSTS_SECONDS = config("SECURE_HSTS_SECONDS", default=31536000 if not DEBUG else 0, cast=int)
 SECURE_HSTS_INCLUDE_SUBDOMAINS = not DEBUG
