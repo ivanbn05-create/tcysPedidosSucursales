@@ -20,6 +20,7 @@ from .models import (
     Configuracion,
     ItemPedido,
     LogRecordatorio,
+    MacroPedido,
     Pedido,
     Precio,
     Producto,
@@ -53,8 +54,13 @@ class PedidoFlowTests(TestCase):
         responsive_css = Path(settings.BASE_DIR, "static", "css", "responsive.css").read_text(
             encoding="utf-8"
         )
+        styles_css = Path(settings.BASE_DIR, "static", "css", "styles.css").read_text(
+            encoding="utf-8"
+        )
         self.assertNotIn("html,\n    body.order-page", responsive_css.replace("\r\n", "\n"))
         self.assertIn("body.order-page {\n        height: 100dvh;", responsive_css.replace("\r\n", "\n"))
+        for color in ("#20ad69", "#86c83e", "#f2d33b", "#f19a32", "#e64b43"):
+            self.assertIn(color, styles_css)
 
     def crear_pedido_confirmado(
         self,
@@ -64,11 +70,22 @@ class PedidoFlowTests(TestCase):
         estado=Pedido.Estado.CONFIRMADO,
     ):
         sucursal = SucursalCliente.objects.get(nombre=sucursal_nombre)
+        fecha_confirmacion = fecha_confirmacion or timezone.now()
+        fecha_pedido = timezone.localtime(fecha_confirmacion).date()
+        macropedido, _ = MacroPedido.objects.get_or_create(
+            sucursal_cliente=sucursal,
+            fecha_pedido=fecha_pedido,
+            defaults={
+                "ultima_confirmacion": fecha_confirmacion,
+                "estado": estado,
+            },
+        )
         pedido = Pedido.objects.create(
             sucursal_cliente=sucursal,
+            macropedido=macropedido,
             usuario_nombre=sucursal.nombre,
             estado=estado,
-            fecha_confirmacion=fecha_confirmacion or timezone.now(),
+            fecha_confirmacion=fecha_confirmacion,
         )
         for producto_nombre, cantidad in items:
             producto = Producto.objects.get(nombre=producto_nombre)
@@ -79,6 +96,19 @@ class PedidoFlowTests(TestCase):
                 precio_unitario=Decimal("1.00"),
             )
         pedido.recalcular_total()
+        estados = set(macropedido.pedidos.filter(eliminado=False).values_list("estado", flat=True))
+        if Pedido.Estado.CONFIRMADO in estados:
+            macropedido.estado = MacroPedido.Estado.CONFIRMADO
+        elif Pedido.Estado.ENVIADO in estados:
+            macropedido.estado = MacroPedido.Estado.ENVIADO
+        else:
+            macropedido.estado = MacroPedido.Estado.RECIBIDO
+        macropedido.ultima_confirmacion = max(
+            fecha_confirmacion,
+            macropedido.ultima_confirmacion,
+        )
+        macropedido.save(update_fields=["estado", "ultima_confirmacion", "fecha_actualizacion"])
+        macropedido.recalcular_resumen()
         return pedido
 
     def test_login_crear_confirmar_e_imprimir(self):
@@ -100,11 +130,16 @@ class PedidoFlowTests(TestCase):
         data = response.json()
         self.assertTrue(data["success"])
         self.assertIn("pedido_folio", data)
+        self.assertEqual(data["pedidos_del_dia"], 1)
+        self.assertEqual(data["max_pedidos_dia"], 5)
         self.assertNotIn("#", data["mensaje"])
 
         pedido = Pedido.objects.get(id=data["pedido_id"])
+        macropedido = pedido.macropedido
         self.assertEqual(pedido.estado, Pedido.Estado.CONFIRMADO)
         self.assertEqual(pedido.total, Decimal("482.50"))
+        self.assertEqual(macropedido.total, Decimal("482.50"))
+        self.assertEqual(macropedido.cantidad_pedidos, 1)
 
         self.client.logout()
         self.assertTrue(self.client.login(username="juancarlos", password="TocayosMO2026"))
@@ -119,8 +154,11 @@ class PedidoFlowTests(TestCase):
         self.assertNotContains(print_response, "$482.50")
 
         dashboard = self.client.get("/admin/")
-        self.assertContains(dashboard, pedido.folio_fecha)
+        self.assertContains(dashboard, macropedido.folio_dia)
+        self.assertContains(dashboard, "&Uacute;ltimo pedido")
+        self.assertContains(dashboard, 'aria-label="1 de 5 pedidos realizados"')
         self.assertContains(dashboard, "data-inline-print")
+        self.assertContains(dashboard, f'data-print-template-id="print-macro-{macropedido.id}"')
         self.assertContains(dashboard, f'data-print-template-id="print-pedido-{pedido.id}"')
         self.assertContains(dashboard, 'id="inlinePrintSurface"')
         self.assertContains(dashboard, f'id="print-pedido-{pedido.id}"')
@@ -415,6 +453,9 @@ class PedidoFlowTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, 'href="/pedidos/historial/"')
         self.assertContains(response, ">Historial</a>")
+        self.assertContains(response, "Pedidos de hoy")
+        self.assertContains(response, 'aria-label="0 de 5 pedidos realizados hoy"')
+        self.assertContains(response, 'data-daily-segment="5"')
         self.assertNotContains(response, '<span class="brand-title">Pedidos</span>')
         self.assertNotContains(response, "$193.00")
         self.assertNotContains(response, "precio_unitario")
@@ -508,6 +549,11 @@ class PedidoFlowTests(TestCase):
             ],
             fecha_reciente,
         )
+        reciente_dos = self.crear_pedido_confirmado(
+            "Aguilas",
+            [("LITRO DE BARBACOA", "1")],
+            fecha_reciente + timedelta(hours=1),
+        )
         anterior = self.crear_pedido_confirmado(
             "Aguilas",
             [("AGUA JAMAICA LT", "4")],
@@ -523,15 +569,19 @@ class PedidoFlowTests(TestCase):
         response = self.client.get("/pedidos/historial/")
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, "Historial")
-        self.assertContains(response, f"Pedido {reciente.folio_fecha}")
-        self.assertContains(response, f"Pedido {anterior.folio_fecha}")
+        self.assertContains(response, "17/07/2026")
+        self.assertContains(response, "16/07/2026")
+        self.assertContains(response, "13:00")
+        self.assertContains(response, "2/5 pedidos")
+        self.assertContains(response, 'aria-label="2 de 5 pedidos realizados"')
         self.assertContains(response, str(reciente.codigo_publico))
-        self.assertNotContains(response, f"Pedido {otro.folio_fecha}")
+        self.assertContains(response, str(reciente_dos.codigo_publico))
+        self.assertNotContains(response, otro.macropedido.folio_dia)
         self.assertNotContains(response, f"Pedido #{reciente.id}")
         html = response.content.decode()
         self.assertLess(
-            html.index(f"Pedido {reciente.folio_fecha}"),
-            html.index(f"Pedido {anterior.folio_fecha}"),
+            html.index("17/07/2026"),
+            html.index("16/07/2026"),
         )
         self.assertContains(response, 'data-print-size="auto"')
         self.assertContains(
@@ -539,7 +589,6 @@ class PedidoFlowTests(TestCase):
             f'data-print-template-id="print-history-pedido-{reciente.codigo_publico}"',
         )
         self.assertContains(response, "Total provisional")
-        self.assertNotContains(response, "$1.00")
         self.assertNotContains(response, "precio_unitario")
 
         print_response = self.client.get(f"/pedidos/historial/{reciente.codigo_publico}/imprimir/")
@@ -555,6 +604,16 @@ class PedidoFlowTests(TestCase):
         self.assertNotContains(print_response, "$1.00")
         self.assertNotContains(print_response, "precio_unitario")
         self.assertNotContains(print_response, f"#{reciente.id}")
+
+        macro = reciente.macropedido
+        macro.refresh_from_db()
+        macro_print = self.client.get(
+            f"/pedidos/historial/dia/{macro.codigo_publico}/imprimir/"
+        )
+        self.assertEqual(macro_print.status_code, 200)
+        self.assertContains(macro_print, macro.folio_fecha)
+        self.assertContains(macro_print, "3 KG")
+        self.assertContains(macro_print, "Total provisional: $6.00")
 
         embedded = self.client.get(f"/pedidos/historial/{reciente.codigo_publico}/imprimir/?embedded=1")
         self.assertEqual(embedded.status_code, 200)
@@ -605,16 +664,19 @@ class PedidoFlowTests(TestCase):
         )
         response = self.client.post("/api/pedidos/confirmar/", content_type="application/json")
         pedido_id = response.json()["pedido_id"]
+        macropedido_id = response.json()["macropedido_id"]
         self.client.logout()
 
         self.assertTrue(self.client.login(username="juanmanuel", password="imprimir"))
         dashboard = self.client.get("/admin/")
         self.assertEqual(dashboard.status_code, 200)
-        self.assertContains(dashboard, "Ver detalle")
+        self.assertContains(dashboard, "data-macro-toggle")
+        self.assertContains(dashboard, "Imprimir acumulado")
         self.assertContains(dashboard, "Imprimir")
         self.assertContains(dashboard, "Aguas")
         self.assertContains(dashboard, "data-inline-print")
         self.assertContains(dashboard, 'data-print-template-id="print-aguas"')
+        self.assertContains(dashboard, f'id="print-macro-{macropedido_id}"')
         self.assertContains(dashboard, f'id="print-pedido-{pedido_id}"')
         html = dashboard.content.decode()
         self.assertNotIn('target="_blank"', html)
@@ -652,39 +714,54 @@ class PedidoFlowTests(TestCase):
             "Aguilas",
             [("LITRO DE BARBACOA", "2")],
         )
+        macropedido = pedido.macropedido
         self.assertTrue(self.client.login(username="juancarlos", password="TocayosMO2026"))
 
         dashboard = self.client.get("/admin/")
         self.assertNotContains(dashboard, ">Excel</a>")
         self.assertNotContains(dashboard, f"/admin/pedidos/{pedido.id}/excel/")
-        self.assertContains(dashboard, f"/admin/pedidos/{pedido.id}/marcar-enviado/")
-        self.assertNotContains(dashboard, f"/admin/pedidos/{pedido.id}/revertir-enviado/")
+        self.assertContains(dashboard, f"/admin/macropedidos/{macropedido.id}/marcar-enviado/")
+        self.assertNotContains(
+            dashboard,
+            f"/admin/macropedidos/{macropedido.id}/revertir-enviado/",
+        )
 
-        response = self.client.post(f"/admin/pedidos/{pedido.id}/marcar-enviado/")
+        response = self.client.post(f"/admin/macropedidos/{macropedido.id}/marcar-enviado/")
         self.assertRedirects(response, "/admin/?estado=enviado")
         pedido.refresh_from_db()
+        macropedido.refresh_from_db()
         self.assertEqual(pedido.estado, Pedido.Estado.ENVIADO)
+        self.assertEqual(macropedido.estado, MacroPedido.Estado.ENVIADO)
 
         dashboard = self.client.get("/admin/?estado=enviado")
         self.assertContains(dashboard, "Deshacer env&iacute;o", html=True)
-        self.assertContains(dashboard, f"/admin/pedidos/{pedido.id}/revertir-enviado/")
-        self.assertNotContains(dashboard, f"/admin/pedidos/{pedido.id}/marcar-enviado/")
+        self.assertContains(
+            dashboard,
+            f"/admin/macropedidos/{macropedido.id}/revertir-enviado/",
+        )
+        self.assertNotContains(
+            dashboard,
+            f"/admin/macropedidos/{macropedido.id}/marcar-enviado/",
+        )
 
-        response = self.client.post(f"/admin/pedidos/{pedido.id}/revertir-enviado/")
+        response = self.client.post(f"/admin/macropedidos/{macropedido.id}/revertir-enviado/")
         self.assertRedirects(response, "/admin/?estado=confirmado")
         pedido.refresh_from_db()
+        macropedido.refresh_from_db()
         self.assertEqual(pedido.estado, Pedido.Estado.CONFIRMADO)
+        self.assertEqual(macropedido.estado, MacroPedido.Estado.CONFIRMADO)
 
         self.assertEqual(self.client.get(f"/admin/pedidos/{pedido.id}/excel/").status_code, 404)
         self.assertEqual(self.client.get(f"/admin/pedidos/{pedido.id}/descargar/").status_code, 404)
 
+    @patch("pedidos.views.ADMIN_DASHBOARD_PAGE_SIZE", 2)
     def test_admin_dashboard_pagina_y_evitar_consultas_por_item(self):
         fecha_base = timezone.make_aware(datetime(2026, 7, 20, 10, 0))
-        for index in range(55):
+        for index in range(3):
             self.crear_pedido_confirmado(
                 "Aguilas",
                 [("LITRO DE BARBACOA", "1")],
-                fecha_base + timedelta(minutes=index),
+                fecha_base - timedelta(days=index),
             )
 
         self.assertTrue(self.client.login(username="juancarlos", password="TocayosMO2026"))
@@ -694,14 +771,16 @@ class PedidoFlowTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, "Pagina 1 de 2")
         html = response.content.decode()
-        self.assertEqual(html.count('<template\n    id="print-pedido-'), 50)
+        self.assertEqual(html.count('<template\n    id="print-macro-'), 2)
+        self.assertEqual(html.count('<template\n    id="print-pedido-'), 2)
         self.assertLess(len(captured), 75)
 
         response = self.client.get("/admin/?page=2")
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, "Pagina 2 de 2")
         html = response.content.decode()
-        self.assertEqual(html.count('<template\n    id="print-pedido-'), 5)
+        self.assertEqual(html.count('<template\n    id="print-macro-'), 1)
+        self.assertEqual(html.count('<template\n    id="print-pedido-'), 1)
 
     def test_admin_configura_ticket_precio_y_password(self):
         self.assertTrue(self.client.login(username="juancarlos", password="TocayosMO2026"))
@@ -902,6 +981,73 @@ class PedidoFlowTests(TestCase):
         self.assertEqual(pedido.sucursal_cliente, sucursal)
         self.assertEqual(pedido.estado, Pedido.Estado.CONFIRMADO)
 
+    def test_cinco_pedidos_se_agrupan_y_el_sexto_se_bloquea(self):
+        sucursal = SucursalCliente.objects.get(nombre="Plaza del Sol")
+        producto = Producto.objects.get(nombre="LITRO DE BARBACOA")
+        self.assertTrue(self.client.login(username="juancarlos", password="TocayosMO2026"))
+
+        macropedido_id = None
+        for numero in range(1, 6):
+            response = self.client.post(
+                "/admin/api/pedidos/crear-item/",
+                data=json.dumps(
+                    {
+                        "sucursal_id": sucursal.id,
+                        "producto_id": producto.id,
+                        "cantidad": str(numero),
+                    }
+                ),
+                content_type="application/json",
+            )
+            self.assertEqual(response.status_code, 200)
+
+            response = self.client.post(
+                "/admin/api/pedidos/confirmar/",
+                data=json.dumps({"sucursal_id": sucursal.id}),
+                content_type="application/json",
+            )
+            self.assertEqual(response.status_code, 200)
+            data = response.json()
+            self.assertEqual(data["pedidos_del_dia"], numero)
+            macropedido_id = macropedido_id or data["macropedido_id"]
+            self.assertEqual(data["macropedido_id"], macropedido_id)
+
+        macropedido = MacroPedido.objects.get(id=macropedido_id)
+        self.assertEqual(macropedido.cantidad_pedidos, 5)
+        self.assertEqual(macropedido.pedidos.count(), 5)
+        self.assertEqual(
+            macropedido.total,
+            sum(macropedido.pedidos.values_list("total", flat=True), Decimal("0.00")),
+        )
+
+        response = self.client.post(
+            "/admin/api/pedidos/crear-item/",
+            data=json.dumps(
+                {
+                    "sucursal_id": sucursal.id,
+                    "producto_id": producto.id,
+                    "cantidad": "6",
+                }
+            ),
+            content_type="application/json",
+        )
+        self.assertEqual(response.status_code, 409)
+        self.assertIn("5 pedidos", response.json()["mensaje"])
+
+        dashboard = self.client.get(f"/admin/?sucursal={sucursal.id}")
+        self.assertContains(dashboard, 'aria-label="5 de 5 pedidos realizados"')
+        self.assertContains(dashboard, "Pedido 5")
+        self.assertContains(dashboard, "15 KG")
+        self.assertContains(dashboard, 'class="order-segment segment-5 filled"')
+
+        print_response = self.client.get(f"/admin/macropedidos/{macropedido.id}/imprimir/")
+        self.assertEqual(print_response.status_code, 200)
+        self.assertContains(print_response, "15 KG")
+
+        page = self.client.get(f"/admin/pedidos/nuevo/?sucursal={sucursal.id}")
+        self.assertContains(page, "L&iacute;mite diario alcanzado", html=True)
+        self.assertContains(page, 'class="order-segment segment-5 filled"')
+
     def test_admin_imprime_aguas_del_ultimo_pedido_confirmado_por_sucursal(self):
         fecha_antigua = timezone.now() - timedelta(hours=25)
         fecha_reciente = timezone.now() - timedelta(hours=2)
@@ -963,18 +1109,16 @@ class PedidoFlowTests(TestCase):
         self.assertContains(response, "size: 72mm 72mm;")
         self.assertContains(
             response,
-            "<tr><td>1/B</td><td>2</td><td>5</td><td>4</td><td>11</td></tr>",
+            "<tr><td>1/B</td><td>10</td><td>5</td><td>13</td><td>28</td></tr>",
             html=True,
         )
-        self.assertContains(response, "<td>2</td>", html=True)
+        self.assertContains(response, "<td>10</td>", html=True)
         self.assertContains(response, "<td>5</td>", html=True)
-        self.assertContains(response, "<td>4</td>", html=True)
-        self.assertContains(response, "<td>11</td>", html=True)
+        self.assertContains(response, "<td>13</td>", html=True)
+        self.assertContains(response, "<td>28</td>", html=True)
         self.assertNotContains(response, "99")
-        self.assertNotContains(response, "<td>8</td>", html=True)
-        self.assertNotContains(response, "<td>9</td>", html=True)
         self.assertContains(response, "<td>LR</td>", html=True)
-        self.assertContains(response, "<td>3</td>", html=True)
+        self.assertContains(response, "<td>11</td>", html=True)
         self.assertContains(response, "<td>LJ</td>", html=True)
         self.assertContains(response, "<td>1</td>", html=True)
 
@@ -1061,22 +1205,42 @@ class PedidoFlowTests(TestCase):
         self.assertContains(response, "<td>ESTANCIA</td>", html=True)
         self.assertContains(
             response,
-            "<tr><td>AGUILAS</td><td>4</td><td>4</td><td>4</td></tr>",
+            "<tr><td>AGUILAS</td><td>16</td><td>16</td><td>16</td></tr>",
             html=True,
         )
         self.assertContains(response, "<td>BROT NVA G</td>", html=True)
         self.assertContains(response, "<td>STA ANITA</td>", html=True)
         self.assertContains(response, "<td>7</td>", html=True)
-        self.assertContains(response, "<td>11</td>", html=True)
-        self.assertContains(response, "<td>13</td>", html=True)
-        self.assertContains(response, "<td>15</td>", html=True)
+        self.assertContains(response, "<td>31</td>", html=True)
+        self.assertContains(response, "<td>33</td>", html=True)
+        self.assertContains(response, "<td>35</td>", html=True)
         self.assertContains(
             response,
-            '<tr class="report-total-row"><td>TOTAL</td><td>11</td><td>13</td><td>15</td></tr>',
+            '<tr class="report-total-row"><td>TOTAL</td><td>31</td><td>33</td><td>35</td></tr>',
             html=True,
         )
         self.assertNotContains(response, "99")
-        self.assertNotContains(response, "<td>12</td>", html=True)
+
+    def test_reporte_omite_macropedido_enviado_y_toma_confirmado_anterior(self):
+        from .views import latest_report_macros
+
+        generado = timezone.make_aware(datetime(2026, 8, 15, 12, 0))
+        confirmado = self.crear_pedido_confirmado(
+            "Aguilas",
+            [("LITRO DE BARBACOA", "3")],
+            timezone.make_aware(datetime(2026, 8, 14, 18, 0)),
+        )
+        enviado = self.crear_pedido_confirmado(
+            "Aguilas",
+            [("LITRO DE BARBACOA", "9")],
+            timezone.make_aware(datetime(2026, 8, 15, 10, 0)),
+            estado=Pedido.Estado.ENVIADO,
+        )
+
+        seleccionados, _, _ = latest_report_macros(["Aguilas"], generated_at=generado)
+
+        self.assertEqual(seleccionados["Aguilas"].id, confirmado.macropedido_id)
+        self.assertNotEqual(seleccionados["Aguilas"].id, enviado.macropedido_id)
 
     def test_admin_datos_muestra_promedios_y_prediccion(self):
         lunes = timezone.make_aware(datetime(2026, 7, 13, 10, 0))

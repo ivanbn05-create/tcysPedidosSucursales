@@ -6,6 +6,7 @@ from .models import (
     Configuracion,
     ItemPedido,
     LogRecordatorio,
+    MacroPedido,
     Pedido,
     Precio,
     Producto,
@@ -60,9 +61,39 @@ class ItemPedidoInline(admin.TabularInline):
     readonly_fields = ("subtotal",)
 
 
+@admin.register(MacroPedido)
+class MacroPedidoAdmin(admin.ModelAdmin):
+    list_display = (
+        "id",
+        "sucursal_cliente",
+        "fecha_pedido",
+        "ultima_confirmacion",
+        "estado",
+        "total",
+        "eliminado",
+    )
+    list_filter = ("estado", "eliminado", "sucursal_cliente", "fecha_pedido")
+    search_fields = ("sucursal_cliente__nombre", "codigo_publico")
+    readonly_fields = (
+        "codigo_publico",
+        "fecha_creacion",
+        "fecha_actualizacion",
+        "ultima_confirmacion",
+        "total",
+    )
+
+
 @admin.register(Pedido)
 class PedidoAdmin(admin.ModelAdmin):
-    list_display = ("id", "sucursal_cliente", "fecha_creacion", "estado", "total", "eliminado")
+    list_display = (
+        "id",
+        "macropedido",
+        "sucursal_cliente",
+        "fecha_creacion",
+        "estado",
+        "total",
+        "eliminado",
+    )
     list_filter = ("estado", "eliminado", "sucursal_cliente")
     search_fields = ("id", "sucursal_cliente__nombre", "usuario_nombre")
     readonly_fields = ("fecha_creacion", "fecha_confirmacion", "total")

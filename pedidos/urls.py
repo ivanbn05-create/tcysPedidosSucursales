@@ -10,6 +10,11 @@ urlpatterns = [
     path("pedidos/", views.pedidos_view, name="pedidos"),
     path("pedidos/historial/", views.historial_pedidos, name="historial_pedidos"),
     path(
+        "pedidos/historial/dia/<uuid:codigo_publico>/imprimir/",
+        views.imprimir_historial_macropedido,
+        name="imprimir_historial_macropedido",
+    ),
+    path(
         "pedidos/historial/<uuid:codigo_publico>/imprimir/",
         views.imprimir_historial_pedido,
         name="imprimir_historial_pedido",
@@ -30,6 +35,26 @@ urlpatterns = [
     path("admin/configuracion/", views.admin_configuracion, name="admin_configuracion"),
     path("admin/aguas/imprimir/", views.imprimir_aguas, name="imprimir_aguas"),
     path("admin/sucursales/imprimir/", views.imprimir_sucursales, name="imprimir_sucursales"),
+    path(
+        "admin/macropedidos/<int:macropedido_id>/imprimir/",
+        views.imprimir_macropedido,
+        name="imprimir_macropedido",
+    ),
+    path(
+        "admin/macropedidos/<int:macropedido_id>/marcar-enviado/",
+        views.marcar_macropedido_enviado,
+        name="marcar_macropedido_enviado",
+    ),
+    path(
+        "admin/macropedidos/<int:macropedido_id>/revertir-enviado/",
+        views.revertir_macropedido_enviado,
+        name="revertir_macropedido_enviado",
+    ),
+    path(
+        "admin/macropedidos/<int:macropedido_id>/eliminar/",
+        views.eliminar_macropedido,
+        name="eliminar_macropedido",
+    ),
     path(
         "admin/pedidos/<int:pedido_id>/imprimir/",
         views.imprimir_pedido,

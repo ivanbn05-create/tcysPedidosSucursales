@@ -13,7 +13,7 @@ from django.core.cache import cache
 from django.core.exceptions import ValidationError
 from django.core.paginator import Paginator
 from django.db import IntegrityError, transaction
-from django.db.models import Q, Sum
+from django.db.models import Prefetch, Q, Sum
 from django.http import JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
@@ -23,14 +23,16 @@ from django.views.decorators.http import require_http_methods, require_POST
 
 from .models import (
     CONFIGURACION_CACHE_KEY,
+    MAX_PEDIDOS_POR_DIA,
     Configuracion,
     ItemPedido,
     Pedido,
+    MacroPedido,
     Precio,
     Producto,
     SucursalCliente,
 )
-from .tickets import format_ticket_quantity, ticket_context
+from .tickets import format_ticket_quantity, ticket_context, ticket_context_from_rows
 
 logger = logging.getLogger(__name__)
 
@@ -216,6 +218,22 @@ def pedido_pendiente(sucursal, crear=False):
     return pedido
 
 
+def progreso_pedidos_diario(sucursal, fecha=None):
+    fecha = fecha or timezone.localdate()
+    macro = MacroPedido.objects.filter(
+        sucursal_cliente=sucursal,
+        fecha_pedido=fecha,
+        eliminado=False,
+    ).first()
+    cantidad = macro.cantidad_pedidos if macro else 0
+    return {
+        "cantidad": cantidad,
+        "maximo": MAX_PEDIDOS_POR_DIA,
+        "disponibles": max(MAX_PEDIDOS_POR_DIA - cantidad, 0),
+        "limite_alcanzado": cantidad >= MAX_PEDIDOS_POR_DIA,
+    }
+
+
 def productos_disponibles_para_pedido(sucursal, pedido=None):
     productos_query = Producto.objects.filter(
         activo=True,
@@ -258,6 +276,7 @@ def productos_data_para_sucursal(sucursal, productos):
 
 def pedido_page_context(sucursal, pedido, admin_order_mode=False, sucursales=None):
     productos = productos_disponibles_para_pedido(sucursal, pedido)
+    progreso_diario = progreso_pedidos_diario(sucursal)
     api_urls = {
         "crear_item": reverse("api_crear_item"),
         "eliminar_item": reverse("api_eliminar_item"),
@@ -285,7 +304,13 @@ def pedido_page_context(sucursal, pedido, admin_order_mode=False, sucursales=Non
             "sucursal_id": sucursal.id,
             "admin_order_mode": admin_order_mode,
             "api_urls": api_urls,
+            "progreso_diario": progreso_diario,
         },
+        "progreso_diario": progreso_diario,
+        "segmentos_diarios": [
+            {"numero": numero, "activo": numero <= progreso_diario["cantidad"]}
+            for numero in range(1, MAX_PEDIDOS_POR_DIA + 1)
+        ],
     }
 
 
@@ -499,6 +524,101 @@ def historial_pedido_context(pedido):
     }
 
 
+def segmentos_macropedido(cantidad):
+    return [
+        {"numero": numero, "activo": numero <= cantidad}
+        for numero in range(1, MAX_PEDIDOS_POR_DIA + 1)
+    ]
+
+
+def items_agrupados_pedidos(pedidos, etiquetas_por_item=None):
+    etiquetas_por_item = etiquetas_por_item or {}
+    agrupados = {}
+    for pedido in pedidos:
+        for item in pedido.items.all():
+            agrupado = agrupados.setdefault(
+                item.producto_id,
+                {
+                    "producto_id": item.producto_id,
+                    "producto": item.producto.nombre,
+                    "nombre_ticket": etiquetas_por_item.get(item.id)
+                    or item.producto.etiqueta_ticket,
+                    "unidad": item.producto.unidad_corta,
+                    "orden": item.producto.orden,
+                    "cantidad_decimal": Decimal("0.000"),
+                    "subtotal_decimal": Decimal("0.00"),
+                },
+            )
+            agrupado["cantidad_decimal"] += item.cantidad
+            agrupado["subtotal_decimal"] += item.subtotal
+
+    rows = []
+    for agrupado in sorted(agrupados.values(), key=lambda row: (row["orden"], row["producto"])):
+        rows.append(
+            {
+                **agrupado,
+                "cantidad": format_ticket_quantity(agrupado["cantidad_decimal"]),
+                "subtotal": decimal_to_str(agrupado["subtotal_decimal"]),
+            }
+        )
+    return rows
+
+
+def ticket_context_macropedido(macropedido, items_agrupados):
+    return ticket_context_from_rows(
+        macropedido,
+        [
+            {
+                "producto": item["nombre_ticket"].upper(),
+                "cantidad": f'{item["cantidad"]} {item["unidad"]}'.strip(),
+            }
+            for item in items_agrupados
+        ],
+    )
+
+
+def macropedidos_historial_usuario(sucursal):
+    pedidos_activos = (
+        Pedido.objects.filter(eliminado=False)
+        .exclude(estado=Pedido.Estado.PENDIENTE)
+        .select_related("sucursal_cliente")
+        .prefetch_related("items__producto")
+        .order_by("fecha_confirmacion", "fecha_creacion", "id")
+    )
+    return (
+        MacroPedido.objects.filter(
+            sucursal_cliente=sucursal,
+            eliminado=False,
+        )
+        .select_related("sucursal_cliente")
+        .prefetch_related(Prefetch("pedidos", queryset=pedidos_activos, to_attr="pedidos_activos"))
+        .order_by("-fecha_pedido", "-ultima_confirmacion", "-id")
+    )
+
+
+def macropedido_historial_context(macropedido):
+    pedidos = getattr(macropedido, "pedidos_activos", None)
+    if pedidos is None:
+        pedidos = list(macropedido.pedidos.all())
+    else:
+        pedidos = list(pedidos)
+    items_agrupados = items_agrupados_pedidos(pedidos)
+    cantidad = len(pedidos)
+    return {
+        "pedido": macropedido,
+        "sucursal": macropedido.sucursal_cliente,
+        "fecha": timezone.localtime(macropedido.ultima_confirmacion),
+        "folio": macropedido.folio_fecha,
+        "codigo_publico": macropedido.codigo_publico,
+        "codigo_corto": str(macropedido.codigo_publico).split("-")[0].upper(),
+        "items": items_agrupados,
+        "total": decimal_to_str(macropedido.total),
+        "cantidad_pedidos": cantidad,
+        "segmentos": segmentos_macropedido(cantidad),
+        "pedidos": [historial_pedido_context(pedido) for pedido in pedidos],
+    }
+
+
 def parse_json_body(request):
     try:
         return json.loads(request.body.decode("utf-8") or "{}")
@@ -522,6 +642,17 @@ def sucursal_desde_payload(payload):
 
 
 def guardar_item_pedido(sucursal, payload):
+    progreso = progreso_pedidos_diario(sucursal)
+    if progreso["limite_alcanzado"]:
+        return JsonResponse(
+            {
+                "success": False,
+                "mensaje": "Ya se confirmaron los 5 pedidos permitidos para hoy.",
+                "progreso_diario": progreso,
+            },
+            status=409,
+        )
+
     producto = get_object_or_404(Producto, pk=payload.get("producto_id"))
     cantidad = parse_cantidad(payload.get("cantidad"))
     if cantidad is None:
@@ -554,6 +685,7 @@ def guardar_item_pedido(sucursal, payload):
             "item_id": item.id,
             "total_pedido": decimal_to_str(pedido.total),
             "pedido": serializar_pedido(pedido),
+            "progreso_diario": progreso,
         }
     )
 
@@ -591,24 +723,31 @@ def confirmar_pedido_sucursal(sucursal, validar_horario=True, validar_espera=Tru
         if not es_valido:
             return JsonResponse({"success": False, "mensaje": mensaje_horario}, status=400)
 
-    if validar_espera:
-        limite = timezone.now() - timedelta(seconds=60)
-        if Pedido.objects.filter(
-            sucursal_cliente=sucursal,
-            fecha_confirmacion__gte=limite,
-            estado__in=[Pedido.Estado.CONFIRMADO, Pedido.Estado.ENVIADO, Pedido.Estado.RECIBIDO],
-            eliminado=False,
-        ).exists():
-            return JsonResponse(
-                {"success": False, "mensaje": "Espera un minuto antes de confirmar otro pedido."},
-                status=429,
-            )
-
+    fecha_confirmacion = timezone.now()
+    fecha_pedido = timezone.localdate(fecha_confirmacion)
     with transaction.atomic():
+        sucursal_bloqueada = SucursalCliente.objects.select_for_update().get(pk=sucursal.pk)
+
+        if validar_espera:
+            limite = fecha_confirmacion - timedelta(seconds=60)
+            if Pedido.objects.filter(
+                sucursal_cliente=sucursal_bloqueada,
+                fecha_confirmacion__gte=limite,
+                estado__in=ORDER_HISTORY_STATES,
+                eliminado=False,
+            ).exists():
+                return JsonResponse(
+                    {
+                        "success": False,
+                        "mensaje": "Espera un minuto antes de confirmar otro pedido.",
+                    },
+                    status=429,
+                )
+
         pedido = (
             Pedido.objects.select_for_update()
             .filter(
-                sucursal_cliente=sucursal,
+                sucursal_cliente=sucursal_bloqueada,
                 estado=Pedido.Estado.PENDIENTE,
                 eliminado=False,
             )
@@ -622,10 +761,60 @@ def confirmar_pedido_sucursal(sucursal, validar_horario=True, validar_espera=Tru
                 status=400,
             )
 
+        macropedido = (
+            MacroPedido.objects.select_for_update()
+            .filter(
+                sucursal_cliente=sucursal_bloqueada,
+                fecha_pedido=fecha_pedido,
+            )
+            .first()
+        )
+        pedidos_confirmados = macropedido.cantidad_pedidos if macropedido else 0
+        if pedidos_confirmados >= MAX_PEDIDOS_POR_DIA:
+            progreso = {
+                "cantidad": pedidos_confirmados,
+                "maximo": MAX_PEDIDOS_POR_DIA,
+                "disponibles": 0,
+                "limite_alcanzado": True,
+            }
+            return JsonResponse(
+                {
+                    "success": False,
+                    "mensaje": "Ya se confirmaron los 5 pedidos permitidos para hoy.",
+                    "progreso_diario": progreso,
+                },
+                status=409,
+            )
+
+        if macropedido is None:
+            macropedido = MacroPedido.objects.create(
+                sucursal_cliente=sucursal_bloqueada,
+                fecha_pedido=fecha_pedido,
+                ultima_confirmacion=fecha_confirmacion,
+            )
+
         pedido.recalcular_total()
         pedido.estado = Pedido.Estado.CONFIRMADO
-        pedido.fecha_confirmacion = timezone.now()
-        pedido.save(update_fields=["estado", "fecha_confirmacion"])
+        pedido.fecha_confirmacion = fecha_confirmacion
+        pedido.macropedido = macropedido
+        pedido.save(update_fields=["estado", "fecha_confirmacion", "macropedido"])
+
+        macropedido.eliminado = False
+        macropedido.estado = MacroPedido.Estado.CONFIRMADO
+        macropedido.ultima_confirmacion = fecha_confirmacion
+        macropedido.save(
+            update_fields=[
+                "eliminado",
+                "estado",
+                "ultima_confirmacion",
+                "fecha_actualizacion",
+            ]
+        )
+        macropedido.pedidos.filter(eliminado=False).exclude(
+            estado=Pedido.Estado.PENDIENTE
+        ).update(estado=Pedido.Estado.CONFIRMADO)
+        macropedido.recalcular_resumen()
+        pedidos_confirmados += 1
 
     logger.info("Pedido confirmado #%s por %s", pedido.id, sucursal.nombre)
     return JsonResponse(
@@ -633,8 +822,21 @@ def confirmar_pedido_sucursal(sucursal, validar_horario=True, validar_espera=Tru
             "success": True,
             "pedido_id": pedido.id,
             "pedido_folio": pedido.folio_fecha,
+            "macropedido_id": macropedido.id,
+            "macropedido_folio": macropedido.folio_fecha,
+            "pedidos_del_dia": pedidos_confirmados,
+            "max_pedidos_dia": MAX_PEDIDOS_POR_DIA,
+            "progreso_diario": {
+                "cantidad": pedidos_confirmados,
+                "maximo": MAX_PEDIDOS_POR_DIA,
+                "disponibles": MAX_PEDIDOS_POR_DIA - pedidos_confirmados,
+                "limite_alcanzado": pedidos_confirmados >= MAX_PEDIDOS_POR_DIA,
+            },
             "total": decimal_to_str(pedido.total),
-            "mensaje": f"Pedido confirmado {pedido.folio_fecha}.",
+            "mensaje": (
+                f"Pedido {pedidos_confirmados} de {MAX_PEDIDOS_POR_DIA} agregado al "
+                f"macropedido {macropedido.folio_dia}."
+            ),
         }
     )
 
@@ -685,10 +887,12 @@ def historial_pedidos(request):
         messages.error(request, "Tu usuario no tiene una sucursal o cliente activo.")
         return redirect("login")
 
-    pedidos = list(pedidos_historial_usuario(sucursal))
+    macropedidos = list(macropedidos_historial_usuario(sucursal))
     context = {
         "sucursal": sucursal,
-        "history_orders": [historial_pedido_context(pedido) for pedido in pedidos],
+        "history_macros": [
+            macropedido_historial_context(macropedido) for macropedido in macropedidos
+        ],
     }
     return render(request, "pedidos/historial_pedidos.html", context)
 
@@ -708,6 +912,29 @@ def imprimir_historial_pedido(request, codigo_publico):
     context = {
         "order": historial_pedido_context(pedido),
         "pedido": pedido,
+        "auto_print": request.GET.get("embedded") != "1",
+    }
+    return render(request, "pedidos/historial_pedido_print.html", context)
+
+
+@never_cache
+@login_required
+def imprimir_historial_macropedido(request, codigo_publico):
+    if can_view_admin_dashboard(request.user):
+        return redirect("admin_dashboard")
+
+    sucursal = sucursal_para_usuario(request.user)
+    if sucursal is None:
+        messages.error(request, "Tu usuario no tiene una sucursal o cliente activo.")
+        return redirect("login")
+
+    macropedido = get_object_or_404(
+        macropedidos_historial_usuario(sucursal),
+        codigo_publico=codigo_publico,
+    )
+    context = {
+        "order": macropedido_historial_context(macropedido),
+        "pedido": macropedido,
         "auto_print": request.GET.get("embedded") != "1",
     }
     return render(request, "pedidos/historial_pedido_print.html", context)
@@ -1206,42 +1433,49 @@ def format_dashboard_quantity(value):
     return format_ticket_quantity(decimal_value)
 
 
-def latest_report_orders(branch_names, generated_at=None):
+def latest_report_macros(branch_names, generated_at=None):
     generated_at = generated_at or timezone.now()
     cutoff = generated_at - timedelta(hours=24)
-    pedidos = (
-        Pedido.objects.filter(
+    macropedidos = (
+        MacroPedido.objects.filter(
             eliminado=False,
-            estado=Pedido.Estado.CONFIRMADO,
-            fecha_confirmacion__gte=cutoff,
-            fecha_confirmacion__lte=generated_at,
+            estado=MacroPedido.Estado.CONFIRMADO,
+            ultima_confirmacion__gte=cutoff,
+            ultima_confirmacion__lte=generated_at,
             sucursal_cliente__nombre__in=branch_names,
         )
         .select_related("sucursal_cliente")
-        .prefetch_related("items__producto")
-        .order_by("sucursal_cliente__nombre", "-fecha_confirmacion", "-fecha_creacion", "-id")
+        .prefetch_related(
+            Prefetch(
+                "pedidos",
+                queryset=pedidos_activos_para_macropedido_queryset(),
+                to_attr="pedidos_activos",
+            )
+        )
+        .order_by("sucursal_cliente__nombre", "-ultima_confirmacion", "-id")
     )
 
-    latest_orders = {}
-    for pedido in pedidos:
-        branch_name = pedido.sucursal_cliente.nombre
-        if branch_name not in latest_orders:
-            latest_orders[branch_name] = pedido
+    latest_macros = {}
+    for macropedido in macropedidos:
+        branch_name = macropedido.sucursal_cliente.nombre
+        if branch_name not in latest_macros:
+            latest_macros[branch_name] = macropedido
 
-    return latest_orders, generated_at, cutoff
+    return latest_macros, generated_at, cutoff
 
 
 def aguas_print_context():
     branch_names = [name for name, _ in AGUAS_SUCURSALES]
     product_names = [name for _, name in AGUAS_PRODUCTOS]
     totals = defaultdict(Decimal)
-    latest_orders, generated_at, cutoff = latest_report_orders(branch_names)
+    latest_macros, generated_at, cutoff = latest_report_macros(branch_names)
 
-    for branch_name, pedido in latest_orders.items():
-        for item in pedido.items.all():
-            product_name = item.producto.nombre
-            if product_name in product_names:
-                totals[(branch_name, product_name)] += item.cantidad
+    for branch_name, macropedido in latest_macros.items():
+        for pedido in macropedido.pedidos_activos:
+            for item in pedido.items.all():
+                product_name = item.producto.nombre
+                if product_name in product_names:
+                    totals[(branch_name, product_name)] += item.cantidad
 
     rows = []
     for label, product_name in AGUAS_PRODUCTOS:
@@ -1271,13 +1505,14 @@ def sucursales_print_context():
     branch_names = [name for name, _ in SUCURSALES_REPORTE_BRANCHES]
     product_names = [name for _, name in SUCURSALES_REPORTE_PRODUCTOS]
     totals = defaultdict(Decimal)
-    latest_orders, generated_at, cutoff = latest_report_orders(branch_names)
+    latest_macros, generated_at, cutoff = latest_report_macros(branch_names)
 
-    for branch_name, pedido in latest_orders.items():
-        for item in pedido.items.all():
-            product_name = item.producto.nombre
-            if product_name in product_names:
-                totals[(branch_name, product_name)] += item.cantidad
+    for branch_name, macropedido in latest_macros.items():
+        for pedido in macropedido.pedidos_activos:
+            for item in pedido.items.all():
+                product_name = item.producto.nombre
+                if product_name in product_names:
+                    totals[(branch_name, product_name)] += item.cantidad
 
     rows = []
     for branch_name, short_name in SUCURSALES_REPORTE_BRANCHES:
@@ -1311,14 +1546,22 @@ def sucursales_print_context():
 
 def pedido_history_queryset():
     return (
-        Pedido.objects.filter(eliminado=False, estado__in=ORDER_HISTORY_STATES)
+        MacroPedido.objects.filter(eliminado=False)
         .select_related("sucursal_cliente")
-        .prefetch_related("items__producto")
-        .order_by("fecha_confirmacion", "fecha_creacion")
+        .prefetch_related(
+            Prefetch(
+                "pedidos",
+                queryset=pedidos_activos_para_macropedido_queryset(),
+                to_attr="pedidos_activos",
+            )
+        )
+        .order_by("fecha_pedido", "ultima_confirmacion")
     )
 
 
 def pedido_local_date(pedido):
+    if hasattr(pedido, "fecha_pedido"):
+        return pedido.fecha_pedido
     base_date = pedido.fecha_confirmacion or pedido.fecha_creacion
     return timezone.localtime(base_date).date()
 
@@ -1379,9 +1622,9 @@ def admin_datos_context(request):
         local_date = pedido_local_date(pedido)
         weekday = local_date.isoweekday()
         branch = pedido.sucursal_cliente
-        items = list(pedido.items.all())
+        items = items_agrupados_pedidos(pedido.pedidos_activos)
         item_count = len(items)
-        units = sum((item.cantidad for item in items), Decimal("0.000"))
+        units = sum((item["cantidad_decimal"] for item in items), Decimal("0.000"))
         key = (branch.id, weekday)
 
         metrics[key]["pedidos"] += 1
@@ -1395,8 +1638,8 @@ def admin_datos_context(request):
         if selected_sucursal and branch.id == selected_sucursal.id and weekday == selected_weekday:
             selected_order_count += 1
             for item in items:
-                mix = product_mix[item.producto.nombre]
-                mix["cantidad"] += item.cantidad
+                mix = product_mix[item["producto"]]
+                mix["cantidad"] += item["cantidad_decimal"]
                 mix["pedidos"].add(pedido.id)
                 if mix["ultimo"] is None or local_date > mix["ultimo"]:
                     mix["ultimo"] = local_date
@@ -1494,14 +1737,81 @@ def admin_datos_context(request):
     }
 
 
+def pedidos_activos_para_macropedido_queryset():
+    return (
+        Pedido.objects.filter(eliminado=False)
+        .exclude(estado=Pedido.Estado.PENDIENTE)
+        .select_related("sucursal_cliente")
+        .prefetch_related("items__producto")
+        .order_by("fecha_confirmacion", "fecha_creacion", "id")
+    )
+
+
+def preparar_macropedidos_para_interfaz(macropedidos):
+    macropedidos = list(macropedidos)
+    item_refs = []
+    for macropedido in macropedidos:
+        for pedido in macropedido.pedidos_activos:
+            fecha_pedido = fecha_referencia_pedido(pedido)
+            for item in pedido.items.all():
+                item_refs.append((item, pedido, fecha_pedido))
+
+    etiquetas_por_item = etiquetas_ticket_para_item_refs(item_refs)
+    inline_print_orders = []
+    for macropedido in macropedidos:
+        pedidos = list(macropedido.pedidos_activos)
+        for indice, pedido in enumerate(pedidos, start=1):
+            pedido_items = list(pedido.items.all())
+            fecha_pedido = fecha_referencia_pedido(pedido)
+            pedido.detalle_items = [
+                serializar_item(
+                    item,
+                    incluir_precios=True,
+                    nombre_ticket=etiquetas_por_item.get(item.id),
+                    fecha_pedido=fecha_pedido,
+                )
+                for item in pedido_items
+            ]
+            pedido.numero_en_dia = indice
+            pedido.hora_confirmacion = timezone.localtime(
+                pedido.fecha_confirmacion or pedido.fecha_creacion
+            )
+            pedido.print_context = ticket_context(
+                pedido,
+                items=pedido_items,
+                etiquetas_por_item=etiquetas_por_item,
+            )
+            pedido.print_template_id = f"print-pedido-{pedido.id}"
+            inline_print_orders.append(pedido)
+
+        macropedido.items_agrupados = items_agrupados_pedidos(pedidos, etiquetas_por_item)
+        macropedido.pedidos_count = len(pedidos)
+        macropedido.segmentos = segmentos_macropedido(len(pedidos))
+        macropedido.items_count = len(macropedido.items_agrupados)
+        macropedido.print_context = ticket_context_macropedido(
+            macropedido,
+            macropedido.items_agrupados,
+        )
+        macropedido.print_template_id = f"print-macro-{macropedido.id}"
+        inline_print_orders.append(macropedido)
+
+    return macropedidos, inline_print_orders
+
+
 @never_cache
 @dashboard_required
 def admin_dashboard(request):
-    pedidos = (
-        Pedido.objects.filter(eliminado=False)
+    macropedidos = (
+        MacroPedido.objects.filter(eliminado=False)
         .select_related("sucursal_cliente")
-        .prefetch_related("items__producto")
-        .order_by("-fecha_creacion")
+        .prefetch_related(
+            Prefetch(
+                "pedidos",
+                queryset=pedidos_activos_para_macropedido_queryset(),
+                to_attr="pedidos_activos",
+            )
+        )
+        .order_by("-fecha_pedido", "-ultima_confirmacion", "-id")
     )
 
     estado = request.GET.get("estado", "").strip()
@@ -1511,74 +1821,48 @@ def admin_dashboard(request):
     q = request.GET.get("q", "").strip()
 
     if estado:
-        pedidos = pedidos.filter(estado=estado)
+        macropedidos = macropedidos.filter(estado=estado)
     if sucursal_id:
-        pedidos = pedidos.filter(sucursal_cliente_id=sucursal_id)
+        macropedidos = macropedidos.filter(sucursal_cliente_id=sucursal_id)
     if desde:
-        pedidos = pedidos.filter(fecha_creacion__date__gte=desde)
+        macropedidos = macropedidos.filter(fecha_pedido__gte=desde)
     if hasta:
-        pedidos = pedidos.filter(fecha_creacion__date__lte=hasta)
+        macropedidos = macropedidos.filter(fecha_pedido__lte=hasta)
     if q:
-        filtro = Q(sucursal_cliente__nombre__icontains=q) | Q(usuario_nombre__icontains=q)
+        filtro = Q(sucursal_cliente__nombre__icontains=q) | Q(
+            pedidos__usuario_nombre__icontains=q
+        )
         fecha_busqueda = parse_filter_date(q)
         if fecha_busqueda:
-            filtro |= Q(fecha_creacion__date=fecha_busqueda) | Q(
-                fecha_confirmacion__date=fecha_busqueda
-            )
-        pedidos = pedidos.filter(filtro)
+            filtro |= Q(fecha_pedido=fecha_busqueda)
+        macropedidos = macropedidos.filter(filtro).distinct()
 
-    paginator = Paginator(pedidos, ADMIN_DASHBOARD_PAGE_SIZE)
+    paginator = Paginator(macropedidos, ADMIN_DASHBOARD_PAGE_SIZE)
     page_obj = paginator.get_page(request.GET.get("page"))
-    pedidos_list = list(page_obj.object_list)
-
-    items_por_pedido = {}
-    item_refs = []
-    for pedido in pedidos_list:
-        fecha_pedido = fecha_referencia_pedido(pedido)
-        pedido_items = list(pedido.items.all())
-        items_por_pedido[pedido.id] = pedido_items
-        item_refs.extend((item, pedido, fecha_pedido) for item in pedido_items)
-
-    etiquetas_por_item = etiquetas_ticket_para_item_refs(item_refs)
-    for pedido in pedidos_list:
-        fecha_pedido = fecha_referencia_pedido(pedido)
-        pedido_items = items_por_pedido[pedido.id]
-        pedido.items_json = json.dumps(
-            [
-                serializar_item(
-                    item,
-                    incluir_precios=True,
-                    nombre_ticket=etiquetas_por_item.get(item.id),
-                    fecha_pedido=fecha_pedido,
-                )
-                for item in pedido_items
-            ]
-        )
-        pedido.print_context = ticket_context(
-            pedido,
-            items=pedido_items,
-            etiquetas_por_item=etiquetas_por_item,
-        )
+    macropedidos_list, inline_print_orders = preparar_macropedidos_para_interfaz(
+        page_obj.object_list
+    )
 
     pagination_query = request.GET.copy()
     pagination_query.pop("page", None)
 
     hoy = timezone.localdate()
-    stats_base = Pedido.objects.filter(eliminado=False)
+    stats_base = MacroPedido.objects.filter(eliminado=False)
     stats = {
-        "pendientes": stats_base.filter(estado=Pedido.Estado.CONFIRMADO).count(),
-        "total_hoy": stats_base.filter(fecha_creacion__date=hoy).aggregate(total=Sum("total"))["total"]
+        "pendientes": stats_base.filter(estado=MacroPedido.Estado.CONFIRMADO).count(),
+        "total_hoy": stats_base.filter(fecha_pedido=hoy).aggregate(total=Sum("total"))["total"]
         or Decimal("0.00"),
-        "pedidos_hoy": stats_base.filter(fecha_creacion__date=hoy).count(),
+        "pedidos_hoy": stats_base.filter(fecha_pedido=hoy).count(),
     }
 
     context = {
-        "pedidos": pedidos_list,
+        "macropedidos": macropedidos_list,
+        "inline_print_orders": inline_print_orders,
         "page_obj": page_obj,
         "pagination_query": pagination_query.urlencode(),
         "page_size": ADMIN_DASHBOARD_PAGE_SIZE,
         "sucursales": SucursalCliente.objects.filter(activa=True),
-        "estados": Pedido.Estado.choices,
+        "estados": MacroPedido.Estado.choices,
         "stats": stats,
         "filters": {
             "estado": estado,
@@ -1632,10 +1916,124 @@ def imprimir_pedido(request, pedido_id):
     return render(request, "pedidos/ticket_print.html", context)
 
 
+@never_cache
+@dashboard_required
+def imprimir_macropedido(request, macropedido_id):
+    macropedido = get_object_or_404(
+        MacroPedido.objects.filter(eliminado=False)
+        .select_related("sucursal_cliente")
+        .prefetch_related(
+            Prefetch(
+                "pedidos",
+                queryset=pedidos_activos_para_macropedido_queryset(),
+                to_attr="pedidos_activos",
+            )
+        ),
+        pk=macropedido_id,
+    )
+    macropedidos, _ = preparar_macropedidos_para_interfaz([macropedido])
+    logger.info(
+        "Admin %s abrio impresion de macropedido #%s",
+        request.user.username,
+        macropedido.id,
+    )
+    context = macropedidos[0].print_context
+    context["auto_print"] = request.GET.get("embedded") != "1"
+    return render(request, "pedidos/ticket_print.html", context)
+
+
+def cambiar_estado_macropedido(macropedido_id, estado_actual, estado_nuevo):
+    with transaction.atomic():
+        macropedido = get_object_or_404(
+            MacroPedido.objects.select_for_update(),
+            pk=macropedido_id,
+            eliminado=False,
+        )
+        if macropedido.estado != estado_actual:
+            return macropedido, False
+        macropedido.estado = estado_nuevo
+        macropedido.save(update_fields=["estado", "fecha_actualizacion"])
+        macropedido.pedidos.filter(eliminado=False).exclude(
+            estado=Pedido.Estado.PENDIENTE
+        ).update(estado=estado_nuevo)
+    return macropedido, True
+
+
+@require_POST
+@admin_required
+def marcar_macropedido_enviado(request, macropedido_id):
+    macropedido, actualizado = cambiar_estado_macropedido(
+        macropedido_id,
+        MacroPedido.Estado.CONFIRMADO,
+        MacroPedido.Estado.ENVIADO,
+    )
+    if actualizado:
+        logger.info(
+            "Macropedido #%s marcado enviado por %s",
+            macropedido.id,
+            request.user.username,
+        )
+        messages.success(request, f"Macropedido {macropedido.folio_fecha} marcado como enviado.")
+    else:
+        messages.error(request, "Sólo se pueden enviar macropedidos confirmados.")
+    return redirect(f"{reverse('admin_dashboard')}?estado={MacroPedido.Estado.ENVIADO}")
+
+
+@require_POST
+@admin_required
+def revertir_macropedido_enviado(request, macropedido_id):
+    macropedido, actualizado = cambiar_estado_macropedido(
+        macropedido_id,
+        MacroPedido.Estado.ENVIADO,
+        MacroPedido.Estado.CONFIRMADO,
+    )
+    if actualizado:
+        logger.info(
+            "Macropedido #%s devuelto a confirmado por %s",
+            macropedido.id,
+            request.user.username,
+        )
+        messages.success(request, f"Macropedido {macropedido.folio_fecha} devuelto a confirmado.")
+    else:
+        messages.error(request, "Sólo se pueden revertir macropedidos enviados.")
+    return redirect(f"{reverse('admin_dashboard')}?estado={MacroPedido.Estado.CONFIRMADO}")
+
+
+@require_POST
+@admin_required
+def eliminar_macropedido(request, macropedido_id):
+    with transaction.atomic():
+        macropedido = get_object_or_404(
+            MacroPedido.objects.select_for_update(),
+            pk=macropedido_id,
+            eliminado=False,
+        )
+        macropedido.eliminado = True
+        macropedido.save(update_fields=["eliminado", "fecha_actualizacion"])
+        macropedido.pedidos.filter(eliminado=False).update(eliminado=True)
+    logger.info("Macropedido #%s eliminado suavemente por %s", macropedido.id, request.user.username)
+    messages.success(request, f"Macropedido {macropedido.folio_fecha} eliminado.")
+    return redirect("admin_dashboard")
+
+
 @require_POST
 @admin_required
 def marcar_enviado(request, pedido_id):
     pedido = get_object_or_404(Pedido, pk=pedido_id, eliminado=False)
+    if pedido.macropedido_id:
+        macropedido, actualizado = cambiar_estado_macropedido(
+            pedido.macropedido_id,
+            MacroPedido.Estado.CONFIRMADO,
+            MacroPedido.Estado.ENVIADO,
+        )
+        if actualizado:
+            messages.success(
+                request,
+                f"Macropedido {macropedido.folio_fecha} marcado como enviado.",
+            )
+        else:
+            messages.error(request, "Sólo se pueden enviar macropedidos confirmados.")
+        return redirect(f"{reverse('admin_dashboard')}?estado={MacroPedido.Estado.ENVIADO}")
     if pedido.estado == Pedido.Estado.CONFIRMADO:
         pedido.estado = Pedido.Estado.ENVIADO
         pedido.save(update_fields=["estado"])
@@ -1650,6 +2048,17 @@ def marcar_enviado(request, pedido_id):
 @admin_required
 def revertir_enviado(request, pedido_id):
     pedido = get_object_or_404(Pedido, pk=pedido_id, eliminado=False)
+    if pedido.macropedido_id:
+        macropedido, actualizado = cambiar_estado_macropedido(
+            pedido.macropedido_id,
+            MacroPedido.Estado.ENVIADO,
+            MacroPedido.Estado.CONFIRMADO,
+        )
+        if actualizado:
+            messages.success(request, f"Macropedido {macropedido.folio_fecha} devuelto a confirmado.")
+        else:
+            messages.error(request, "Sólo se pueden revertir macropedidos enviados.")
+        return redirect(f"{reverse('admin_dashboard')}?estado={MacroPedido.Estado.CONFIRMADO}")
     if pedido.estado == Pedido.Estado.ENVIADO:
         pedido.estado = Pedido.Estado.CONFIRMADO
         pedido.save(update_fields=["estado"])
@@ -1666,6 +2075,19 @@ def eliminar_pedido(request, pedido_id):
     pedido = get_object_or_404(Pedido, pk=pedido_id, eliminado=False)
     pedido.eliminado = True
     pedido.save(update_fields=["eliminado"])
+    if pedido.macropedido_id:
+        macropedido = pedido.macropedido
+        restantes = macropedido.pedidos.filter(eliminado=False).exclude(
+            estado=Pedido.Estado.PENDIENTE
+        )
+        if restantes.exists():
+            macropedido.recalcular_resumen()
+        else:
+            macropedido.eliminado = True
+            macropedido.total = Decimal("0.00")
+            macropedido.save(
+                update_fields=["eliminado", "total", "fecha_actualizacion"]
+            )
     logger.info("Pedido #%s eliminado suavemente por %s", pedido.id, request.user.username)
     messages.success(request, f"Pedido {pedido.folio_fecha} eliminado.")
     return redirect("admin_dashboard")

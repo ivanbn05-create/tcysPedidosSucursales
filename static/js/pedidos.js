@@ -5,6 +5,7 @@ document.addEventListener("DOMContentLoaded", () => {
     const isAdminOrder = Boolean(initialData.admin_order_mode);
     const selectedSucursalId = initialData.sucursal_id || null;
     let order = initialData.pedido || { items: [], total: "0.00" };
+    let dailyProgress = initialData.progreso_diario || { cantidad: 0, maximo: 5 };
     let selectedProduct = products[0] || null;
     let selectedItemId = null;
     let quantityInput = "";
@@ -34,6 +35,10 @@ document.addEventListener("DOMContentLoaded", () => {
     const confirmAccept = document.getElementById("confirmAccept");
     const confirmCancel = document.getElementById("confirmCancel");
     const mobilePanelTabs = [...document.querySelectorAll("[data-mobile-panel]")];
+    const dailyOrderProgress = document.getElementById("dailyOrderProgress");
+    const dailyOrderCount = document.getElementById("dailyOrderCount");
+    const dailyOrderLimitMessage = document.getElementById("dailyOrderLimitMessage");
+    const dailySegments = [...document.querySelectorAll("[data-daily-segment]")];
 
     function money(value) {
         return Number(value || 0).toLocaleString("es-MX", {
@@ -141,7 +146,9 @@ document.addEventListener("DOMContentLoaded", () => {
             mensaje: "Respuesta invalida del servidor.",
         }));
         if (!response.ok || !data.success) {
-            throw new Error(data.mensaje || `Error ${response.status}`);
+            const error = new Error(data.mensaje || `Error ${response.status}`);
+            error.progresoDiario = data.progreso_diario;
+            throw error;
         }
         return data;
     }
@@ -178,13 +185,45 @@ document.addEventListener("DOMContentLoaded", () => {
     }
 
     let busyGuard = null;
+    let isBusy = false;
 
-    function setBusy(isBusy) {
-        [addButton, clearButton, confirmButton, deleteSelectedButton].forEach((button) => {
+    function dailyLimitReached() {
+        return Number(dailyProgress.cantidad || 0) >= Number(dailyProgress.maximo || 5);
+    }
+
+    function applyActionAvailability() {
+        [clearButton, deleteSelectedButton].forEach((button) => {
             if (button) button.disabled = isBusy;
         });
+        [addButton, confirmButton].forEach((button) => {
+            if (button) button.disabled = isBusy || dailyLimitReached();
+        });
+    }
+
+    function renderDailyProgress(progress = dailyProgress) {
+        dailyProgress = { ...dailyProgress, ...progress };
+        const count = Number(dailyProgress.cantidad || 0);
+        const maximum = Number(dailyProgress.maximo || 5);
+        if (dailyOrderCount) dailyOrderCount.textContent = String(count);
+        if (dailyOrderProgress) {
+            dailyOrderProgress.setAttribute(
+                "aria-label",
+                `${count} de ${maximum} pedidos realizados hoy`,
+            );
+            dailyOrderProgress.classList.toggle("limit-reached", dailyLimitReached());
+        }
+        dailySegments.forEach((segment) => {
+            segment.classList.toggle("filled", Number(segment.dataset.dailySegment) <= count);
+        });
+        if (dailyOrderLimitMessage) dailyOrderLimitMessage.hidden = !dailyLimitReached();
+        applyActionAvailability();
+    }
+
+    function setBusy(nextBusy) {
+        isBusy = nextBusy;
+        applyActionAvailability();
         window.clearTimeout(busyGuard);
-        if (isBusy) {
+        if (nextBusy) {
             // Red de seguridad: si algo se cuelga sin pasar por el finally,
             // los botones no se quedan bloqueados para siempre.
             busyGuard = window.setTimeout(() => {
@@ -335,6 +374,7 @@ document.addEventListener("DOMContentLoaded", () => {
             setQuantityConfirmed(true);
             showNotice(data.mensaje);
         } catch (error) {
+            if (error.progresoDiario) renderDailyProgress(error.progresoDiario);
             showNotice(error.message, "error");
         } finally {
             setBusy(false);
@@ -415,18 +455,20 @@ document.addEventListener("DOMContentLoaded", () => {
         try {
             setBusy(true);
             const data = await postJson(apiUrls.confirmar_pedido || "/api/pedidos/confirmar/");
+            renderDailyProgress(data.progreso_diario);
             order = { items: [], total: "0.00" };
             selectedItemId = null;
             quantityInput = "";
             replaceOnNextKey = false;
             setQuantityConfirmed(false);
             renderOrder();
-            successText.textContent = `Pedido ${data.pedido_folio} por ${money(data.total)}.`;
+            successText.textContent = `${data.mensaje} Total de este pedido: ${money(data.total)}.`;
             modal.hidden = false;
             window.setTimeout(() => {
                 modal.hidden = true;
             }, 3000);
         } catch (error) {
+            if (error.progresoDiario) renderDailyProgress(error.progresoDiario);
             showNotice(error.message, "error");
         } finally {
             setBusy(false);
@@ -466,5 +508,6 @@ document.addEventListener("DOMContentLoaded", () => {
     });
 
     selectProduct(selectedProduct?.id);
+    renderDailyProgress();
     renderOrder();
 });

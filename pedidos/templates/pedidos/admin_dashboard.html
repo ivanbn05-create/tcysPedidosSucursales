@@ -36,7 +36,7 @@
                 <strong>{{ stats.pendientes }}</strong>
             </div>
             <div class="stat-card">
-                <span>Pedidos hoy</span>
+                <span>Macropedidos hoy</span>
                 <strong>{{ stats.pedidos_hoy }}</strong>
             </div>
             <div class="stat-card">
@@ -70,61 +70,127 @@
         <table class="orders-table">
             <thead>
                 <tr>
-                    <th>Pedido</th>
+                    <th>Macropedido</th>
                     <th>Sucursal/Cliente</th>
-                    <th>Items</th>
+                    <th>Productos</th>
                     <th>Total</th>
                     <th>Estado</th>
                     <th>Acciones</th>
+                    <th>Pedidos del d&iacute;a</th>
                 </tr>
             </thead>
             <tbody>
-                {% for pedido in pedidos %}
-                <tr>
-                    <td data-label="Pedido">{{ pedido.folio_fecha }}</td>
-                    <td data-label="Sucursal/Cliente">{{ pedido.sucursal_cliente.nombre }}</td>
-                    <td data-label="Items">{{ pedido.cantidad_items }}</td>
-                    <td data-label="Total">${{ pedido.total|floatformat:2 }}</td>
-                    <td data-label="Estado"><span class="status-pill {{ pedido.estado }}">{{ pedido.get_estado_display }}</span></td>
-                    <td class="actions-cell" data-label="Acciones">
+                {% for macro in macropedidos %}
+                <tr class="macro-order-row">
+                    <td data-label="Macropedido">
                         <button
-                            class="secondary-button compact"
+                            class="macro-toggle"
                             type="button"
-                            data-detail
-                            data-id="{{ pedido.id }}"
-                            data-folio="{{ pedido.folio_fecha }}"
-                            data-sucursal="{{ pedido.sucursal_cliente.nombre }}"
-                            data-total="{{ pedido.total|floatformat:2 }}"
-                            data-items="{{ pedido.items_json|escape }}"
-                        >Ver detalle</button>
+                            data-macro-toggle
+                            aria-expanded="false"
+                            aria-controls="macro-details-{{ macro.id }}"
+                        >
+                            <i aria-hidden="true"></i>
+                            <span>
+                                <strong>{{ macro.folio_dia }}</strong>
+                                <small>&Uacute;ltimo pedido {{ macro.ultima_confirmacion|time:"H:i" }}</small>
+                            </span>
+                        </button>
+                    </td>
+                    <td data-label="Sucursal/Cliente">{{ macro.sucursal_cliente.nombre }}</td>
+                    <td data-label="Productos">{{ macro.items_count }}</td>
+                    <td data-label="Total">${{ macro.total|floatformat:2 }}</td>
+                    <td data-label="Estado"><span class="status-pill {{ macro.estado }}">{{ macro.get_estado_display }}</span></td>
+                    <td class="actions-cell" data-label="Acciones">
                         <a
                             class="secondary-link compact print-link"
-                            href="{% url 'imprimir_pedido' pedido.id %}"
+                            href="{% url 'imprimir_macropedido' macro.id %}"
                             data-inline-print
-                            data-print-template-id="print-pedido-{{ pedido.id }}"
-                        >Imprimir</a>
+                            data-print-template-id="{{ macro.print_template_id }}"
+                        >Imprimir acumulado</a>
                         {% if can_manage_pedidos %}
-                        {% if pedido.estado == "enviado" %}
-                        <form method="post" action="{% url 'revertir_enviado' pedido.id %}">
+                        {% if macro.estado == "enviado" %}
+                        <form method="post" action="{% url 'revertir_macropedido_enviado' macro.id %}">
                             {% csrf_token %}
                             <button class="primary-button compact" type="submit">Deshacer env&iacute;o</button>
                         </form>
-                        {% elif pedido.estado == "confirmado" %}
-                        <form method="post" action="{% url 'marcar_enviado' pedido.id %}">
+                        {% elif macro.estado == "confirmado" %}
+                        <form method="post" action="{% url 'marcar_macropedido_enviado' macro.id %}">
                             {% csrf_token %}
                             <button class="secondary-button compact" type="submit">Enviado</button>
                         </form>
                         {% endif %}
-                        <form method="post" action="{% url 'eliminar_pedido' pedido.id %}" data-confirm-delete>
+                        <form method="post" action="{% url 'eliminar_macropedido' macro.id %}" data-confirm-delete data-delete-label="macropedido del d&iacute;a">
                             {% csrf_token %}
                             <button class="danger-button compact" type="submit">Eliminar</button>
                         </form>
                         {% endif %}
                     </td>
+                    <td class="macro-progress-cell" data-label="Pedidos del d&iacute;a">
+                        <span
+                            class="macro-progress"
+                            aria-label="{{ macro.pedidos_count }} de 5 pedidos realizados"
+                        >
+                            <span class="order-segments" aria-hidden="true">
+                                {% for segmento in macro.segmentos %}
+                                <i class="order-segment segment-{{ segmento.numero }}{% if segmento.activo %} filled{% endif %}"></i>
+                                {% endfor %}
+                            </span>
+                            <small>{{ macro.pedidos_count }}/5</small>
+                        </span>
+                    </td>
+                </tr>
+                <tr class="macro-details-row" id="macro-details-{{ macro.id }}" hidden>
+                    <td colspan="7">
+                        <div class="macro-details-shell">
+                            <section class="macro-aggregate-summary">
+                                <div class="macro-section-heading">
+                                    <div>
+                                        <span class="eyebrow">Acumulado del d&iacute;a</span>
+                                        <strong>{{ macro.items_count }} productos &middot; ${{ macro.total|floatformat:2 }}</strong>
+                                    </div>
+                                    <span>{{ macro.pedidos_count }} de 5 pedidos</span>
+                                </div>
+                                <div class="macro-aggregate-items">
+                                    {% for item in macro.items_agrupados %}
+                                    <span><strong>{{ item.producto }}</strong> {{ item.cantidad }} {{ item.unidad }}</span>
+                                    {% endfor %}
+                                </div>
+                            </section>
+
+                            <section class="macro-component-grid" aria-label="Pedidos individuales del d&iacute;a">
+                                {% for pedido in macro.pedidos_activos %}
+                                <article class="macro-component-card">
+                                    <header>
+                                        <div>
+                                            <span class="eyebrow">Pedido {{ pedido.numero_en_dia }}</span>
+                                            <strong>{{ pedido.hora_confirmacion|time:"H:i" }}</strong>
+                                        </div>
+                                        <b>${{ pedido.total|floatformat:2 }}</b>
+                                    </header>
+                                    <div class="macro-component-items">
+                                        {% for item in pedido.detalle_items %}
+                                        <div>
+                                            <span>{{ item.producto }}</span>
+                                            <strong>{{ item.cantidad }} {{ item.unidad }}</strong>
+                                        </div>
+                                        {% endfor %}
+                                    </div>
+                                    <a
+                                        class="secondary-link compact print-link"
+                                        href="{% url 'imprimir_pedido' pedido.id %}"
+                                        data-inline-print
+                                        data-print-template-id="{{ pedido.print_template_id }}"
+                                    >Imprimir pedido</a>
+                                </article>
+                                {% endfor %}
+                            </section>
+                        </div>
+                    </td>
                 </tr>
                 {% empty %}
                 <tr>
-                    <td colspan="6" class="table-empty">Sin pedidos con esos filtros</td>
+                    <td colspan="7" class="table-empty">Sin macropedidos con esos filtros</td>
                 </tr>
                 {% endfor %}
             </tbody>
@@ -158,25 +224,9 @@
     {% endif %}
 </main>
 
-<div class="modal-backdrop" id="detailModal" hidden>
-    <div class="modal wide" role="dialog" aria-modal="true" aria-labelledby="detailTitle">
-        <div class="modal-header">
-            <div>
-                <span class="eyebrow" id="detailSubtitle"></span>
-                <h2 id="detailTitle">Pedido</h2>
-            </div>
-            <button class="icon-button" type="button" id="closeDetail" aria-label="Cerrar">×</button>
-        </div>
-        <div class="detail-list" id="detailList"></div>
-        <div class="total-row">
-            <span>Total</span>
-            <strong id="detailTotal">$0.00</strong>
-        </div>
-    </div>
-</div>
-{% include "pedidos/partials/inline_print_templates.html" with inline_print_pedidos=pedidos aguas_print=aguas_print sucursales_print=sucursales_print %}
+{% include "pedidos/partials/inline_print_templates.html" with inline_print_orders=inline_print_orders aguas_print=aguas_print sucursales_print=sucursales_print %}
 {% endblock %}
 
 {% block scripts %}
-<script src="{% static 'js/admin.js' %}?v=20260715-3" defer></script>
+<script src="{% static 'js/admin.js' %}?v=20260815-1" defer></script>
 {% endblock %}

@@ -31,14 +31,15 @@ Los usernames internos sin espacios también funcionan para pruebas técnicas: `
 
 ## Flujos
 
-- `/pedidos/`: captura de pedido con Fetch API, calculadora y resumen responsivo.
+- `/pedidos/`: captura de pedidos con Fetch API, calculadora, resumen responsivo y progreso diario de 5 segmentos. Cada sucursal puede confirmar hasta cinco pedidos por día.
+- `/pedidos/historial/`: historial agrupado por macropedido diario, con resumen acumulado y pedidos individuales desplegables (detalle y hora de confirmación).
 - `/api/pedidos/crear-item/`: guarda o reemplaza la cantidad del producto en el pedido pendiente.
 - `/api/pedidos/eliminar-item/`: elimina item del pedido pendiente.
-- `/api/pedidos/confirmar/`: confirma con transacción atómica, rate limit de 1 minuto, aviso de total tentativo y restricción horaria (rechaza con 400 fuera de `hora_inicio_pedidos`/`hora_fin_pedidos`).
+- `/api/pedidos/confirmar/`: confirma con transacción atómica, agrega el pedido al macropedido de la fecha local, impone el máximo diario de cinco, conserva el rate limit de 1 minuto y aplica la restricción horaria.
 - `/api/horarios/`: informa el horario vigente de pedidos (sin auth), mostrado en la pantalla de login.
-- `/admin/`: dashboard propio de matriz con filtros, detalle, impresión y control de estado. El admin puede marcar un pedido confirmado como enviado y deshacer ese envío para devolverlo a confirmado. El usuario `juanmanuel` solo puede ver e imprimir. Los pedidos se muestran por fecha/hora, no por ID incremental.
+- `/admin/`: dashboard propio de matriz. Cada fila es un macropedido diario, muestra la hora de su última confirmación y una barra verde-amarillo-rojo de cinco segmentos; la flecha despliega los pedidos que lo integran. El estado, la impresión acumulada, el envío, su reversión y el borrado operan sobre el macropedido completo. El usuario `juanmanuel` solo puede ver e imprimir.
 - `/admin/configuracion/`: productos, precios, sucursales/clientes (incluye correo de recordatorios), horarios de pedidos y recordatorios, cuenta admin.
-- `/admin/sucursales/imprimir/`: imprime barbacoa, tortilla y consomé del pedido confirmado más reciente de las últimas 24 horas por sucursal; los pedidos enviados se omiten para permitir tomar el confirmado anterior.
+- `/admin/sucursales/imprimir/`: imprime barbacoa, tortilla y consomé acumulados del macropedido confirmado más reciente de las últimas 24 horas por sucursal; los macropedidos enviados se omiten para permitir tomar el confirmado anterior.
 - `/django-admin/`: admin nativo de Django.
 
 ## Recordatorios diarios por correo

@@ -13,36 +13,94 @@
         <a class="secondary-link compact" href="{% url 'pedidos' %}">Pedido actual</a>
     </section>
 
-    {% if history_orders %}
-    <section class="history-list" aria-label="Pedidos realizados">
-        {% for order in history_orders %}
-        <article class="history-card">
+    {% if history_macros %}
+    <section class="history-list" aria-label="Macropedidos realizados">
+        {% for macro in history_macros %}
+        <article class="history-card macro-history-card">
             <details>
-                <summary>
-                    <span>
-                        <strong>Pedido {{ order.folio }}</strong>
-                        <small>{{ order.pedido.get_estado_display }} · Clave {{ order.codigo_corto }}</small>
+                <summary class="macro-history-summary">
+                    <span class="macro-history-leading">
+                        <i class="history-disclosure" aria-hidden="true"></i>
+                        <span>
+                            <strong>{{ macro.pedido.folio_dia }}</strong>
+                            <small>
+                                &Uacute;ltimo pedido {{ macro.fecha|time:"H:i" }}
+                                &middot; {{ macro.cantidad_pedidos }}/5 pedidos
+                                &middot; {{ macro.pedido.get_estado_display }}
+                            </small>
+                        </span>
                     </span>
-                    <b>${{ order.total }}</b>
+                    <b>${{ macro.total }}</b>
+                    <span
+                        class="macro-progress"
+                        aria-label="{{ macro.cantidad_pedidos }} de 5 pedidos realizados"
+                    >
+                        <span class="order-segments" aria-hidden="true">
+                            {% for segmento in macro.segmentos %}
+                            <i class="order-segment segment-{{ segmento.numero }}{% if segmento.activo %} filled{% endif %}"></i>
+                            {% endfor %}
+                        </span>
+                        <small>{{ macro.cantidad_pedidos }}/5</small>
+                    </span>
                 </summary>
-                <div class="history-detail">
-                    <div class="history-items">
-                        {% for item in order.items %}
-                        <div class="history-item">
-                            <strong>{{ item.producto }}</strong>
-                            <span>{{ item.cantidad }} {{ item.unidad }}</span>
+
+                <div class="history-detail macro-history-detail">
+                    <section class="macro-aggregate" aria-label="Resumen acumulado del d&iacute;a">
+                        <div class="macro-section-heading">
+                            <div>
+                                <span class="eyebrow">Acumulado del d&iacute;a</span>
+                                <strong>Clave {{ macro.codigo_corto }}</strong>
+                            </div>
+                            <a
+                                class="primary-link compact print-link"
+                                href="{% url 'imprimir_historial_macropedido' macro.codigo_publico %}"
+                                data-inline-print
+                                data-print-template-id="print-history-macro-{{ macro.codigo_publico }}"
+                            >Imprimir resumen</a>
                         </div>
+                        <div class="history-items">
+                            {% for item in macro.items %}
+                            <div class="history-item">
+                                <strong>{{ item.producto }}</strong>
+                                <span>{{ item.cantidad }} {{ item.unidad }}</span>
+                            </div>
+                            {% endfor %}
+                        </div>
+                        <p class="history-total-note">Total provisional acumulado: ${{ macro.total }}</p>
+                    </section>
+
+                    <section class="component-orders" aria-label="Pedidos que componen el macropedido">
+                        <h2>Pedidos del d&iacute;a</h2>
+                        {% for order in macro.pedidos %}
+                        <details class="component-order">
+                            <summary>
+                                <span>
+                                    <strong>Pedido {{ forloop.counter }}</strong>
+                                    <small>{{ order.fecha|time:"H:i" }} &middot; Clave {{ order.codigo_corto }}</small>
+                                </span>
+                                <b>${{ order.total }}</b>
+                            </summary>
+                            <div class="component-order-body">
+                                <div class="history-items">
+                                    {% for item in order.items %}
+                                    <div class="history-item">
+                                        <strong>{{ item.producto }}</strong>
+                                        <span>{{ item.cantidad }} {{ item.unidad }}</span>
+                                    </div>
+                                    {% endfor %}
+                                </div>
+                                <div class="history-actions">
+                                    <a
+                                        class="secondary-link compact print-link"
+                                        href="{% url 'imprimir_historial_pedido' order.codigo_publico %}"
+                                        data-inline-print
+                                        data-print-template-id="print-history-pedido-{{ order.codigo_publico }}"
+                                    >Imprimir pedido</a>
+                                </div>
+                            </div>
+                        </details>
                         {% endfor %}
-                    </div>
-                    <p class="history-total-note">Total provisional: ${{ order.total }}</p>
-                    <div class="history-actions">
-                        <a
-                            class="primary-link compact print-link"
-                            href="{% url 'imprimir_historial_pedido' order.codigo_publico %}"
-                            data-inline-print
-                            data-print-template-id="print-history-pedido-{{ order.codigo_publico }}"
-                        >Imprimir</a>
-                    </div>
+                    </section>
                 </div>
             </details>
         </article>
@@ -50,19 +108,27 @@
     </section>
     {% else %}
     <section class="history-empty">
-        <p>No hay pedidos confirmados todavia.</p>
+        <p>No hay pedidos confirmados todav&iacute;a.</p>
     </section>
     {% endif %}
 </main>
 
 <div id="inlinePrintSurface" class="inline-print-surface" aria-hidden="true"></div>
 
-{% for order in history_orders %}
+{% for macro in history_macros %}
+<template
+    id="print-history-macro-{{ macro.codigo_publico }}"
+    data-print-size="auto"
+>
+    {% include "pedidos/partials/historial_receipt.html" with order=macro %}
+</template>
+{% for order in macro.pedidos %}
 <template
     id="print-history-pedido-{{ order.codigo_publico }}"
     data-print-size="auto"
 >
     {% include "pedidos/partials/historial_receipt.html" with order=order %}
 </template>
+{% endfor %}
 {% endfor %}
 {% endblock %}

@@ -79,33 +79,33 @@
 </template>
 {% endif %}
 
-{% for pedido in inline_print_pedidos %}
+{% for print_order in inline_print_orders %}
 <template
-    id="print-pedido-{{ pedido.id }}"
-    data-print-width="{{ pedido.print_context.ticket_width_mm }}"
-    data-print-height="{{ pedido.print_context.ticket_height_mm }}"
+    id="{{ print_order.print_template_id }}"
+    data-print-width="{{ print_order.print_context.ticket_width_mm }}"
+    data-print-height="{{ print_order.print_context.ticket_height_mm }}"
 >
     <main class="inline-print-sheet inline-ticket-sheet" aria-label="Pedido imprimible">
         <table class="inline-ticket-table">
             <colgroup>
-                <col style="width: {{ pedido.print_context.column_widths_mm.product }}mm;">
-                <col style="width: {{ pedido.print_context.column_widths_mm.quantity }}mm;">
-                <col style="width: {{ pedido.print_context.column_widths_mm.blank }}mm;">
+                <col style="width: {{ print_order.print_context.column_widths_mm.product }}mm;">
+                <col style="width: {{ print_order.print_context.column_widths_mm.quantity }}mm;">
+                <col style="width: {{ print_order.print_context.column_widths_mm.blank }}mm;">
             </colgroup>
             <tbody>
                 <tr>
                     <td
                         class="inline-ticket-title"
                         colspan="3"
-                        style="height: {{ pedido.print_context.header_height_mm }}mm;"
-                    >{{ pedido.print_context.title }}</td>
+                        style="height: {{ print_order.print_context.header_height_mm }}mm;"
+                    >{{ print_order.print_context.title }}</td>
                 </tr>
-                <tr class="inline-ticket-date-row" style="height: {{ pedido.print_context.date_height_mm }}mm;">
+                <tr class="inline-ticket-date-row" style="height: {{ print_order.print_context.date_height_mm }}mm;">
                     <td></td>
                     <td></td>
-                    <td class="inline-ticket-date-cell">{{ pedido.print_context.date_display }}</td>
+                    <td class="inline-ticket-date-cell">{{ print_order.print_context.date_display }}</td>
                 </tr>
-                {% for row in pedido.print_context.rows %}
+                {% for row in print_order.print_context.rows %}
                 <tr class="inline-ticket-item-row" style="height: {{ row.height_mm }}mm;">
                     <td class="inline-ticket-product">{{ row.producto }}</td>
                     <td class="inline-ticket-quantity">{{ row.cantidad }}</td>

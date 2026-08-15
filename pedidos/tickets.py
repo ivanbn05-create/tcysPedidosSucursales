@@ -33,6 +33,8 @@ SPANISH_MONTH_ABBR = (
 
 
 def ticket_date(pedido):
+    if hasattr(pedido, "fecha_pedido"):
+        return pedido.fecha_pedido
     base_date = pedido.fecha_confirmacion or pedido.fecha_creacion
     return timezone.localtime(base_date).date()
 
@@ -95,12 +97,9 @@ def ticket_items(pedido, items=None, etiquetas_por_item=None):
     ]
 
 
-def ticket_context(pedido, items=None, etiquetas_por_item=None):
+def ticket_context_from_rows(pedido, ticket_rows):
     rows = []
-    for index, row in enumerate(
-        ticket_items(pedido, items=items, etiquetas_por_item=etiquetas_por_item),
-        start=3,
-    ):
+    for index, row in enumerate(ticket_rows, start=3):
         rows.append(
             {
                 **row,
@@ -131,3 +130,10 @@ def ticket_context(pedido, items=None, etiquetas_por_item=None):
         "header_height_mm": TICKET_HEADER_HEIGHT_MM,
         "date_height_mm": TICKET_DATE_HEIGHT_MM,
     }
+
+
+def ticket_context(pedido, items=None, etiquetas_por_item=None):
+    return ticket_context_from_rows(
+        pedido,
+        ticket_items(pedido, items=items, etiquetas_por_item=etiquetas_por_item),
+    )

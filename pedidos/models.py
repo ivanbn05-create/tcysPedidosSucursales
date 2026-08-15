@@ -6,12 +6,13 @@ from django.contrib.auth.models import User
 from django.core.exceptions import ValidationError
 from django.core.validators import MaxValueValidator, MinValueValidator
 from django.db import models
-from django.db.models import Sum
+from django.db.models import Max, Sum
 from django.utils import timezone
 
 # Cache key compartida entre views.py y admin.py para invalidar la
 # configuración cacheada cuando se edita desde cualquiera de los dos admins.
 CONFIGURACION_CACHE_KEY = "pedidos:configuracion"
+MAX_PEDIDOS_POR_DIA = 5
 
 
 class SucursalCliente(models.Model):
@@ -127,6 +128,89 @@ class Precio(models.Model):
         return (self.nombre_ticket.strip() or self.producto.etiqueta_ticket)[:24]
 
 
+class MacroPedido(models.Model):
+    """Agrupador operativo de los pedidos de una sucursal en un día local."""
+
+    class Estado(models.TextChoices):
+        CONFIRMADO = "confirmado", "Confirmado"
+        ENVIADO = "enviado", "Enviado"
+        RECIBIDO = "recibido", "Recibido"
+
+    sucursal_cliente = models.ForeignKey(
+        SucursalCliente,
+        on_delete=models.PROTECT,
+        related_name="macropedidos",
+    )
+    codigo_publico = models.UUIDField(default=uuid.uuid4, unique=True, editable=False)
+    fecha_pedido = models.DateField(db_index=True)
+    ultima_confirmacion = models.DateTimeField()
+    estado = models.CharField(
+        max_length=16,
+        choices=Estado.choices,
+        default=Estado.CONFIRMADO,
+    )
+    total = models.DecimalField(max_digits=12, decimal_places=2, default=Decimal("0.00"))
+    eliminado = models.BooleanField(default=False)
+    fecha_creacion = models.DateTimeField(auto_now_add=True)
+    fecha_actualizacion = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["-fecha_pedido", "-ultima_confirmacion"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["sucursal_cliente", "fecha_pedido"],
+                name="macropedido_unico_por_sucursal_dia",
+            )
+        ]
+        indexes = [
+            models.Index(
+                fields=["sucursal_cliente", "-fecha_pedido"],
+                name="macro_sucursal_fecha_idx",
+            )
+        ]
+
+    def __str__(self):
+        return f"Macropedido {self.folio_fecha} - {self.sucursal_cliente}"
+
+    @property
+    def fecha_referencia(self):
+        return self.ultima_confirmacion
+
+    @property
+    def folio_fecha(self):
+        hora = timezone.localtime(self.ultima_confirmacion).strftime("%H:%M")
+        return f"{self.fecha_pedido:%d/%m/%Y} {hora}"
+
+    @property
+    def folio_dia(self):
+        return self.fecha_pedido.strftime("%d/%m/%Y")
+
+    @property
+    def cantidad_pedidos(self):
+        return self.pedidos.filter(eliminado=False).exclude(estado=Pedido.Estado.PENDIENTE).count()
+
+    @property
+    def cantidad_items(self):
+        return (
+            self.pedidos.filter(eliminado=False)
+            .exclude(estado=Pedido.Estado.PENDIENTE)
+            .values("items__producto_id")
+            .exclude(items__producto_id__isnull=True)
+            .distinct()
+            .count()
+        )
+
+    def recalcular_resumen(self):
+        resumen = self.pedidos.filter(eliminado=False).exclude(
+            estado=Pedido.Estado.PENDIENTE
+        ).aggregate(total=Sum("total"), ultima=Max("fecha_confirmacion"))
+        self.total = (resumen["total"] or Decimal("0.00")).quantize(Decimal("0.01"))
+        if resumen["ultima"] is not None:
+            self.ultima_confirmacion = resumen["ultima"]
+        self.save(update_fields=["total", "ultima_confirmacion", "fecha_actualizacion"])
+        return self.total
+
+
 class Pedido(models.Model):
     """Pedido creado por una sucursal o cliente."""
 
@@ -140,6 +224,13 @@ class Pedido(models.Model):
         SucursalCliente,
         on_delete=models.PROTECT,
         related_name="pedidos",
+    )
+    macropedido = models.ForeignKey(
+        MacroPedido,
+        on_delete=models.PROTECT,
+        related_name="pedidos",
+        null=True,
+        blank=True,
     )
     codigo_publico = models.UUIDField(default=uuid.uuid4, unique=True, editable=False)
     usuario_nombre = models.CharField(max_length=150)
