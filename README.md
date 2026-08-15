@@ -1,6 +1,6 @@
 # Los Tocayos - Gestión de pedidos
 
-App Django tipo SPA para que sucursales y clientes mayoristas capturen pedidos y matriz los descargue en Excel.
+App Django tipo SPA para que sucursales y clientes mayoristas capturen pedidos y matriz los revise e imprima.
 
 ## Setup local
 
@@ -36,9 +36,9 @@ Los usernames internos sin espacios también funcionan para pruebas técnicas: `
 - `/api/pedidos/eliminar-item/`: elimina item del pedido pendiente.
 - `/api/pedidos/confirmar/`: confirma con transacción atómica, rate limit de 1 minuto, aviso de total tentativo y restricción horaria (rechaza con 400 fuera de `hora_inicio_pedidos`/`hora_fin_pedidos`).
 - `/api/horarios/`: informa el horario vigente de pedidos (sin auth), mostrado en la pantalla de login.
-- `/admin/`: dashboard propio de matriz con filtros, detalle, descarga e impresión. El usuario `juanmanuel` solo puede ver e imprimir. Los pedidos se muestran por fecha/hora, no por ID incremental.
+- `/admin/`: dashboard propio de matriz con filtros, detalle, impresión y control de estado. El admin puede marcar un pedido confirmado como enviado y deshacer ese envío para devolverlo a confirmado. El usuario `juanmanuel` solo puede ver e imprimir. Los pedidos se muestran por fecha/hora, no por ID incremental.
 - `/admin/configuracion/`: productos, precios, sucursales/clientes (incluye correo de recordatorios), horarios de pedidos y recordatorios, cuenta admin.
-- `/admin/pedidos/<id>/descargar/`: descarga Excel y marca como enviado.
+- `/admin/sucursales/imprimir/`: imprime barbacoa, tortilla y consomé del pedido confirmado más reciente de las últimas 24 horas por sucursal; los pedidos enviados se omiten para permitir tomar el confirmado anterior.
 - `/django-admin/`: admin nativo de Django.
 
 ## Recordatorios diarios por correo
@@ -96,4 +96,4 @@ python manage.py test pedidos
 python manage.py collectstatic --noinput
 ```
 
-El Excel se genera en memoria con `openpyxl`, sin headers, en tres columnas: producto, cantidad y columna vacía. El ticket sólo imprime una fila por producto pedido; no agrega filas vacías de relleno.
+El ticket sólo imprime una fila por producto pedido; no agrega filas vacías de relleno.

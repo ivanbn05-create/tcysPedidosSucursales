@@ -104,11 +104,17 @@
                             data-print-template-id="print-pedido-{{ pedido.id }}"
                         >Imprimir</a>
                         {% if can_manage_pedidos %}
-                        <a class="primary-link compact" href="{% url 'descargar_y_marcar' pedido.id %}">Excel</a>
+                        {% if pedido.estado == "enviado" %}
+                        <form method="post" action="{% url 'revertir_enviado' pedido.id %}">
+                            {% csrf_token %}
+                            <button class="primary-button compact" type="submit">Deshacer env&iacute;o</button>
+                        </form>
+                        {% elif pedido.estado == "confirmado" %}
                         <form method="post" action="{% url 'marcar_enviado' pedido.id %}">
                             {% csrf_token %}
                             <button class="secondary-button compact" type="submit">Enviado</button>
                         </form>
+                        {% endif %}
                         <form method="post" action="{% url 'eliminar_pedido' pedido.id %}" data-confirm-delete>
                             {% csrf_token %}
                             <button class="danger-button compact" type="submit">Eliminar</button>

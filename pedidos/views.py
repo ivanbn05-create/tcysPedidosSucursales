@@ -14,11 +14,10 @@ from django.core.exceptions import ValidationError
 from django.core.paginator import Paginator
 from django.db import IntegrityError, transaction
 from django.db.models import Q, Sum
-from django.http import HttpResponse, JsonResponse
+from django.http import JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
 from django.utils import timezone
-from django.utils.text import slugify
 from django.views.decorators.cache import never_cache
 from django.views.decorators.http import require_http_methods, require_POST
 
@@ -31,7 +30,7 @@ from .models import (
     Producto,
     SucursalCliente,
 )
-from .tickets import build_ticket_workbook, format_ticket_quantity, ticket_context
+from .tickets import format_ticket_quantity, ticket_context
 
 logger = logging.getLogger(__name__)
 
@@ -43,7 +42,6 @@ ORDER_HISTORY_STATES = [
     Pedido.Estado.ENVIADO,
     Pedido.Estado.RECIBIDO,
 ]
-REPORT_COUNTABLE_STATES = {Pedido.Estado.CONFIRMADO}
 AGUAS_SUCURSALES = (
     ("Estancia", "E"),
     ("Aguilas", "A"),
@@ -1214,7 +1212,7 @@ def latest_report_orders(branch_names, generated_at=None):
     pedidos = (
         Pedido.objects.filter(
             eliminado=False,
-            estado__in=ORDER_HISTORY_STATES,
+            estado=Pedido.Estado.CONFIRMADO,
             fecha_confirmacion__gte=cutoff,
             fecha_confirmacion__lte=generated_at,
             sucursal_cliente__nombre__in=branch_names,
@@ -1225,13 +1223,9 @@ def latest_report_orders(branch_names, generated_at=None):
     )
 
     latest_orders = {}
-    seen_branches = set()
     for pedido in pedidos:
         branch_name = pedido.sucursal_cliente.nombre
-        if branch_name in seen_branches:
-            continue
-        seen_branches.add(branch_name)
-        if pedido.estado in REPORT_COUNTABLE_STATES:
+        if branch_name not in latest_orders:
             latest_orders[branch_name] = pedido
 
     return latest_orders, generated_at, cutoff
@@ -1624,43 +1618,6 @@ def admin_datos(request):
     return render(request, "pedidos/admin_datos.html", admin_datos_context(request))
 
 
-def excel_response_for_pedido(pedido):
-    output = build_ticket_workbook(pedido)
-    sucursal = slugify(pedido.sucursal_cliente.nombre) or "pedido"
-    filename = f"pedido_{sucursal}_{pedido.folio_archivo}.xlsx"
-    response = HttpResponse(
-        output.getvalue(),
-        content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-    )
-    response["Content-Disposition"] = f'attachment; filename="{filename}"'
-    return response
-
-
-@admin_required
-def descargar_excel(request, pedido_id):
-    pedido = get_object_or_404(
-        Pedido.objects.select_related("sucursal_cliente").prefetch_related("items__producto"),
-        pk=pedido_id,
-        eliminado=False,
-    )
-    logger.info("Admin %s descargó Excel de pedido #%s", request.user.username, pedido.id)
-    return excel_response_for_pedido(pedido)
-
-
-@admin_required
-def descargar_y_marcar(request, pedido_id):
-    pedido = get_object_or_404(
-        Pedido.objects.select_related("sucursal_cliente").prefetch_related("items__producto"),
-        pk=pedido_id,
-        eliminado=False,
-    )
-    if pedido.estado == Pedido.Estado.CONFIRMADO:
-        pedido.estado = Pedido.Estado.ENVIADO
-        pedido.save(update_fields=["estado"])
-        logger.info("Pedido #%s marcado enviado por descarga de %s", pedido.id, request.user.username)
-    return excel_response_for_pedido(pedido)
-
-
 @never_cache
 @dashboard_required
 def imprimir_pedido(request, pedido_id):
@@ -1679,10 +1636,28 @@ def imprimir_pedido(request, pedido_id):
 @admin_required
 def marcar_enviado(request, pedido_id):
     pedido = get_object_or_404(Pedido, pk=pedido_id, eliminado=False)
-    pedido.estado = Pedido.Estado.ENVIADO
-    pedido.save(update_fields=["estado"])
-    logger.info("Pedido #%s marcado enviado por %s", pedido.id, request.user.username)
+    if pedido.estado == Pedido.Estado.CONFIRMADO:
+        pedido.estado = Pedido.Estado.ENVIADO
+        pedido.save(update_fields=["estado"])
+        logger.info("Pedido #%s marcado enviado por %s", pedido.id, request.user.username)
+        messages.success(request, f"Pedido {pedido.folio_fecha} marcado como enviado.")
+    else:
+        messages.error(request, "Sólo se pueden marcar como enviados los pedidos confirmados.")
     return redirect(f"{reverse('admin_dashboard')}?estado={Pedido.Estado.ENVIADO}")
+
+
+@require_POST
+@admin_required
+def revertir_enviado(request, pedido_id):
+    pedido = get_object_or_404(Pedido, pk=pedido_id, eliminado=False)
+    if pedido.estado == Pedido.Estado.ENVIADO:
+        pedido.estado = Pedido.Estado.CONFIRMADO
+        pedido.save(update_fields=["estado"])
+        logger.info("Pedido #%s devuelto a confirmado por %s", pedido.id, request.user.username)
+        messages.success(request, f"Pedido {pedido.folio_fecha} devuelto a confirmado.")
+    else:
+        messages.error(request, "Sólo se pueden revertir pedidos que estén enviados.")
+    return redirect(f"{reverse('admin_dashboard')}?estado={Pedido.Estado.CONFIRMADO}")
 
 
 @require_POST

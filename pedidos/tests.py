@@ -1,7 +1,7 @@
 import json
 from datetime import datetime, time, timedelta
 from decimal import Decimal
-from io import BytesIO, StringIO
+from io import StringIO
 from pathlib import Path
 from unittest.mock import patch
 
@@ -14,8 +14,6 @@ from django.db import connection
 from django.test import TestCase
 from django.test.utils import CaptureQueriesContext
 from django.utils import timezone
-from openpyxl import load_workbook
-
 from .apps import COMANDOS_SIN_SCHEDULER
 from .models import (
     CONFIGURACION_CACHE_KEY,
@@ -83,7 +81,7 @@ class PedidoFlowTests(TestCase):
         pedido.recalcular_total()
         return pedido
 
-    def test_login_crear_confirmar_y_excel(self):
+    def test_login_crear_confirmar_e_imprimir(self):
         self.assertTrue(self.client.login(username="aguilas", password="Aguilas8445"))
         producto = Producto.objects.get(nombre="LITRO DE BARBACOA")
 
@@ -110,30 +108,6 @@ class PedidoFlowTests(TestCase):
 
         self.client.logout()
         self.assertTrue(self.client.login(username="juancarlos", password="TocayosMO2026"))
-        response = self.client.get(f"/admin/pedidos/{pedido.id}/excel/")
-        self.assertEqual(response.status_code, 200)
-        workbook = load_workbook(BytesIO(response.content))
-        sheet = workbook.active
-        self.assertEqual(sheet.title, "PEDIDOS")
-        self.assertIn("A1:C1", [str(range_ref) for range_ref in sheet.merged_cells.ranges])
-        self.assertEqual(sheet["A1"].value, "AGUILAS")
-        self.assertEqual(sheet["A3"].value, "BARBACOA")
-        self.assertEqual(sheet["B3"].value, "2.5 KG")
-        self.assertEqual(sheet["C2"].number_format, "d-mmm")
-        self.assertAlmostEqual(sheet.column_dimensions["A"].width, 15.140625)
-        self.assertAlmostEqual(sheet.column_dimensions["B"].width, 10.7109375)
-        self.assertAlmostEqual(sheet.column_dimensions["C"].width, 10.140625)
-        self.assertEqual(sheet.row_dimensions[1].height, 21.75)
-        self.assertEqual(sheet.row_dimensions[2].height, 16.5)
-        self.assertEqual(sheet.row_dimensions[3].height, 26.25)
-        self.assertEqual(sheet.max_row, 3)
-        self.assertEqual(sheet.page_margins.left, 0)
-        self.assertEqual(sheet.page_margins.right, 0)
-        self.assertEqual(sheet.page_setup.paperSize, 121)
-        self.assertEqual(sheet.page_setup.scale, 90)
-        self.assertEqual(sheet.page_setup.horizontalDpi, 203)
-        self.assertEqual(sheet.print_area, "'PEDIDOS'!$A$1:$C$3")
-
         print_response = self.client.get(f"/admin/pedidos/{pedido.id}/imprimir/")
         self.assertEqual(print_response.status_code, 200)
         self.assertContains(print_response, "window.print()")
@@ -178,10 +152,6 @@ class PedidoFlowTests(TestCase):
 
         self.client.logout()
         self.assertTrue(self.client.login(username="juancarlos", password="TocayosMO2026"))
-        response = self.client.get(f"/admin/pedidos/{pedido_id}/excel/")
-        workbook = load_workbook(BytesIO(response.content))
-        self.assertEqual(workbook.active.print_area, "'PEDIDOS'!$A$1:$C$7")
-
         print_response = self.client.get(f"/admin/pedidos/{pedido_id}/imprimir/")
         self.assertContains(print_response, 'class="ticket-item-row"', count=5)
 
@@ -224,9 +194,8 @@ class PedidoFlowTests(TestCase):
 
         self.client.logout()
         self.assertTrue(self.client.login(username="juancarlos", password="TocayosMO2026"))
-        response = self.client.get(f"/admin/pedidos/{pedido_id}/excel/")
-        workbook = load_workbook(BytesIO(response.content))
-        self.assertEqual(workbook.active["A3"].value, "BARBACOA .M")
+        response = self.client.get(f"/admin/pedidos/{pedido_id}/imprimir/")
+        self.assertContains(response, "BARBACOA .M")
 
     def test_ticket_imprime_la_cantidad_capturada_sin_bonificaciones(self):
         """La promoción de martes de Águilas se eliminó por completo: el ticket
@@ -251,10 +220,8 @@ class PedidoFlowTests(TestCase):
 
         self.client.logout()
         self.assertTrue(self.client.login(username="juancarlos", password="TocayosMO2026"))
-        response = self.client.get(f"/admin/pedidos/{pedido_id}/excel/")
-        workbook = load_workbook(BytesIO(response.content))
-        sheet = workbook.active
-        self.assertEqual(sheet["B3"].value, "20 KG")
+        response = self.client.get(f"/admin/pedidos/{pedido_id}/imprimir/")
+        self.assertContains(response, "20 KG")
         self.assertEqual(pedido.total, Decimal("3860.00"))
 
     def test_promocion_martes_no_existe_en_ninguna_capa(self):
@@ -655,6 +622,7 @@ class PedidoFlowTests(TestCase):
         self.assertNotIn("admin/datos", html)
         self.assertNotIn(">Excel</a>", html)
         self.assertNotIn("marcar-enviado", html)
+        self.assertNotIn("revertir-enviado", html)
         self.assertNotIn("eliminar/", html)
 
         print_response = self.client.get(f"/admin/pedidos/{pedido_id}/imprimir/")
@@ -672,10 +640,43 @@ class PedidoFlowTests(TestCase):
         response = self.client.get("/admin/datos/")
         self.assertEqual(response.status_code, 302)
         response = self.client.get(f"/admin/pedidos/{pedido_id}/excel/")
-        self.assertEqual(response.status_code, 302)
+        self.assertEqual(response.status_code, 404)
+        response = self.client.get(f"/admin/pedidos/{pedido_id}/descargar/")
+        self.assertEqual(response.status_code, 404)
         response = self.client.post(f"/admin/pedidos/{pedido_id}/eliminar/")
         self.assertEqual(response.status_code, 302)
         self.assertFalse(Pedido.objects.get(id=pedido_id).eliminado)
+
+    def test_admin_puede_marcar_enviado_y_deshacer_el_envio(self):
+        pedido = self.crear_pedido_confirmado(
+            "Aguilas",
+            [("LITRO DE BARBACOA", "2")],
+        )
+        self.assertTrue(self.client.login(username="juancarlos", password="TocayosMO2026"))
+
+        dashboard = self.client.get("/admin/")
+        self.assertNotContains(dashboard, ">Excel</a>")
+        self.assertNotContains(dashboard, f"/admin/pedidos/{pedido.id}/excel/")
+        self.assertContains(dashboard, f"/admin/pedidos/{pedido.id}/marcar-enviado/")
+        self.assertNotContains(dashboard, f"/admin/pedidos/{pedido.id}/revertir-enviado/")
+
+        response = self.client.post(f"/admin/pedidos/{pedido.id}/marcar-enviado/")
+        self.assertRedirects(response, "/admin/?estado=enviado")
+        pedido.refresh_from_db()
+        self.assertEqual(pedido.estado, Pedido.Estado.ENVIADO)
+
+        dashboard = self.client.get("/admin/?estado=enviado")
+        self.assertContains(dashboard, "Deshacer env&iacute;o", html=True)
+        self.assertContains(dashboard, f"/admin/pedidos/{pedido.id}/revertir-enviado/")
+        self.assertNotContains(dashboard, f"/admin/pedidos/{pedido.id}/marcar-enviado/")
+
+        response = self.client.post(f"/admin/pedidos/{pedido.id}/revertir-enviado/")
+        self.assertRedirects(response, "/admin/?estado=confirmado")
+        pedido.refresh_from_db()
+        self.assertEqual(pedido.estado, Pedido.Estado.CONFIRMADO)
+
+        self.assertEqual(self.client.get(f"/admin/pedidos/{pedido.id}/excel/").status_code, 404)
+        self.assertEqual(self.client.get(f"/admin/pedidos/{pedido.id}/descargar/").status_code, 404)
 
     def test_admin_dashboard_pagina_y_evitar_consultas_por_item(self):
         fecha_base = timezone.make_aware(datetime(2026, 7, 20, 10, 0))
@@ -774,9 +775,8 @@ class PedidoFlowTests(TestCase):
 
         self.client.logout()
         self.assertTrue(self.client.login(username="juancarlos", password="TocayosMO2026"))
-        response = self.client.get(f"/admin/pedidos/{pedido_id}/excel/")
-        workbook = load_workbook(BytesIO(response.content))
-        self.assertEqual(workbook.active["A3"].value, "BARBA")
+        response = self.client.get(f"/admin/pedidos/{pedido_id}/imprimir/")
+        self.assertContains(response, "BARBA")
 
     def test_admin_puede_crear_producto_y_usuario(self):
         self.assertTrue(self.client.login(username="juancarlos", password="TocayosMO2026"))
@@ -902,7 +902,7 @@ class PedidoFlowTests(TestCase):
         self.assertEqual(pedido.sucursal_cliente, sucursal)
         self.assertEqual(pedido.estado, Pedido.Estado.CONFIRMADO)
 
-    def test_admin_imprime_aguas_del_ultimo_pedido_por_sucursal_en_24_horas(self):
+    def test_admin_imprime_aguas_del_ultimo_pedido_confirmado_por_sucursal(self):
         fecha_antigua = timezone.now() - timedelta(hours=25)
         fecha_reciente = timezone.now() - timedelta(hours=2)
         fecha_mas_reciente = timezone.now() - timedelta(minutes=20)
@@ -963,23 +963,22 @@ class PedidoFlowTests(TestCase):
         self.assertContains(response, "size: 72mm 72mm;")
         self.assertContains(
             response,
-            "<tr><td>1/B</td><td>2</td><td>5</td><td>/</td><td>7</td></tr>",
+            "<tr><td>1/B</td><td>2</td><td>5</td><td>4</td><td>11</td></tr>",
             html=True,
         )
         self.assertContains(response, "<td>2</td>", html=True)
         self.assertContains(response, "<td>5</td>", html=True)
-        self.assertContains(response, "<td>7</td>", html=True)
-        self.assertContains(response, "<td>/</td>", html=True)
+        self.assertContains(response, "<td>4</td>", html=True)
+        self.assertContains(response, "<td>11</td>", html=True)
         self.assertNotContains(response, "99")
         self.assertNotContains(response, "<td>8</td>", html=True)
-        self.assertNotContains(response, "<td>4</td>", html=True)
         self.assertNotContains(response, "<td>9</td>", html=True)
         self.assertContains(response, "<td>LR</td>", html=True)
         self.assertContains(response, "<td>3</td>", html=True)
         self.assertContains(response, "<td>LJ</td>", html=True)
         self.assertContains(response, "<td>1</td>", html=True)
 
-    def test_admin_imprime_reporte_sucursales_del_ultimo_pedido_en_24_horas(self):
+    def test_admin_imprime_sucursales_del_ultimo_pedido_confirmado(self):
         fecha_antigua = timezone.now() - timedelta(hours=25)
         fecha_reciente = timezone.now() - timedelta(hours=2)
         fecha_mas_reciente = timezone.now() - timedelta(minutes=20)
@@ -1062,14 +1061,20 @@ class PedidoFlowTests(TestCase):
         self.assertContains(response, "<td>ESTANCIA</td>", html=True)
         self.assertContains(
             response,
-            "<tr><td>AGUILAS</td><td>/</td><td>/</td><td>/</td></tr>",
+            "<tr><td>AGUILAS</td><td>4</td><td>4</td><td>4</td></tr>",
             html=True,
         )
         self.assertContains(response, "<td>BROT NVA G</td>", html=True)
         self.assertContains(response, "<td>STA ANITA</td>", html=True)
         self.assertContains(response, "<td>7</td>", html=True)
-        self.assertContains(response, "<td>9</td>", html=True)
         self.assertContains(response, "<td>11</td>", html=True)
+        self.assertContains(response, "<td>13</td>", html=True)
+        self.assertContains(response, "<td>15</td>", html=True)
+        self.assertContains(
+            response,
+            '<tr class="report-total-row"><td>TOTAL</td><td>11</td><td>13</td><td>15</td></tr>',
+            html=True,
+        )
         self.assertNotContains(response, "99")
         self.assertNotContains(response, "<td>12</td>", html=True)
 

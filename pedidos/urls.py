@@ -30,12 +30,6 @@ urlpatterns = [
     path("admin/configuracion/", views.admin_configuracion, name="admin_configuracion"),
     path("admin/aguas/imprimir/", views.imprimir_aguas, name="imprimir_aguas"),
     path("admin/sucursales/imprimir/", views.imprimir_sucursales, name="imprimir_sucursales"),
-    path("admin/pedidos/<int:pedido_id>/excel/", views.descargar_excel, name="descargar_excel"),
-    path(
-        "admin/pedidos/<int:pedido_id>/descargar/",
-        views.descargar_y_marcar,
-        name="descargar_y_marcar",
-    ),
     path(
         "admin/pedidos/<int:pedido_id>/imprimir/",
         views.imprimir_pedido,
@@ -45,6 +39,11 @@ urlpatterns = [
         "admin/pedidos/<int:pedido_id>/marcar-enviado/",
         views.marcar_enviado,
         name="marcar_enviado",
+    ),
+    path(
+        "admin/pedidos/<int:pedido_id>/revertir-enviado/",
+        views.revertir_enviado,
+        name="revertir_enviado",
     ),
     path("admin/pedidos/<int:pedido_id>/eliminar/", views.eliminar_pedido, name="eliminar_pedido"),
 ]

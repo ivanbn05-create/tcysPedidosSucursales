@@ -4,14 +4,14 @@ Contexto operativo para un agente de IA que va a mantener, actualizar o extender
 
 ## Qué es esto
 
-App Django monolítica (un solo app `pedidos`) para que sucursales de "Los Tocayos" (negocio de barbacoa/tortillas) y clientes mayoristas capturen pedidos desde el navegador (celular o tablet en sucursal), y un usuario admin (matriz) los revise, filtre, descargue en Excel o los imprima directo en una impresora térmica de tickets (72mm imprimibles en impresora 80mm) usando el diálogo de impresión del navegador. No hay frontend framework: es Django + templates + JS vanilla con `fetch`, simulando una SPA solo en la vista `/pedidos/`.
+App Django monolítica (un solo app `pedidos`) para que sucursales de "Los Tocayos" (negocio de barbacoa/tortillas) y clientes mayoristas capturen pedidos desde el navegador (celular o tablet en sucursal), y un usuario admin (matriz) los revise, filtre o imprima directo en una impresora térmica de tickets (72mm imprimibles en impresora 80mm) usando el diálogo de impresión del navegador. No hay frontend framework: es Django + templates + JS vanilla con `fetch`, simulando una SPA solo en la vista `/pedidos/`.
 
 Todo el código, UI y mensajes están en español (México). Mantén ese idioma en cualquier código, commit o texto nuevo.
 
 ## Stack y versiones reales
 
 - Django `>=4.2,<6.1` (los comentarios en `settings.py` apuntan a docs de Django 6.0 → asume que corre en 6.0.x salvo que `requirements.txt` diga otra cosa).
-- `gunicorn` (server WSGI en prod), `whitenoise` (estáticos, `CompressedManifestStaticFilesStorage`), `dj-database-url` + `psycopg2-binary` (Postgres), `python-decouple` (config por env), `openpyxl` (generación de Excel/ticket), `APScheduler` (disparo del recordatorio diario mientras el proyecto vive en Render, ver sección "Automatización de correos").
+- `gunicorn` (server WSGI en prod), `whitenoise` (estáticos, `CompressedManifestStaticFilesStorage`), `dj-database-url` + `psycopg2-binary` (Postgres), `python-decouple` (config por env), `APScheduler` (disparo del recordatorio diario mientras el proyecto vive en Render, ver sección "Automatización de correos").
 - Sin DRF, sin Celery, sin React/Vue. No los introduzcas salvo que se pida explícitamente.
 - Python `3.13.12` (`runtime.txt`).
 
@@ -26,14 +26,14 @@ pedidos/
   admin.py         Django admin nativo (django-admin/, uso interno/dev, no confundir con /admin/)
   apps.py          arranca el scheduler de recordatorios en ready() (con guardas, ver scheduler.py)
   scheduler.py      APScheduler que dispara enviar_recordatorios (solo mientras viva en Render)
-  tickets.py       genera el layout del ticket térmico (Excel vía openpyxl + contexto para HTML)
+  tickets.py       arma el contexto y las dimensiones del ticket térmico HTML
   seed.py          seed_demo_data() — datos demo idempotentes (usuarios, productos, precios, Configuracion)
   management/commands/seed_demo.py            wrapper de management command sobre seed.py
   management/commands/enviar_recordatorios.py  recordatorio diario por correo (--test, --sucursal, --fuerza)
   tests.py         suite única, cubre el flujo completo end-to-end (ver sección Tests)
   templates/pedidos/
     pedidos.html + static/js/pedidos.js     captura de pedido (SPA-like, fetch), sin precios unitarios en la UI
-    admin_dashboard.html + static/js/admin.js  panel de matriz (filtros, detalle, descarga)
+    admin_dashboard.html + static/js/admin.js  panel de matriz (filtros, detalle, impresión y estados)
     admin_configuracion.html                CRUD de productos/precios/sucursales/admin + horarios/recordatorios
     ticket_print.html                       HTML/CSS @page 72mm, window.print() automático
     emails/recordatorio.html + .txt         plantilla del correo de recordatorio (HTML + texto plano)
@@ -48,7 +48,7 @@ No existe capa de "services" ni serializers: las vistas hacen queries, validaci�
 - **SucursalCliente**: `OneToOneField` a `User` (nullable). `tipo` = `sucursal` | `cliente_mayorista`. El precio **no** se deriva automáticamente del tipo: cada combinación `(producto, sucursal_cliente)` tiene su propio precio en `Precio`. En la demo real hay 38 productos y 222 precios porque algunos productos no aplican a mayoreo.
 - **Producto**: además de `nombre` y `nombre_ticket`, guarda `unidad_medida`, `unidad_abreviatura` y `cantidad_por_precio`. `cantidad_por_precio` permite casos como chile güero: se captura en piezas, pero se cobra con precio por kilo usando 30 piezas por kilo. La cantidad del ticket siempre es la capturada: no existe ningún mecanismo de bonificación ni promoción (la promo de martes de Águilas se eliminó en la migración `0010`).
 - **Precio**: vigente = el registro más reciente con `fecha_vigencia <= hoy` para ese `(producto, sucursal_cliente)`. Constraint único por `(producto, sucursal_cliente, fecha_vigencia)`. Actualizar precio desde `/admin/configuracion/` hace `update_or_create` con `fecha_vigencia=hoy` (no crea historial salvo que edites en fechas distintas). `Precio.nombre_ticket` puede sobrescribir el nombre de ticket por sucursal/cliente; se usa para mayoreo (`.M`) en barbacoa, tortilla, grasa, consomé y aguas.
-- **Pedido**: estados `pendiente → confirmado → enviado → recibido` (`recibido` no tiene vista que lo dispare todavía, queda para uso futuro/manual). Borrado es lógico (`eliminado=True`), nunca `.delete()` real desde la UI. Solo puede existir **un pedido pendiente por sucursal** (`pedido_pendiente()` lo busca o lo crea). `confirmar_pedido` tiene rate limit de 60s por sucursal para evitar doble confirmación accidental. El identificador visible del pedido es `folio_fecha` (fecha/hora local), no el `id` incremental; el `id` queda sólo para URLs internas.
+- **Pedido**: estados `pendiente → confirmado → enviado → recibido` (`recibido` no tiene vista que lo dispare todavía, queda para uso futuro/manual). El admin puede deshacer un envío exclusivamente con la transición `enviado → confirmado`; no hay exportación a Excel. Borrado es lógico (`eliminado=True`), nunca `.delete()` real desde la UI. Solo puede existir **un pedido pendiente por sucursal** (`pedido_pendiente()` lo busca o lo crea). `confirmar_pedido` tiene rate limit de 60s por sucursal para evitar doble confirmación accidental. El identificador visible del pedido es `folio_fecha` (fecha/hora local), no el `id` incremental; el `id` queda sólo para URLs internas.
 - **ItemPedido**: único por `(pedido, producto)` — agregar el mismo producto **reemplaza** la cantidad, no la suma. `subtotal` se recalcula solo en `save()`, usando `cantidad / producto.cantidad_por_precio * precio_unitario`. `cantidad` decimal hasta `999.999`, precios hasta `9999.99`.
 - **Producto.etiqueta_ticket / Precio.etiqueta_ticket**: `Precio.nombre_ticket` (si existe para esa sucursal) o `Producto.nombre_ticket` o `Producto.nombre`, truncado a 24 chars — límite real del ancho del ticket térmico, no es capricho.
 - **Configuracion**: singleton (usa `Configuracion.get_solo()`, nunca crees un segundo registro a mano). Guarda `hora_inicio_pedidos`/`hora_fin_pedidos` (restricción horaria), `hora_envio_recordatorio`/`dias_recordatorio`/`recordatorios_habilitados`/`email_remitente` (recordatorios). **No** guarda credenciales SMTP — esas viven en variables de entorno (`EMAIL_HOST_USER`, `EMAIL_HOST_PASSWORD`), igual que el resto de secretos del proyecto; ver "Variables de entorno". Se edita desde `/admin/configuracion/` (uso de negocio) y se puede inspeccionar desde `/django-admin/` (solo lectura de facto: no se puede crear un segundo registro ni borrarlo). Cachéada 5 minutos en `django.core.cache` (`pedidos:configuracion`); cualquier código que la modifique debe invalidar `CONFIGURACION_CACHE_KEY`.
@@ -59,7 +59,7 @@ No existe capa de "services" ni serializers: las vistas hacen queries, validaci�
 
 El login (`login_view`) acepta **el nombre visible de la sucursal/cliente** (puede tener espacios y mayúsculas, ej. `"Brot Nueva Galicia"`) buscando `SucursalCliente.nombre__iexact`, y si existe usa el `username` interno real para autenticar. Si no matchea ninguna sucursal, cae a buscar `User.username__iexact` directo (permite entrar con el username técnico, ej. `brot_nueva_galicia`, útil para pruebas). No hay registro público ni recuperación de contraseña.
 
-`is_staff` o `is_superuser` → redirige a `/admin/` (panel propio con permisos completos). El grupo `Operador de impresion` también redirige a `/admin/`, pero solo puede ver pedidos e imprimirlos; no puede entrar a configuración, descargar Excel, marcar enviado ni eliminar pedidos. Cualquier otro usuario autenticado con perfil de sucursal activo → `/pedidos/`. Un usuario sin `SucursalCliente` activo asociado no puede entrar a capturar pedidos aunque tenga sesión válida.
+`is_staff` o `is_superuser` → redirige a `/admin/` (panel propio con permisos completos). El grupo `Operador de impresion` también redirige a `/admin/`, pero solo puede ver pedidos e imprimirlos; no puede entrar a configuración, cambiar estados ni eliminar pedidos. Cualquier otro usuario autenticado con perfil de sucursal activo → `/pedidos/`. Un usuario sin `SucursalCliente` activo asociado no puede entrar a capturar pedidos aunque tenga sesión válida.
 
 ## Dos "admins" distintos — no los confundas
 
@@ -70,11 +70,9 @@ El login (`login_view`) acepta **el nombre visible de la sucursal/cliente** (pue
 
 No hay integración ESC/POS ni driver de impresora: `imprimir_pedido` renderiza `ticket_print.html` con `@page { size: {ancho}mm {alto}mm; }` y un `<script>` que llama `window.print()` a los 350ms de cargar. El usuario elige la impresora térmica en el diálogo nativo del navegador. El alto del ticket es dinámico: se calcula sumando sólo las filas de productos reales, más `TICKET_PRINT_SAFETY_HEIGHT_MM` para evitar que el último borde se parta por redondeo del navegador/driver.
 
-**Punto crítico de mantenimiento**: el layout vive por partida doble.
-- `tickets.py` define constantes en unidades de Excel (`TICKET_COLUMN_WIDTHS`, alturas de fila) para `build_ticket_workbook` (descarga `.xlsx`).
-- Las mismas proporciones están replicadas en milímetros (`TICKET_COLUMN_WIDTHS_MM`, `TICKET_*_HEIGHT_MM`) para el HTML de impresión.
+`tickets.py` define las proporciones en milímetros (`TICKET_COLUMN_WIDTHS_MM`, `TICKET_*_HEIGHT_MM`) para el HTML de impresión. Si cambias el tamaño del ticket, ancho de columnas o tipografía, revisa también los estilos de `ticket_print.html` y las pruebas de impresión.
 
-Si cambias el tamaño del ticket, ancho de columnas o tipografía, **actualiza ambos juegos de constantes** y revisa `pedidos/tests.py::test_login_crear_confirmar_y_excel`, que hace asserts exactos sobre anchos de columna, alturas de fila y `print_area` del workbook. Un cambio a medias rompe el test o desalinea Excel vs. impresión en papel real.
+Los reportes de aguas y sucursales comparten `latest_report_orders()`: por cada sucursal seleccionan el pedido **confirmado** más reciente dentro de las últimas 24 horas. Un pedido enviado no bloquea la búsqueda; se toma el siguiente confirmado anterior. Esta regla permite marcar como enviado un pedido ya atendido para que barbacoa, tortilla y consomé salgan del siguiente pedido pendiente de atención.
 
 ## Restricción horaria de pedidos
 
@@ -159,7 +157,7 @@ No hay linter, `pyproject.toml`, `pre-commit` ni CI configurados en el repo. Si 
 
 ## Tests — qué cubren y qué no romper
 
-`pedidos/tests.py` es la única fuente de verdad de comportamiento esperado: login por nombre de sucursal, crear/reemplazar item, confirmar pedido, descarga de Excel (con asserts exactos de dimensiones/estilos del ticket), vista de impresión, ocultamiento de precios unitarios en `/pedidos/` (hay un test que verifica explícitamente que `precio_unitario` y montos con `$` **no** aparecen en esa vista — es una regla de negocio, no un detalle visual), control de acceso admin vs. no-admin vs. operador de impresión, y el flujo completo de `/admin/configuracion/` (crear producto, precio, sucursal, cambiar contraseña). Antes de dar por buena cualquier modificación en `views.py`, `models.py` o `tickets.py`, corre `python manage.py test pedidos`.
+`pedidos/tests.py` es la única fuente de verdad de comportamiento esperado: login por nombre de sucursal, crear/reemplazar item, confirmar pedido, vista de impresión, cambios y reversión de estado, ocultamiento de precios unitarios en `/pedidos/` (hay un test que verifica explícitamente que `precio_unitario` y montos con `$` **no** aparecen en esa vista — es una regla de negocio, no un detalle visual), control de acceso admin vs. no-admin vs. operador de impresión, y el flujo completo de `/admin/configuracion/` (crear producto, precio, sucursal, cambiar contraseña). Antes de dar por buena cualquier modificación en `views.py`, `models.py` o `tickets.py`, corre `python manage.py test pedidos`.
 
 `PedidoFlowTests.setUp()` deja el horario de pedidos completamente abierto (`abrir_horario_completo()`) para que esos tests no dependan de la hora real en que corre la suite. `RestriccionHorariaTests` prueba explícitamente el bloqueo dentro/fuera de horario y el endpoint `/api/horarios/` usando ventanas de tiempo calculadas respecto a "ahora" (no horas fijas), precisamente para no ser flaky según la hora del día. `EnviarRecordatoriosCommandTests` prueba el management command (`--test` no manda correos reales, `--fuerza` ignora día/`recordatorios_habilitados`, sucursales sin correo quedan `saltado`) usando el backend de correo en memoria de Django (`django.core.mail.outbox`). Si tocas horarios o recordatorios, mantén ese patrón — no hardcodees horas absolutas en aserciones nuevas.
 

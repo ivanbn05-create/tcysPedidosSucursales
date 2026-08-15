@@ -1,24 +1,9 @@
 from decimal import Decimal
-from io import BytesIO
 
 from django.utils import timezone
-from openpyxl import Workbook
-from openpyxl.styles import Alignment, Border, Font, Side
-from openpyxl.worksheet.page import PageMargins
 
 from .models import Precio
 
-TICKET_COLUMN_WIDTHS = {
-    "A": 15.140625,
-    "B": 10.7109375,
-    "C": 10.140625,
-}
-TICKET_ROW_HEIGHTS = {
-    1: 21.75,
-    2: 16.5,
-    7: 23.25,
-}
-TICKET_DEFAULT_ITEM_ROW_HEIGHT = 26.25
 TICKET_HEADER_HEIGHT_MM = 7.67
 TICKET_DATE_HEIGHT_MM = 5.82
 TICKET_ITEM_HEIGHT_MM = 9.26
@@ -146,79 +131,3 @@ def ticket_context(pedido, items=None, etiquetas_por_item=None):
         "header_height_mm": TICKET_HEADER_HEIGHT_MM,
         "date_height_mm": TICKET_DATE_HEIGHT_MM,
     }
-
-
-def build_ticket_workbook(pedido):
-    wb = Workbook()
-    ws = wb.active
-    ws.title = "PEDIDOS"
-    ws.sheet_view.showGridLines = False
-    ws.freeze_panes = "A2"
-
-    rows = ticket_items(pedido)
-    last_row = len(rows) + 2
-
-    ws.merge_cells("A1:C1")
-    ws["A1"] = ticket_title(pedido)
-    ws["C2"] = ticket_date(pedido)
-    ws["C2"].number_format = "d-mmm"
-
-    for column, width in TICKET_COLUMN_WIDTHS.items():
-        ws.column_dimensions[column].width = width
-
-    for row_number in range(1, last_row + 1):
-        ws.row_dimensions[row_number].height = TICKET_ROW_HEIGHTS.get(
-            row_number,
-            TICKET_DEFAULT_ITEM_ROW_HEIGHT,
-        )
-
-    thin_black = Side(style="thin", color="000000")
-    table_border = Border(
-        left=thin_black,
-        right=thin_black,
-        top=thin_black,
-        bottom=thin_black,
-    )
-    title_font = Font(name="Calibri", size=16, bold=True)
-    product_font = Font(name="Calibri", size=10, bold=True)
-    quantity_font = Font(name="Calibri", size=9, bold=True)
-
-    ws["A1"].font = title_font
-    ws["A1"].alignment = Alignment(horizontal="center", vertical="center")
-    ws["C2"].font = Font(name="Calibri", size=11, bold=True)
-    ws["C2"].alignment = Alignment(horizontal="center", vertical="center")
-    ws["C2"].border = table_border
-
-    for offset, row in enumerate(rows, start=3):
-        product_cell = ws.cell(row=offset, column=1, value=row["producto"])
-        quantity_cell = ws.cell(row=offset, column=2, value=row["cantidad"])
-        blank_cell = ws.cell(row=offset, column=3, value="")
-
-        product_cell.font = product_font
-        product_cell.alignment = Alignment(vertical="center")
-        quantity_cell.font = quantity_font
-        quantity_cell.alignment = Alignment(horizontal="center", vertical="center")
-        blank_cell.alignment = Alignment(vertical="center")
-
-        for cell in (product_cell, quantity_cell, blank_cell):
-            cell.border = table_border
-
-    ws.print_area = f"A1:C{last_row}"
-    ws.page_margins = PageMargins(
-        left=0,
-        right=0,
-        top=0,
-        bottom=0,
-        header=0.31496062992125984,
-        footer=0.31496062992125984,
-    )
-    ws.page_setup.paperSize = "121"
-    ws.page_setup.scale = 90
-    ws.page_setup.orientation = "portrait"
-    ws.page_setup.horizontalDpi = 203
-    ws.page_setup.verticalDpi = 203
-
-    output = BytesIO()
-    wb.save(output)
-    output.seek(0)
-    return output
