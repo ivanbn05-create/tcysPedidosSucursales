@@ -459,7 +459,8 @@ class PedidoFlowTests(TestCase):
         self.assertNotContains(response, '<span class="brand-title">Pedidos</span>')
         self.assertNotContains(response, "$193.00")
         self.assertNotContains(response, "precio_unitario")
-        self.assertNotContains(response, "scheduleStatus")
+        self.assertContains(response, 'id="scheduleStatus"')
+        self.assertContains(response, '"dentro_horario": true')
         self.assertNotContains(response, "Total tentativo")
 
     def test_paginas_de_sesion_no_se_pueden_cachear(self):
@@ -512,6 +513,8 @@ class PedidoFlowTests(TestCase):
         self.assertNotIn("window.confirm(", pedidos_js)
         self.assertIn("askConfirm(", pedidos_js)
         self.assertIn("AbortController", pedidos_js)
+        self.assertIn("showResultModal(", pedidos_js)
+        self.assertIn('trace("confirmar_error"', pedidos_js)
 
     def test_log_cliente_registra_evento_y_no_toca_el_pedido(self):
         self.assertTrue(self.client.login(username="aguilas", password="Aguilas8445"))
@@ -781,6 +784,36 @@ class PedidoFlowTests(TestCase):
         html = response.content.decode()
         self.assertEqual(html.count('<template\n    id="print-macro-'), 1)
         self.assertEqual(html.count('<template\n    id="print-pedido-'), 1)
+
+    def test_admin_muestra_pedido_en_curso_aunque_no_este_confirmado(self):
+        self.assertTrue(
+            self.client.login(
+                username="brot_nueva_galicia",
+                password="Brot Nueva Galicia0846",
+            )
+        )
+        producto = Producto.objects.get(nombre="TORTILLA ESPECIAL")
+        response = self.client.post(
+            "/api/pedidos/crear-item/",
+            data=json.dumps({"producto_id": producto.id, "cantidad": "3"}),
+            content_type="application/json",
+        )
+        self.assertEqual(response.status_code, 200)
+        pedido = Pedido.objects.get(sucursal_cliente__nombre="Brot Nueva Galicia")
+        self.assertEqual(pedido.estado, Pedido.Estado.PENDIENTE)
+        self.assertIsNone(pedido.macropedido_id)
+
+        self.client.logout()
+        self.assertTrue(self.client.login(username="juancarlos", password="TocayosMO2026"))
+        dashboard = self.client.get("/admin/")
+
+        self.assertContains(dashboard, "Pedidos en curso")
+        self.assertContains(dashboard, f'data-pending-order-id="{pedido.id}"')
+        self.assertContains(dashboard, "TORTILLA ESPECIAL")
+        self.assertContains(
+            dashboard,
+            f'/admin/pedidos/nuevo/?sucursal={pedido.sucursal_cliente_id}',
+        )
 
     def test_admin_configura_ticket_precio_y_password(self):
         self.assertTrue(self.client.login(username="juancarlos", password="TocayosMO2026"))
@@ -1373,14 +1406,25 @@ class RestriccionHorariaTests(TestCase):
             content_type="application/json",
         )
 
-        response = self.client.post("/api/pedidos/confirmar/", content_type="application/json")
+        with self.assertLogs("pedidos.views", level="WARNING") as registro:
+            response = self.client.post(
+                "/api/pedidos/confirmar/",
+                content_type="application/json",
+            )
         self.assertEqual(response.status_code, 400)
         data = response.json()
         self.assertFalse(data["success"])
+        self.assertEqual(data["codigo"], "fuera_horario")
         self.assertIn("Pedidos cerrados", data["mensaje"])
+        self.assertFalse(data["horario"]["dentro_horario"])
+        self.assertIn("motivo=fuera_horario", "\n".join(registro.output))
 
         pedido = Pedido.objects.get(sucursal_cliente__nombre="Aguilas")
         self.assertEqual(pedido.estado, Pedido.Estado.PENDIENTE)
+
+        page = self.client.get("/pedidos/")
+        self.assertContains(page, 'id="scheduleStatus"')
+        self.assertContains(page, '"dentro_horario": false')
 
     def test_login_muestra_pedidos_cerrados_fuera_de_horario(self):
         inicio, fin = self._ventana_fuera_de_ahora()

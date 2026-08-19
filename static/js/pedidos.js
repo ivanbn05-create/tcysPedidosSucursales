@@ -6,11 +6,13 @@ document.addEventListener("DOMContentLoaded", () => {
     const selectedSucursalId = initialData.sucursal_id || null;
     let order = initialData.pedido || { items: [], total: "0.00" };
     let dailyProgress = initialData.progreso_diario || { cantidad: 0, maximo: 5 };
+    let schedule = initialData.horario || { aplica: false, dentro_horario: true };
     let selectedProduct = products[0] || null;
     let selectedItemId = null;
     let quantityInput = "";
     let replaceOnNextKey = false;
     let noticeTimer = null;
+    let resultModalTimer = null;
 
     const orderShell = document.querySelector(".order-shell");
     const productButtons = [...document.querySelectorAll(".product-button")];
@@ -24,12 +26,15 @@ document.addEventListener("DOMContentLoaded", () => {
     const totalAmount = document.getElementById("totalAmount");
     const itemCount = document.getElementById("itemCount");
     const notice = document.getElementById("notice");
+    const scheduleStatus = document.getElementById("scheduleStatus");
     const addButton = document.getElementById("addItem");
     const clearButton = document.getElementById("clearOrder");
     const confirmButton = document.getElementById("confirmOrder");
     const deleteSelectedButton = document.getElementById("deleteSelected");
     const modal = document.getElementById("successModal");
+    const successTitle = document.getElementById("successTitle");
     const successText = document.getElementById("successText");
+    const closeSuccess = document.getElementById("closeSuccess");
     const confirmModal = document.getElementById("confirmModal");
     const confirmText = document.getElementById("confirmText");
     const confirmAccept = document.getElementById("confirmAccept");
@@ -147,6 +152,9 @@ document.addEventListener("DOMContentLoaded", () => {
         }));
         if (!response.ok || !data.success) {
             const error = new Error(data.mensaje || `Error ${response.status}`);
+            error.status = response.status;
+            error.codigo = data.codigo;
+            error.horario = data.horario;
             error.progresoDiario = data.progreso_diario;
             throw error;
         }
@@ -158,9 +166,54 @@ document.addEventListener("DOMContentLoaded", () => {
         notice.classList.toggle("error", type === "error");
         notice.hidden = false;
         window.clearTimeout(noticeTimer);
-        noticeTimer = window.setTimeout(() => {
+        if (type !== "error") {
+            noticeTimer = window.setTimeout(() => {
+                notice.hidden = true;
+            }, 3200);
+        }
+    }
+
+    function showResultModal(title, message, type = "success") {
+        window.clearTimeout(resultModalTimer);
+        successTitle.textContent = title;
+        successText.textContent = message;
+        modal.classList.toggle("error", type === "error");
+        closeSuccess.textContent = type === "error" ? "Cerrar" : "Listo";
+        modal.hidden = false;
+        closeSuccess?.focus();
+        if (type !== "error") {
             notice.hidden = true;
-        }, 3200);
+            resultModalTimer = window.setTimeout(() => {
+                modal.hidden = true;
+            }, 3000);
+        }
+    }
+
+    function renderScheduleStatus() {
+        if (!scheduleStatus || !schedule.aplica) {
+            if (scheduleStatus) scheduleStatus.hidden = true;
+            return;
+        }
+        const open = schedule.dentro_horario !== false;
+        scheduleStatus.textContent =
+            schedule.mensaje || (open ? "Pedidos abiertos." : "Pedidos cerrados.");
+        scheduleStatus.classList.toggle("closed", !open);
+        scheduleStatus.hidden = false;
+    }
+
+    async function refreshScheduleStatus() {
+        if (!schedule.aplica || !apiUrls.horarios) return;
+        try {
+            const response = await fetch(apiUrls.horarios, {
+                headers: { Accept: "application/json" },
+                cache: "no-store",
+            });
+            if (!response.ok) return;
+            schedule = { ...schedule, ...(await response.json()) };
+            renderScheduleStatus();
+        } catch (error) {
+            // Conserva el ultimo estado conocido; el backend vuelve a validarlo.
+        }
     }
 
     let pendingConfirm = null;
@@ -443,6 +496,18 @@ document.addEventListener("DOMContentLoaded", () => {
             showNotice("Agrega al menos un producto.", "error");
             return;
         }
+        if (schedule.aplica && schedule.dentro_horario === false) {
+            trace("confirmar_bloqueado_horario", {
+                hora_actual: schedule.hora_actual,
+                hora_fin: schedule.hora_fin,
+            });
+            showResultModal(
+                "Pedidos cerrados",
+                `${schedule.mensaje} Tu pedido sigue guardado en curso.`,
+                "error",
+            );
+            return;
+        }
         const confirmation = [
             `El total mostrado (${money(order.total)}) es tentativo.`,
             "Puede cambiar en el ticket final de la compra.",
@@ -462,14 +527,23 @@ document.addEventListener("DOMContentLoaded", () => {
             replaceOnNextKey = false;
             setQuantityConfirmed(false);
             renderOrder();
-            successText.textContent = `${data.mensaje} Total de este pedido: ${money(data.total)}.`;
-            modal.hidden = false;
-            window.setTimeout(() => {
-                modal.hidden = true;
-            }, 3000);
+            showResultModal(
+                "Pedido confirmado",
+                `${data.mensaje} Total de este pedido: ${money(data.total)}.`,
+            );
         } catch (error) {
+            if (error.horario) {
+                schedule = { ...schedule, ...error.horario };
+                renderScheduleStatus();
+            }
             if (error.progresoDiario) renderDailyProgress(error.progresoDiario);
             showNotice(error.message, "error");
+            trace("confirmar_error", {
+                status: error.status || "red",
+                codigo: error.codigo || "sin_codigo",
+                mensaje: error.message,
+            });
+            showResultModal("No se pudo confirmar", error.message, "error");
         } finally {
             setBusy(false);
         }
@@ -497,7 +571,7 @@ document.addEventListener("DOMContentLoaded", () => {
     deleteSelectedButton.addEventListener("click", removeSelectedProduct);
     clearButton.addEventListener("click", clearOrder);
     confirmButton.addEventListener("click", confirmOrder);
-    document.getElementById("closeSuccess").addEventListener("click", () => {
+    closeSuccess.addEventListener("click", () => {
         modal.hidden = true;
     });
 
@@ -510,4 +584,7 @@ document.addEventListener("DOMContentLoaded", () => {
     selectProduct(selectedProduct?.id);
     renderDailyProgress();
     renderOrder();
+    renderScheduleStatus();
+    refreshScheduleStatus();
+    if (schedule.aplica) window.setInterval(refreshScheduleStatus, 60000);
 });

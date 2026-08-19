@@ -998,6 +998,22 @@ button.password-toggle:active {
     color: var(--red-dark);
 }
 
+.schedule-status {
+    padding: 10px 12px;
+    border: 1px solid #9ad9c1;
+    border-radius: 6px;
+    background: #e8f7f2;
+    color: #075f49;
+    font-size: 13px;
+    font-weight: 800;
+}
+
+.schedule-status.closed {
+    border-color: #f0aab0;
+    background: #ffe9ec;
+    color: var(--red-dark);
+}
+
 .empty-state {
     padding: 14px;
     border: 1px dashed var(--line);
@@ -1216,7 +1232,7 @@ button.password-toggle:active {
 
 .stats-grid {
     display: grid;
-    grid-template-columns: repeat(3, minmax(130px, 1fr));
+    grid-template-columns: repeat(4, minmax(120px, 1fr));
     gap: 10px;
 }
 
@@ -1310,6 +1326,38 @@ button.password-toggle:active {
     display: flex;
     flex-wrap: wrap;
     gap: 8px;
+}
+
+.in-progress-orders {
+    display: grid;
+    gap: 10px;
+}
+
+.admin-section-heading {
+    display: flex;
+    align-items: end;
+    justify-content: space-between;
+    gap: 16px;
+}
+
+.admin-section-heading h2 {
+    margin: 3px 0 0;
+    color: var(--blue);
+}
+
+.admin-section-heading small {
+    color: var(--muted);
+    font-weight: 700;
+}
+
+.in-progress-table {
+    min-width: 820px;
+}
+
+.in-progress-items {
+    display: grid;
+    gap: 3px;
+    font-size: 13px;
 }
 
 .macro-order-row > td {
@@ -1956,6 +2004,14 @@ button.password-toggle:active {
 
 .modal-backdrop[hidden] {
     display: none;
+}
+
+.modal-backdrop.error .modal {
+    border-top: 6px solid var(--red);
+}
+
+.modal-backdrop.error .modal h2 {
+    color: var(--red-dark);
 }
 
 .modal {

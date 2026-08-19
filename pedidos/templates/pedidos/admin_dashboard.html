@@ -32,6 +32,10 @@
         </div>
         <div class="stats-grid">
             <div class="stat-card">
+                <span>En curso</span>
+                <strong>{{ stats.en_curso }}</strong>
+            </div>
+            <div class="stat-card">
                 <span>Por enviar</span>
                 <strong>{{ stats.pendientes }}</strong>
             </div>
@@ -43,6 +47,56 @@
                 <span>Total hoy</span>
                 <strong>${{ stats.total_hoy|floatformat:2 }}</strong>
             </div>
+        </div>
+    </section>
+
+    <section class="in-progress-orders" aria-labelledby="inProgressTitle">
+        <div class="admin-section-heading">
+            <div>
+                <span class="eyebrow">Borradores guardados</span>
+                <h2 id="inProgressTitle">Pedidos en curso</h2>
+            </div>
+            <small>Se muestran aunque todav&iacute;a no hayan sido confirmados.</small>
+        </div>
+        <div class="table-wrap">
+            <table class="orders-table in-progress-table">
+                <thead>
+                    <tr>
+                        <th>Sucursal/Cliente</th>
+                        <th>Iniciado</th>
+                        <th>Productos</th>
+                        <th>Total provisional</th>
+                        <th>Acciones</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for pedido in pedidos_en_curso %}
+                    <tr data-pending-order-id="{{ pedido.id }}">
+                        <td data-label="Sucursal/Cliente"><strong>{{ pedido.sucursal_cliente.nombre }}</strong></td>
+                        <td data-label="Iniciado">{{ pedido.fecha_creacion_local|date:"d/m/Y H:i" }}</td>
+                        <td data-label="Productos">
+                            <div class="in-progress-items">
+                                {% for item in pedido.detalle_items %}
+                                <span>{{ item.producto }}: <strong>{{ item.cantidad }} {{ item.unidad }}</strong></span>
+                                {% endfor %}
+                            </div>
+                        </td>
+                        <td data-label="Total provisional">${{ pedido.total|floatformat:2 }}</td>
+                        <td class="actions-cell" data-label="Acciones">
+                            {% if can_manage_pedidos %}
+                            <a class="secondary-link compact" href="{% url 'admin_crear_pedido' %}?sucursal={{ pedido.sucursal_cliente_id }}">Abrir borrador</a>
+                            {% else %}
+                            <span class="status-pill pendiente">Pendiente</span>
+                            {% endif %}
+                        </td>
+                    </tr>
+                    {% empty %}
+                    <tr>
+                        <td colspan="5" class="table-empty">No hay pedidos en curso.</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
         </div>
     </section>
 

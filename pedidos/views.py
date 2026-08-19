@@ -283,6 +283,7 @@ def pedido_page_context(sucursal, pedido, admin_order_mode=False, sucursales=Non
         "limpiar_pedido": reverse("api_limpiar_pedido"),
         "confirmar_pedido": reverse("api_confirmar_pedido"),
         "log_cliente": reverse("api_log_cliente"),
+        "horarios": reverse("info_horarios"),
     }
     if admin_order_mode:
         api_urls = {
@@ -291,6 +292,7 @@ def pedido_page_context(sucursal, pedido, admin_order_mode=False, sucursales=Non
             "limpiar_pedido": reverse("admin_api_limpiar_pedido"),
             "confirmar_pedido": reverse("admin_api_confirmar_pedido"),
             "log_cliente": reverse("api_log_cliente"),
+            "horarios": reverse("info_horarios"),
         }
 
     return {
@@ -305,6 +307,7 @@ def pedido_page_context(sucursal, pedido, admin_order_mode=False, sucursales=Non
             "admin_order_mode": admin_order_mode,
             "api_urls": api_urls,
             "progreso_diario": progreso_diario,
+            "horario": horario_pedidos_data(aplica=not admin_order_mode),
         },
         "progreso_diario": progreso_diario,
         "segmentos_diarios": [
@@ -338,36 +341,30 @@ def validar_horario_pedidos():
     return dentro_horario, mensaje
 
 
-def horario_login_context():
+def horario_pedidos_data(aplica=True):
     config = get_configuracion()
+    ahora_dt = timezone.localtime()
     dentro_horario, mensaje = validar_horario_pedidos()
     return {
-        "horario_pedidos": {
-            "dentro_horario": dentro_horario,
-            "mensaje": mensaje,
-            "hora_inicio": config.hora_inicio_pedidos.strftime("%H:%M"),
-            "hora_fin": config.hora_fin_pedidos.strftime("%H:%M"),
-        }
+        "aplica": aplica,
+        "hora_inicio": config.hora_inicio_pedidos.strftime("%H:%M"),
+        "hora_fin": config.hora_fin_pedidos.strftime("%H:%M"),
+        "hora_actual": ahora_dt.strftime("%H:%M"),
+        "dentro_horario": dentro_horario,
+        "mensaje": mensaje,
     }
+
+
+def horario_login_context():
+    return {"horario_pedidos": horario_pedidos_data()}
 
 
 @never_cache
 def info_horarios(request):
     """Endpoint público (sin auth) que informa el horario vigente de aceptación
-    de pedidos, para que el frontend habilite/deshabilite el botón de confirmar."""
+    de pedidos, para que el frontend explique cualquier bloqueo antes de confirmar."""
 
-    config = get_configuracion()
-    ahora_dt = timezone.localtime()
-    dentro_horario, mensaje = validar_horario_pedidos()
-    return JsonResponse(
-        {
-            "hora_inicio": config.hora_inicio_pedidos.strftime("%H:%M"),
-            "hora_fin": config.hora_fin_pedidos.strftime("%H:%M"),
-            "hora_actual": ahora_dt.strftime("%H:%M"),
-            "dentro_horario": dentro_horario,
-            "mensaje": mensaje,
-        }
-    )
+    return JsonResponse(horario_pedidos_data())
 
 
 def decimal_to_str(value, places="0.01"):
@@ -721,7 +718,21 @@ def confirmar_pedido_sucursal(sucursal, validar_horario=True, validar_espera=Tru
     if validar_horario:
         es_valido, mensaje_horario = validar_horario_pedidos()
         if not es_valido:
-            return JsonResponse({"success": False, "mensaje": mensaje_horario}, status=400)
+            logger.warning(
+                "Confirmacion rechazada sucursal=%s motivo=fuera_horario hora=%s mensaje=%s",
+                sucursal.nombre,
+                timezone.localtime().strftime("%H:%M:%S"),
+                mensaje_horario,
+            )
+            return JsonResponse(
+                {
+                    "success": False,
+                    "codigo": "fuera_horario",
+                    "mensaje": mensaje_horario,
+                    "horario": horario_pedidos_data(),
+                },
+                status=400,
+            )
 
     fecha_confirmacion = timezone.now()
     fecha_pedido = timezone.localdate(fecha_confirmacion)
@@ -736,6 +747,10 @@ def confirmar_pedido_sucursal(sucursal, validar_horario=True, validar_espera=Tru
                 estado__in=ORDER_HISTORY_STATES,
                 eliminado=False,
             ).exists():
+                logger.warning(
+                    "Confirmacion rechazada sucursal=%s motivo=espera_minima",
+                    sucursal_bloqueada.nombre,
+                )
                 return JsonResponse(
                     {
                         "success": False,
@@ -756,6 +771,10 @@ def confirmar_pedido_sucursal(sucursal, validar_horario=True, validar_espera=Tru
             .first()
         )
         if pedido is None or not pedido.items.exists():
+            logger.warning(
+                "Confirmacion rechazada sucursal=%s motivo=pedido_vacio",
+                sucursal_bloqueada.nombre,
+            )
             return JsonResponse(
                 {"success": False, "mensaje": "No hay productos en el pedido."},
                 status=400,
@@ -771,6 +790,11 @@ def confirmar_pedido_sucursal(sucursal, validar_horario=True, validar_espera=Tru
         )
         pedidos_confirmados = macropedido.cantidad_pedidos if macropedido else 0
         if pedidos_confirmados >= MAX_PEDIDOS_POR_DIA:
+            logger.warning(
+                "Confirmacion rechazada sucursal=%s motivo=limite_diario pedidos=%s",
+                sucursal_bloqueada.nombre,
+                pedidos_confirmados,
+            )
             progreso = {
                 "cantidad": pedidos_confirmados,
                 "maximo": MAX_PEDIDOS_POR_DIA,
@@ -1798,6 +1822,33 @@ def preparar_macropedidos_para_interfaz(macropedidos):
     return macropedidos, inline_print_orders
 
 
+def preparar_pedidos_en_curso_para_interfaz():
+    pedidos = list(
+        Pedido.objects.filter(
+            estado=Pedido.Estado.PENDIENTE,
+            eliminado=False,
+            items__isnull=False,
+        )
+        .select_related("sucursal_cliente")
+        .prefetch_related("items__producto")
+        .distinct()
+        .order_by("-fecha_creacion", "-id")
+    )
+    for pedido in pedidos:
+        items = list(pedido.items.all())
+        pedido.detalle_items = [
+            {
+                "producto": item.producto.nombre,
+                "cantidad": decimal_to_str(item.cantidad, "0.001"),
+                "unidad": item.producto.unidad_corta,
+            }
+            for item in items
+        ]
+        pedido.items_count = len(items)
+        pedido.fecha_creacion_local = timezone.localtime(pedido.fecha_creacion)
+    return pedidos
+
+
 @never_cache
 @dashboard_required
 def admin_dashboard(request):
@@ -1842,6 +1893,7 @@ def admin_dashboard(request):
     macropedidos_list, inline_print_orders = preparar_macropedidos_para_interfaz(
         page_obj.object_list
     )
+    pedidos_en_curso = preparar_pedidos_en_curso_para_interfaz()
 
     pagination_query = request.GET.copy()
     pagination_query.pop("page", None)
@@ -1850,6 +1902,7 @@ def admin_dashboard(request):
     stats_base = MacroPedido.objects.filter(eliminado=False)
     stats = {
         "pendientes": stats_base.filter(estado=MacroPedido.Estado.CONFIRMADO).count(),
+        "en_curso": len(pedidos_en_curso),
         "total_hoy": stats_base.filter(fecha_pedido=hoy).aggregate(total=Sum("total"))["total"]
         or Decimal("0.00"),
         "pedidos_hoy": stats_base.filter(fecha_pedido=hoy).count(),
@@ -1857,6 +1910,7 @@ def admin_dashboard(request):
 
     context = {
         "macropedidos": macropedidos_list,
+        "pedidos_en_curso": pedidos_en_curso,
         "inline_print_orders": inline_print_orders,
         "page_obj": page_obj,
         "pagination_query": pagination_query.urlencode(),
