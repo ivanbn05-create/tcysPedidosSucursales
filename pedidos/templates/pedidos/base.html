@@ -6,7 +6,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>{% block title %}Los Tocayos Pedidos{% endblock %}</title>
     <link rel="icon" href="{% static 'img/mainlogo.webp' %}">
-    <link rel="stylesheet" href="{% static 'css/styles.css' %}?v=20260819-1">
+    <link rel="stylesheet" href="{% static 'css/styles.css' %}?v=20260819-2">
     <link rel="stylesheet" href="{% static 'css/responsive.css' %}?v=20260819-1">
 </head>
 <body class="{% block body_class %}{% endblock %}">
@@ -46,6 +46,17 @@
 
     {% block content %}{% endblock %}
     <script src="{% static 'js/inline_print.js' %}?v=20260718-3" defer></script>
+    {% if request.user.is_authenticated %}
+    <div
+        id="clientSessionConfig"
+        data-user-id="{{ request.user.id }}"
+        data-audit-url="{% url 'api_log_cliente' %}"
+        data-heartbeat-url="{% url 'api_heartbeat_sesion' %}"
+        data-login-url="{% url 'login' %}"
+        hidden
+    ></div>
+    <script src="{% static 'js/client_session.js' %}?v=20260819-2" defer></script>
+    {% endif %}
     {% block scripts %}{% endblock %}
 </body>
 </html>

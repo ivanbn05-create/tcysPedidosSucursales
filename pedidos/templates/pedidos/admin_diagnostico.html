@@ -1,0 +1,75 @@
+{% extends "pedidos/base.html" %}
+
+{% block title %}Diagnóstico | Los Tocayos{% endblock %}
+{% block body_class %}admin-page{% endblock %}
+
+{% block content %}
+<main class="admin-shell diagnostic-shell">
+    <section class="admin-header diagnostic-header">
+        <div>
+            <span class="eyebrow">Auditoría persistente</span>
+            <h1>Diagnóstico</h1>
+            <p>Correlaciona el toque del usuario, el controlador del navegador y la respuesta del servidor mediante el mismo ID de intento.</p>
+        </div>
+        <a class="secondary-link" href="{% url 'admin_dashboard' %}">Volver a pedidos</a>
+    </section>
+
+    <section class="diagnostic-section">
+        <div class="admin-section-heading">
+            <div><span class="eyebrow">Control de acceso</span><h2>Sesiones por usuario</h2></div>
+            <small>Una sesión vigente por cuenta; las vencidas se reemplazan automáticamente.</small>
+        </div>
+        <div class="table-wrap">
+            <table class="orders-table">
+                <thead><tr><th>Usuario</th><th>Estado</th><th>Última actividad</th><th>IP</th><th>Dispositivo</th></tr></thead>
+                <tbody>
+                    {% for sesion in sesiones %}
+                    <tr>
+                        <td><strong>{{ sesion.usuario.username }}</strong></td>
+                        <td><span class="status-pill {% if sesion.vigente %}confirmado{% else %}pendiente{% endif %}">{% if sesion.vigente %}Vigente{% else %}Vencida{% endif %}</span></td>
+                        <td>{{ sesion.ultima_actividad|date:"d/m/Y H:i:s" }}</td>
+                        <td>{{ sesion.direccion_ip|default:"—" }}</td>
+                        <td class="diagnostic-agent">{{ sesion.dispositivo|default:"No identificado" }}</td>
+                    </tr>
+                    {% empty %}<tr><td colspan="5" class="table-empty">No hay sesiones registradas.</td></tr>{% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </section>
+
+    <section class="diagnostic-section">
+        <div class="admin-section-heading">
+            <div><span class="eyebrow">Últimos 250 registros</span><h2>Eventos de confirmación</h2></div>
+        </div>
+        <form class="filters" method="get">
+            <select name="sucursal" aria-label="Sucursal o cliente">
+                <option value="">Todas las sucursales</option>
+                {% for sucursal in sucursales %}<option value="{{ sucursal.id }}" {% if filters.sucursal == sucursal.id|stringformat:"s" %}selected{% endif %}>{{ sucursal.nombre }}</option>{% endfor %}
+            </select>
+            <select name="evento" aria-label="Evento">
+                <option value="">Todos los eventos</option>
+                {% for tipo in tipos_evento %}<option value="{{ tipo }}" {% if filters.evento == tipo %}selected{% endif %}>{{ tipo }}</option>{% endfor %}
+            </select>
+            <button class="primary-button compact" type="submit">Filtrar</button>
+            <a class="secondary-link" href="{% url 'admin_diagnostico' %}">Limpiar</a>
+        </form>
+        <div class="table-wrap">
+            <table class="orders-table diagnostic-events">
+                <thead><tr><th>Recibido</th><th>Sucursal</th><th>Evento</th><th>ID intento</th><th>Dispositivo</th><th>Detalle</th></tr></thead>
+                <tbody>
+                    {% for evento in eventos %}
+                    <tr>
+                        <td>{{ evento.recibido_en|date:"d/m/Y H:i:s" }}</td>
+                        <td>{{ evento.sucursal_cliente.nombre|default:evento.usuario.username }}</td>
+                        <td><strong>{{ evento.evento }}</strong>{% if evento.ocurrido_en %}<small class="diagnostic-time">Navegador: {{ evento.ocurrido_en|date:"H:i:s" }}</small>{% endif %}</td>
+                        <td class="diagnostic-id">{{ evento.intento_id|default:"—" }}</td>
+                        <td class="diagnostic-id">{{ evento.dispositivo_id|default:"—" }}</td>
+                        <td class="diagnostic-detail">{{ evento.detalle }}</td>
+                    </tr>
+                    {% empty %}<tr><td colspan="6" class="table-empty">No hay eventos con esos filtros.</td></tr>{% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </section>
+</main>
+{% endblock %}

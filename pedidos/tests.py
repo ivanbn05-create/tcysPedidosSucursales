@@ -10,14 +10,15 @@ from django.contrib.auth.models import User
 from django.core import mail
 from django.core.cache import cache
 from django.core.management import call_command
-from django.db import connection
-from django.test import TestCase
+from django.db import IntegrityError, connection, transaction
+from django.test import Client, TestCase, override_settings
 from django.test.utils import CaptureQueriesContext
 from django.utils import timezone
 from .apps import COMANDOS_SIN_SCHEDULER
 from .models import (
     CONFIGURACION_CACHE_KEY,
     Configuracion,
+    EventoCliente,
     ItemPedido,
     LogRecordatorio,
     MacroPedido,
@@ -25,6 +26,7 @@ from .models import (
     Precio,
     Producto,
     SucursalCliente,
+    SesionActiva,
 )
 from .seed import CLIENTES_DEMO, password_for_cliente, seed_demo_data
 
@@ -531,6 +533,9 @@ class PedidoFlowTests(TestCase):
         self.assertTrue(response.json()["success"])
         self.assertIn("confirmar_click", "\n".join(registro.output))
         self.assertEqual(Pedido.objects.count(), pedidos_antes)
+        evento = EventoCliente.objects.get()
+        self.assertEqual(evento.evento, "confirmar_click")
+        self.assertEqual(evento.detalle["items"], 3)
 
     def test_log_cliente_requiere_sesion(self):
         response = self.client.post(
@@ -1376,6 +1381,155 @@ class PedidoFlowTests(TestCase):
         self.assertTrue(
             SucursalCliente.objects.get(nombre="Santa Anita").usuario.check_password("Santa Anita5702")
         )
+
+
+@override_settings(ACTIVE_SESSION_TTL_SECONDS=600)
+class SesionUnicaYAuditoriaTests(TestCase):
+    def setUp(self):
+        seed_demo_data()
+        abrir_horario_completo()
+
+    def login_web(self, client, device_id):
+        return client.post(
+            "/login/",
+            {
+                "username": "Brot Nueva Galicia",
+                "password": "Brot Nueva Galicia0846",
+                "device_id": device_id,
+            },
+        )
+
+    def test_segundo_dispositivo_se_bloquea_y_puede_tomar_control(self):
+        dispositivo_a = Client()
+        dispositivo_b = Client()
+
+        self.assertEqual(self.login_web(dispositivo_a, "dispositivo-a-123").status_code, 302)
+        bloqueado = self.login_web(dispositivo_b, "dispositivo-b-456")
+        self.assertEqual(bloqueado.status_code, 200)
+        self.assertContains(bloqueado, "Sesión iniciada en otro dispositivo")
+        self.assertContains(bloqueado, "Cerrar la otra sesión e ingresar aquí")
+
+        toma_control = dispositivo_b.post(
+            "/login/",
+            {"force_takeover": "1", "device_id": "dispositivo-b-456"},
+        )
+        self.assertEqual(toma_control.status_code, 302)
+        sesion = SesionActiva.objects.get()
+        self.assertEqual(sesion.dispositivo_id, "dispositivo-b-456")
+
+        expulsado = dispositivo_a.get("/pedidos/")
+        self.assertEqual(expulsado.status_code, 302)
+        self.assertEqual(expulsado.url, "/login/")
+
+    def test_sesion_vencida_permite_otro_dispositivo_tras_cold_start(self):
+        dispositivo_a = Client()
+        dispositivo_b = Client()
+        self.login_web(dispositivo_a, "dispositivo-a-123")
+        SesionActiva.objects.update(
+            ultima_actividad=timezone.now() - timedelta(minutes=11)
+        )
+
+        respuesta = self.login_web(dispositivo_b, "dispositivo-b-456")
+        self.assertEqual(respuesta.status_code, 302)
+        self.assertEqual(
+            SesionActiva.objects.get().dispositivo_id,
+            "dispositivo-b-456",
+        )
+
+    def test_heartbeat_renueva_arrendamiento_persistente(self):
+        dispositivo = Client()
+        self.login_web(dispositivo, "dispositivo-a-123")
+        anterior = timezone.now() - timedelta(minutes=5)
+        SesionActiva.objects.update(ultima_actividad=anterior)
+
+        respuesta = dispositivo.post("/api/sesion/heartbeat/")
+        self.assertEqual(respuesta.status_code, 200)
+        self.assertGreater(SesionActiva.objects.get().ultima_actividad, anterior)
+
+    def test_api_avisa_si_la_sesion_fue_reemplazada(self):
+        dispositivo_a = Client()
+        dispositivo_b = Client()
+        self.login_web(dispositivo_a, "dispositivo-a-123")
+        self.login_web(dispositivo_b, "dispositivo-b-456")
+        dispositivo_b.post(
+            "/login/",
+            {"force_takeover": "1", "device_id": "dispositivo-b-456"},
+        )
+
+        respuesta = dispositivo_a.post(
+            "/api/pedidos/confirmar/",
+            data="{}",
+            content_type="application/json",
+        )
+        self.assertEqual(respuesta.status_code, 401)
+        self.assertEqual(respuesta.json()["codigo"], "sesion_reemplazada")
+        login = dispositivo_a.get("/login/?sesion=reemplazada")
+        self.assertContains(login, "se inició en otro dispositivo")
+
+    def test_cola_de_auditoria_es_idempotente_y_correlaciona_intento(self):
+        dispositivo = Client()
+        self.login_web(dispositivo, "dispositivo-a-123")
+        evento_id = "ca761232-ed42-11ce-bacd-00aa0057b223"
+        evento = {
+            "evento_id": evento_id,
+            "evento": "confirmar_click_captura",
+            "intento_id": "intento-123",
+            "dispositivo_id": "dispositivo-a-123",
+            "ocurrido_en": timezone.now().isoformat(),
+            "detalle": {"items": 3},
+        }
+        for _ in range(2):
+            respuesta = dispositivo.post(
+                "/api/pedidos/log-cliente/",
+                data=json.dumps({"eventos": [evento]}),
+                content_type="application/json",
+            )
+            self.assertEqual(respuesta.status_code, 200)
+
+        self.assertEqual(EventoCliente.objects.filter(evento_id=evento_id).count(), 1)
+        guardado = EventoCliente.objects.get(evento_id=evento_id)
+        self.assertEqual(guardado.intento_id, "intento-123")
+        self.assertEqual(guardado.detalle["items"], 3)
+
+    def test_confirmacion_guarda_inicio_y_resultado_con_mismo_intento(self):
+        dispositivo = Client()
+        self.login_web(dispositivo, "dispositivo-a-123")
+        producto = Producto.objects.get(nombre="LITRO DE BARBACOA")
+        dispositivo.post(
+            "/api/pedidos/crear-item/",
+            data=json.dumps({"producto_id": producto.id, "cantidad": "1"}),
+            content_type="application/json",
+        )
+
+        respuesta = dispositivo.post(
+            "/api/pedidos/confirmar/",
+            data="{}",
+            content_type="application/json",
+            HTTP_X_ORDER_ATTEMPT_ID="intento-confirmacion-1",
+            HTTP_X_CLIENT_DEVICE="dispositivo-a-123",
+        )
+        self.assertEqual(respuesta.status_code, 200)
+        eventos = list(
+            EventoCliente.objects.filter(intento_id="intento-confirmacion-1")
+            .order_by("recibido_en")
+            .values_list("evento", flat=True)
+        )
+        self.assertEqual(
+            eventos,
+            ["confirmar_solicitud_servidor", "confirmar_exito_servidor"],
+        )
+
+    def test_admin_puede_consultar_diagnostico(self):
+        self.assertTrue(self.client.login(username="juancarlos", password="TocayosMO2026"))
+        respuesta = self.client.get("/admin/diagnostico/")
+        self.assertEqual(respuesta.status_code, 200)
+        self.assertContains(respuesta, "Auditoría persistente")
+
+    def test_base_de_datos_impide_dos_borradores_por_sucursal(self):
+        sucursal = SucursalCliente.objects.get(nombre="Brot Nueva Galicia")
+        Pedido.objects.create(sucursal_cliente=sucursal, usuario_nombre=sucursal.nombre)
+        with self.assertRaises(IntegrityError), transaction.atomic():
+            Pedido.objects.create(sucursal_cliente=sucursal, usuario_nombre=sucursal.nombre)
 
 
 class RestriccionHorariaTests(TestCase):

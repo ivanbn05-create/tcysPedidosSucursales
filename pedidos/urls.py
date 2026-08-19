@@ -24,6 +24,7 @@ urlpatterns = [
     path("api/pedidos/limpiar/", views.limpiar_pedido, name="api_limpiar_pedido"),
     path("api/pedidos/confirmar/", views.confirmar_pedido, name="api_confirmar_pedido"),
     path("api/pedidos/log-cliente/", views.log_cliente, name="api_log_cliente"),
+    path("api/sesion/heartbeat/", views.heartbeat_sesion, name="api_heartbeat_sesion"),
     path("api/horarios/", views.info_horarios, name="info_horarios"),
     path("admin/", views.admin_dashboard, name="admin_dashboard"),
     path("admin/pedidos/nuevo/", views.admin_crear_pedido_view, name="admin_crear_pedido"),
@@ -33,6 +34,7 @@ urlpatterns = [
     path("admin/api/pedidos/confirmar/", views.admin_confirmar_pedido, name="admin_api_confirmar_pedido"),
     path("admin/datos/", views.admin_datos, name="admin_datos"),
     path("admin/configuracion/", views.admin_configuracion, name="admin_configuracion"),
+    path("admin/diagnostico/", views.admin_diagnostico, name="admin_diagnostico"),
     path("admin/aguas/imprimir/", views.imprimir_aguas, name="imprimir_aguas"),
     path("admin/sucursales/imprimir/", views.imprimir_sucursales, name="imprimir_sucursales"),
     path(

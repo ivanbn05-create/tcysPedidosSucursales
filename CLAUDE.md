@@ -20,7 +20,7 @@ Todo el código, UI y mensajes están en español (México). Mantén ese idioma 
 ```
 proyecto/          config del proyecto: settings.py, urls.py (incluye pedidos.urls + django-admin)
 pedidos/
-  models.py        SucursalCliente, Producto, Precio, MacroPedido, Pedido, ItemPedido, Configuracion, LogRecordatorio
+  models.py        SucursalCliente, Producto, Precio, MacroPedido, Pedido, ItemPedido, SesionActiva, EventoCliente, Configuracion, LogRecordatorio
   views.py         TODA la lógica de negocio vive aquí (sin services/ separado)
   urls.py          rutas de la app (home, login, pedidos, api/*, admin/*)
   admin.py         Django admin nativo (django-admin/, uso interno/dev, no confundir con /admin/)
@@ -61,6 +61,10 @@ No existe capa de "services" ni serializers: las vistas hacen queries, validaci�
 El login (`login_view`) acepta **el nombre visible de la sucursal/cliente** (puede tener espacios y mayúsculas, ej. `"Brot Nueva Galicia"`) buscando `SucursalCliente.nombre__iexact`, y si existe usa el `username` interno real para autenticar. Si no matchea ninguna sucursal, cae a buscar `User.username__iexact` directo (permite entrar con el username técnico, ej. `brot_nueva_galicia`, útil para pruebas). No hay registro público ni recuperación de contraseña.
 
 `is_staff` o `is_superuser` → redirige a `/admin/` (panel propio con permisos completos). El grupo `Operador de impresion` también redirige a `/admin/`, pero solo puede ver pedidos e imprimirlos; no puede entrar a configuración, cambiar estados ni eliminar pedidos. Cualquier otro usuario autenticado con perfil de sucursal activo → `/pedidos/`. Un usuario sin `SucursalCliente` activo asociado no puede entrar a capturar pedidos aunque tenga sesión válida.
+
+Cada usuario admite un solo dispositivo activo mediante `SesionActiva`, un arrendamiento persistente en la base de datos validado por `SesionUnicaMiddleware`. El navegador visible renueva `/api/sesion/heartbeat/` cada minuto; el arrendamiento vence después de `ACTIVE_SESSION_TTL_SECONDS` (default 600), por lo que una sesión abandonada no bloquea un inicio posterior ni sobrevive artificialmente a un cold start de Render. Un login con contraseña correcta puede mostrar el conflicto y ofrecer una toma de control explícita. No cambies esto a caché local de proceso: se perdería en spin-down y no sería seguro con varios workers.
+
+`EventoCliente` conserva en base de datos la auditoría del flujo de confirmación. `static/js/client_session.js` guarda primero una cola idempotente en `localStorage` y correlaciona por `intento_id` los eventos `confirmar_click_captura` / `confirmar_click` / `confirmar_envio_iniciado` con `confirmar_solicitud_servidor` y su resultado. Se consulta en `/admin/diagnostico/` o `/django-admin/`. La ausencia total de eventos nunca prueba que el usuario no tocó el botón: un dispositivo sin JavaScript, sin almacenamiento o que no vuelva a conectarse no puede entregar evidencia.
 
 ## Dos "admins" distintos — no los confundas
 
@@ -138,6 +142,8 @@ Vía `python-decouple`, leídas de `.env` (gitignored) o del entorno de Render: 
 Para recordatorios por correo (ver esa sección arriba): `EMAIL_BACKEND` (default: consola si `DEBUG=True`, SMTP si no), `EMAIL_HOST` (default `smtp.gmail.com`), `EMAIL_PORT` (default `587`), `EMAIL_USE_TLS` (default `True`), `EMAIL_HOST_USER`, `EMAIL_HOST_PASSWORD` (contraseña de aplicación de Gmail, **nunca** la contraseña normal de la cuenta), `DEFAULT_FROM_EMAIL`. Trátalas con el mismo cuidado que `SECRET_KEY`/`DATABASE_URL`: nunca las imprimas ni las loguees.
 
 Para el scheduler (ver esa sección arriba): `SCHEDULER_ENABLED` (default `True`; ponlo en `False` cuando el proyecto pase a VPS con cron nativo).
+
+Para sesión única: `ACTIVE_SESSION_TTL_SECONDS` (default `600`). Debe mantenerse por debajo de los 15 minutos de inactividad que duermen Render Free y muy por encima del heartbeat de 60 segundos.
 
 ## Comandos habituales
 

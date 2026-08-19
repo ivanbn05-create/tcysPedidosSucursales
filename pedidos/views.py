@@ -1,12 +1,13 @@
 import json
 import logging
+import uuid
 from collections import defaultdict
 from datetime import datetime, timedelta
 from decimal import Decimal, InvalidOperation
 from functools import wraps
 
 from django.contrib import messages
-from django.contrib.auth import authenticate, login, logout, update_session_auth_hash
+from django.contrib.auth import authenticate, logout, update_session_auth_hash
 from django.contrib.auth.decorators import login_required
 from django.contrib.auth.models import User
 from django.core.cache import cache
@@ -18,6 +19,7 @@ from django.http import JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
 from django.utils import timezone
+from django.utils.dateparse import parse_datetime
 from django.views.decorators.cache import never_cache
 from django.views.decorators.http import require_http_methods, require_POST
 
@@ -25,12 +27,23 @@ from .models import (
     CONFIGURACION_CACHE_KEY,
     MAX_PEDIDOS_POR_DIA,
     Configuracion,
+    EventoCliente,
     ItemPedido,
     Pedido,
     MacroPedido,
     Precio,
     Producto,
     SucursalCliente,
+    SesionActiva,
+)
+from .sesiones import (
+    DEVICE_COOKIE_NAME,
+    SESSION_TOKEN_KEY,
+    direccion_ip,
+    hash_sesion,
+    intentar_iniciar_sesion,
+    liberar_sesion,
+    sesion_esta_vigente,
 )
 from .tickets import format_ticket_quantity, ticket_context, ticket_context_from_rows
 
@@ -146,7 +159,27 @@ def login_view(request):
     if request.user.is_authenticated:
         return redirect("home")
 
-    if request.method == "POST":
+    context = horario_login_context()
+    if request.method == "GET" and request.GET.get("sesion") == "reemplazada":
+        messages.error(
+            request,
+            "Tu sesión se cerró porque la cuenta se inició en otro dispositivo.",
+        )
+
+    if request.method == "POST" and request.POST.get("force_takeover"):
+        pendiente = request.session.get("pedidos_takeover", {})
+        creado_en = pendiente.get("creado_en", 0)
+        vigente = timezone.now().timestamp() - creado_en <= 300
+        user = User.objects.filter(pk=pendiente.get("user_id")).first() if vigente else None
+        if user is not None:
+            iniciada, _ = intentar_iniciar_sesion(request, user, forzar=True)
+            request.session.pop("pedidos_takeover", None)
+            if iniciada:
+                messages.info(request, "Se cerró la sesión del otro dispositivo.")
+                return redirect("admin_dashboard" if can_view_admin_dashboard(user) else "pedidos")
+        messages.error(request, "La autorización para reemplazar la sesión expiró. Ingresa de nuevo.")
+
+    elif request.method == "POST":
         identificador = request.POST.get("username", "").strip()
         password = request.POST.get("password", "")
         username = identificador
@@ -165,17 +198,34 @@ def login_view(request):
 
         user = authenticate(request, username=username, password=password)
         if user is not None:
-            login(request, user)
-            return redirect("admin_dashboard" if can_view_admin_dashboard(user) else "pedidos")
+            iniciada, sesion_conflictiva = intentar_iniciar_sesion(request, user)
+            if iniciada:
+                request.session.pop("pedidos_takeover", None)
+                return redirect("admin_dashboard" if can_view_admin_dashboard(user) else "pedidos")
 
-        messages.error(request, "Usuario o contraseña incorrectos.")
+            request.session["pedidos_takeover"] = {
+                "user_id": user.pk,
+                "creado_en": timezone.now().timestamp(),
+            }
+            context.update(
+                {
+                    "sesion_conflictiva": True,
+                    "dispositivo_conflictivo": sesion_conflictiva.dispositivo,
+                    "ultima_actividad_conflictiva": sesion_conflictiva.ultima_actividad,
+                }
+            )
+            messages.error(request, "Esta cuenta ya tiene una sesión iniciada en otro dispositivo.")
+        else:
+            request.session.pop("pedidos_takeover", None)
+            messages.error(request, "Usuario o contraseña incorrectos.")
 
-    return render(request, "pedidos/login.html", horario_login_context())
+    return render(request, "pedidos/login.html", context)
 
 
 @never_cache
 @require_http_methods(["GET", "POST"])
 def logout_view(request):
+    liberar_sesion(request)
     logout(request)
     return redirect("login")
 
@@ -623,6 +673,74 @@ def parse_json_body(request):
         return None
 
 
+def normalizar_detalle_evento(detalle):
+    if not isinstance(detalle, dict):
+        return {}
+    normalizado = {}
+    for clave, valor in list(detalle.items())[:20]:
+        clave_limpia = str(clave)[:50]
+        if isinstance(valor, (str, int, float, bool)) or valor is None:
+            normalizado[clave_limpia] = str(valor)[:500] if isinstance(valor, str) else valor
+        else:
+            normalizado[clave_limpia] = str(valor)[:500]
+    return normalizado
+
+
+def parse_fecha_cliente(value):
+    fecha = parse_datetime(str(value or ""))
+    if fecha is None:
+        return None
+    if timezone.is_naive(fecha):
+        fecha = timezone.make_aware(fecha, timezone.get_current_timezone())
+    return fecha
+
+
+def registrar_evento_persistente(request, evento, detalle=None, payload=None):
+    """Guarda evidencia de cliente/servidor sin interrumpir el flujo de pedido."""
+
+    payload = payload if isinstance(payload, dict) else {}
+    try:
+        evento_id = uuid.UUID(str(payload.get("evento_id"))) if payload.get("evento_id") else uuid.uuid4()
+    except (ValueError, TypeError, AttributeError):
+        evento_id = uuid.uuid4()
+
+    intento_id = str(
+        payload.get("intento_id") or request.headers.get("X-Order-Attempt-ID", "")
+    )[:64]
+    dispositivo_id = str(
+        payload.get("dispositivo_id")
+        or request.headers.get("X-Client-Device", "")
+        or request.COOKIES.get(DEVICE_COOKIE_NAME, "")
+    )[:64]
+    user_agent = str(
+        payload.get("ua") or request.META.get("HTTP_USER_AGENT", "")
+    )[:300]
+    sucursal = sucursal_para_usuario(request.user) if request.user.is_authenticated else None
+    token = request.session.get(SESSION_TOKEN_KEY, "")
+
+    try:
+        registro, _ = EventoCliente.objects.get_or_create(
+            evento_id=evento_id,
+            defaults={
+                "usuario": request.user if request.user.is_authenticated else None,
+                "sucursal_cliente": sucursal,
+                "evento": str(evento or "desconocido")[:80],
+                "intento_id": intento_id,
+                "dispositivo_id": dispositivo_id,
+                "sesion_hash": hash_sesion(token),
+                "ocurrido_en": parse_fecha_cliente(payload.get("ocurrido_en")),
+                "detalle": normalizar_detalle_evento(detalle or payload.get("detalle") or {}),
+                "user_agent": user_agent,
+                "direccion_ip": direccion_ip(request),
+            },
+        )
+        return registro
+    except Exception:
+        # La auditoría nunca debe impedir capturar o confirmar un pedido.
+        logger.exception("No se pudo persistir el evento de auditoría %s", evento)
+        return None
+
+
 def parse_cantidad(value):
     try:
         cantidad = Decimal(str(value)).quantize(Decimal("0.001"))
@@ -639,17 +757,6 @@ def sucursal_desde_payload(payload):
 
 
 def guardar_item_pedido(sucursal, payload):
-    progreso = progreso_pedidos_diario(sucursal)
-    if progreso["limite_alcanzado"]:
-        return JsonResponse(
-            {
-                "success": False,
-                "mensaje": "Ya se confirmaron los 5 pedidos permitidos para hoy.",
-                "progreso_diario": progreso,
-            },
-            status=409,
-        )
-
     producto = get_object_or_404(Producto, pk=payload.get("producto_id"))
     cantidad = parse_cantidad(payload.get("cantidad"))
     if cantidad is None:
@@ -660,7 +767,19 @@ def guardar_item_pedido(sucursal, payload):
         return JsonResponse({"success": False, "mensaje": "No hay precio vigente."}, status=400)
 
     with transaction.atomic():
-        pedido = pedido_pendiente(sucursal, crear=True)
+        sucursal_bloqueada = SucursalCliente.objects.select_for_update().get(pk=sucursal.pk)
+        progreso = progreso_pedidos_diario(sucursal_bloqueada)
+        if progreso["limite_alcanzado"]:
+            return JsonResponse(
+                {
+                    "success": False,
+                    "mensaje": "Ya se confirmaron los 5 pedidos permitidos para hoy.",
+                    "progreso_diario": progreso,
+                },
+                status=409,
+            )
+
+        pedido = pedido_pendiente(sucursal_bloqueada, crear=True)
         item, created = ItemPedido.objects.select_for_update().get_or_create(
             pedido=pedido,
             producto=producto,
@@ -688,15 +807,17 @@ def guardar_item_pedido(sucursal, payload):
 
 
 def eliminar_item_pedido(sucursal, payload):
-    pedido = pedido_pendiente(sucursal)
-    item = get_object_or_404(
-        ItemPedido,
-        pk=payload.get("item_id"),
-        pedido=pedido,
-        pedido__estado=Pedido.Estado.PENDIENTE,
-    )
-    item.delete()
-    pedido.recalcular_total()
+    with transaction.atomic():
+        sucursal_bloqueada = SucursalCliente.objects.select_for_update().get(pk=sucursal.pk)
+        pedido = pedido_pendiente(sucursal_bloqueada)
+        item = get_object_or_404(
+            ItemPedido,
+            pk=payload.get("item_id"),
+            pedido=pedido,
+            pedido__estado=Pedido.Estado.PENDIENTE,
+        )
+        item.delete()
+        pedido.recalcular_total()
     return JsonResponse(
         {
             "success": True,
@@ -707,10 +828,12 @@ def eliminar_item_pedido(sucursal, payload):
 
 
 def limpiar_pedido_sucursal(sucursal):
-    pedido = pedido_pendiente(sucursal)
-    if pedido:
-        pedido.items.all().delete()
-        pedido.recalcular_total()
+    with transaction.atomic():
+        sucursal_bloqueada = SucursalCliente.objects.select_for_update().get(pk=sucursal.pk)
+        pedido = pedido_pendiente(sucursal_bloqueada)
+        if pedido:
+            pedido.items.all().delete()
+            pedido.recalcular_total()
     return JsonResponse({"success": True, "pedido": {"items": [], "total": "0.00"}})
 
 
@@ -989,22 +1112,7 @@ def eliminar_item(request):
     if sucursal is None or payload is None:
         return JsonResponse({"success": False, "mensaje": "Solicitud inválida."}, status=400)
 
-    pedido = pedido_pendiente(sucursal)
-    item = get_object_or_404(
-        ItemPedido,
-        pk=payload.get("item_id"),
-        pedido=pedido,
-        pedido__estado=Pedido.Estado.PENDIENTE,
-    )
-    item.delete()
-    pedido.recalcular_total()
-    return JsonResponse(
-        {
-            "success": True,
-            "total_pedido": decimal_to_str(pedido.total),
-            "pedido": serializar_pedido(pedido),
-        }
-    )
+    return eliminar_item_pedido(sucursal, payload)
 
 
 @require_POST
@@ -1013,11 +1121,7 @@ def limpiar_pedido(request):
     sucursal = sucursal_para_usuario(request.user)
     if sucursal is None:
         return JsonResponse({"success": False, "mensaje": "Usuario sin sucursal activa."}, status=403)
-    pedido = pedido_pendiente(sucursal)
-    if pedido:
-        pedido.items.all().delete()
-        pedido.recalcular_total()
-    return JsonResponse({"success": True, "pedido": {"items": [], "total": "0.00"}})
+    return limpiar_pedido_sucursal(sucursal)
 
 
 @require_POST
@@ -1030,38 +1134,103 @@ def confirmar_pedido(request):
     if sucursal is None:
         return JsonResponse({"success": False, "mensaje": "Usuario sin sucursal activa."}, status=403)
 
-    return confirmar_pedido_sucursal(sucursal)
+    intento_id = str(request.headers.get("X-Order-Attempt-ID") or uuid.uuid4())[:64]
+    pedido = pedido_pendiente(sucursal)
+    registrar_evento_persistente(
+        request,
+        "confirmar_solicitud_servidor",
+        {
+            "pedido_id": pedido.pk if pedido else None,
+            "items": pedido.items.count() if pedido else 0,
+        },
+        {"intento_id": intento_id},
+    )
+    try:
+        response = confirmar_pedido_sucursal(sucursal)
+    except Exception:
+        registrar_evento_persistente(
+            request,
+            "confirmar_error_servidor",
+            {"tipo": "excepcion_no_controlada"},
+            {"intento_id": intento_id},
+        )
+        raise
+
+    try:
+        respuesta = json.loads(response.content.decode("utf-8"))
+    except (json.JSONDecodeError, UnicodeDecodeError):
+        respuesta = {}
+    exito = response.status_code < 400 and respuesta.get("success") is True
+    registrar_evento_persistente(
+        request,
+        "confirmar_exito_servidor" if exito else "confirmar_rechazo_servidor",
+        {
+            "http_status": response.status_code,
+            "codigo": respuesta.get("codigo", ""),
+            "mensaje": respuesta.get("mensaje", ""),
+            "pedido_id": respuesta.get("pedido_id"),
+        },
+        {"intento_id": intento_id},
+    )
+    response["X-Order-Attempt-ID"] = intento_id
+    return response
 
 
 @require_POST
 @login_required
 def log_cliente(request):
-    """Bitácora ligera de clics del navegador de la sucursal.
+    """Persiste una cola idempotente de eventos del navegador."""
+    if len(request.body) > 64 * 1024:
+        return JsonResponse({"success": False, "mensaje": "Bitácora demasiado grande."}, status=413)
 
-    Solo escribe a `logging`: no toca la base de datos ni regresa datos. Existe
-    para poder correlacionar en los logs un clic del usuario con la petición de
-    negocio que debería seguirlo. Si aparece `confirmar_click` sin su
-    `POST /api/pedidos/confirmar/`, el fallo está en el navegador, no aquí.
-    """
     payload = parse_json_body(request) or {}
     if not isinstance(payload, dict):
         payload = {}
 
-    evento = str(payload.get("evento") or "desconocido")[:60]
-    user_agent = str(payload.get("ua") or request.META.get("HTTP_USER_AGENT", ""))[:200]
-    detalle = {
-        str(clave)[:30]: str(valor)[:60]
-        for clave, valor in list(payload.items())[:8]
-        if clave not in ("evento", "ua")
-    }
+    eventos = payload.get("eventos")
+    if not isinstance(eventos, list):
+        detalle_legacy = {
+            clave: valor
+            for clave, valor in payload.items()
+            if clave not in ("evento", "evento_id", "ua", "ocurrido_en")
+        }
+        payload["detalle"] = payload.get("detalle") or detalle_legacy
+        eventos = [payload]
 
-    logger.info(
-        "cliente-evento usuario=%s evento=%s detalle=%s ua=%s",
-        request.user.username,
-        evento,
-        detalle,
-        user_agent,
-    )
+    guardados = 0
+    fallidos = 0
+    for entrada in eventos[:50]:
+        if not isinstance(entrada, dict):
+            continue
+        evento = str(entrada.get("evento") or "desconocido")[:80]
+        registro = registrar_evento_persistente(request, evento, payload=entrada)
+        if registro is not None:
+            guardados += 1
+        else:
+            fallidos += 1
+        logger.info(
+            "cliente-evento usuario=%s evento=%s intento=%s dispositivo=%s",
+            request.user.username,
+            evento,
+            str(entrada.get("intento_id") or "")[:64],
+            str(entrada.get("dispositivo_id") or "")[:64],
+        )
+    if fallidos:
+        return JsonResponse(
+            {
+                "success": False,
+                "mensaje": "No se pudo guardar toda la bitácora; se puede reintentar.",
+                "guardados": guardados,
+            },
+            status=503,
+        )
+    return JsonResponse({"success": True, "guardados": guardados})
+
+
+@require_POST
+@login_required
+def heartbeat_sesion(request):
+    """La validación/renovación real ocurre en SesionUnicaMiddleware."""
     return JsonResponse({"success": True})
 
 
@@ -1847,6 +2016,35 @@ def preparar_pedidos_en_curso_para_interfaz():
         pedido.items_count = len(items)
         pedido.fecha_creacion_local = timezone.localtime(pedido.fecha_creacion)
     return pedidos
+
+
+@never_cache
+@admin_required
+def admin_diagnostico(request):
+    sucursal_id = request.GET.get("sucursal", "").strip()
+    evento_nombre = request.GET.get("evento", "").strip()
+    eventos = EventoCliente.objects.select_related("usuario", "sucursal_cliente")
+    if sucursal_id:
+        eventos = eventos.filter(sucursal_cliente_id=sucursal_id)
+    if evento_nombre:
+        eventos = eventos.filter(evento=evento_nombre)
+
+    sesiones = list(
+        SesionActiva.objects.select_related("usuario").order_by("usuario__username")
+    )
+    for sesion in sesiones:
+        sesion.vigente = sesion_esta_vigente(sesion)
+
+    context = {
+        "eventos": list(eventos[:250]),
+        "sesiones": sesiones,
+        "sucursales": SucursalCliente.objects.filter(activa=True).order_by("nombre"),
+        "tipos_evento": EventoCliente.objects.order_by("evento")
+        .values_list("evento", flat=True)
+        .distinct(),
+        "filters": {"sucursal": sucursal_id, "evento": evento_nombre},
+    }
+    return render(request, "pedidos/admin_diagnostico.html", context)
 
 
 @never_cache

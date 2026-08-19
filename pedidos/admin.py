@@ -4,6 +4,7 @@ from django.core.cache import cache
 from .models import (
     CONFIGURACION_CACHE_KEY,
     Configuracion,
+    EventoCliente,
     ItemPedido,
     LogRecordatorio,
     MacroPedido,
@@ -11,6 +12,7 @@ from .models import (
     Precio,
     Producto,
     SucursalCliente,
+    SesionActiva,
 )
 
 
@@ -147,6 +149,70 @@ class LogRecordatorioAdmin(admin.ModelAdmin):
     list_filter = ("estado", "sucursal_cliente")
     search_fields = ("sucursal_cliente__nombre",)
     readonly_fields = ("sucursal_cliente", "fecha_envio", "estado", "mensaje_error")
+
+    def has_add_permission(self, request):
+        return False
+
+    def has_change_permission(self, request, obj=None):
+        return False
+
+    def has_delete_permission(self, request, obj=None):
+        return False
+
+
+@admin.register(SesionActiva)
+class SesionActivaAdmin(admin.ModelAdmin):
+    list_display = ("usuario", "dispositivo", "direccion_ip", "iniciada_en", "ultima_actividad")
+    search_fields = ("usuario__username", "dispositivo", "direccion_ip")
+    readonly_fields = (
+        "usuario",
+        "token",
+        "dispositivo_id",
+        "dispositivo",
+        "direccion_ip",
+        "iniciada_en",
+        "ultima_actividad",
+    )
+
+    def has_add_permission(self, request):
+        return False
+
+    def has_change_permission(self, request, obj=None):
+        return False
+
+
+@admin.register(EventoCliente)
+class EventoClienteAdmin(admin.ModelAdmin):
+    list_display = (
+        "recibido_en",
+        "sucursal_cliente",
+        "usuario",
+        "evento",
+        "intento_id",
+        "dispositivo_id",
+    )
+    list_filter = ("evento", "sucursal_cliente")
+    search_fields = (
+        "usuario__username",
+        "sucursal_cliente__nombre",
+        "evento",
+        "intento_id",
+        "dispositivo_id",
+    )
+    readonly_fields = (
+        "evento_id",
+        "usuario",
+        "sucursal_cliente",
+        "evento",
+        "intento_id",
+        "dispositivo_id",
+        "sesion_hash",
+        "ocurrido_en",
+        "recibido_en",
+        "detalle",
+        "user_agent",
+        "direccion_ip",
+    )
 
     def has_add_permission(self, request):
         return False

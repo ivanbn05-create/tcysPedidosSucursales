@@ -45,6 +45,7 @@ MIDDLEWARE = [
     'django.middleware.csrf.CsrfViewMiddleware',
     'django.contrib.auth.middleware.AuthenticationMiddleware',
     'django.contrib.messages.middleware.MessageMiddleware',
+    'pedidos.middleware.SesionUnicaMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
 ]
 
@@ -138,6 +139,11 @@ if "test" in sys.argv:
 LOGIN_URL = "login"
 LOGIN_REDIRECT_URL = "home"
 LOGOUT_REDIRECT_URL = "login"
+
+# Arrendamiento persistente de sesión única. Se renueva cada minuto mientras
+# la página está activa; 10 minutos es menor a los 15 minutos de inactividad
+# que provocan el spin-down de Render Free.
+ACTIVE_SESSION_TTL_SECONDS = config("ACTIVE_SESSION_TTL_SECONDS", default=600, cast=int)
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 

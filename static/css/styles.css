@@ -551,6 +551,74 @@ button.password-toggle:active {
     color: var(--text);
 }
 
+.login-session-conflict {
+    display: grid;
+    gap: 0.65rem;
+    padding: 1rem;
+    margin: 0.9rem 0;
+    border: 1px solid #e2a13a;
+    border-radius: 14px;
+    background: #fff8e8;
+    color: #563b12;
+}
+
+.login-session-conflict strong {
+    font-size: 1.05rem;
+}
+
+.login-session-conflict span,
+.login-session-conflict small,
+.login-session-conflict p {
+    overflow-wrap: anywhere;
+}
+
+.login-session-conflict p {
+    margin: 0;
+}
+
+.takeover-form .danger-button {
+    width: 100%;
+}
+
+.diagnostic-shell {
+    display: grid;
+    gap: 1.25rem;
+}
+
+.diagnostic-header {
+    align-items: start;
+}
+
+.diagnostic-header p {
+    max-width: 760px;
+    color: var(--muted);
+}
+
+.diagnostic-section {
+    display: grid;
+    gap: 1rem;
+}
+
+.diagnostic-agent,
+.diagnostic-detail {
+    min-width: 220px;
+    max-width: 420px;
+    overflow-wrap: anywhere;
+}
+
+.diagnostic-id {
+    max-width: 180px;
+    font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+    font-size: 0.76rem;
+    overflow-wrap: anywhere;
+}
+
+.diagnostic-time {
+    display: block;
+    margin-top: 0.3rem;
+    color: var(--muted);
+}
+
 .order-segments {
     width: 118px;
     display: grid;

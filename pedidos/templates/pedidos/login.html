@@ -14,8 +14,23 @@
             <span>{{ horario_pedidos.mensaje }}</span>
         </div>
         {% endif %}
+        {% if sesion_conflictiva %}
+        <div class="login-session-conflict" role="alert">
+            <strong>Sesión iniciada en otro dispositivo</strong>
+            <span>La última actividad fue {{ ultima_actividad_conflictiva|date:"d/m/Y H:i:s" }}.</span>
+            {% if dispositivo_conflictivo %}<small>{{ dispositivo_conflictivo }}</small>{% endif %}
+            <p>Si reconoces el acceso, sal de esta pantalla. Si necesitas continuar aquí, puedes cerrar la otra sesión.</p>
+            <form method="post" class="takeover-form">
+                {% csrf_token %}
+                <input type="hidden" name="force_takeover" value="1">
+                <input type="hidden" name="device_id" data-device-id>
+                <button class="danger-button" type="submit">Cerrar la otra sesión e ingresar aquí</button>
+            </form>
+        </div>
+        {% else %}
         <form method="post" class="login-form" novalidate>
             {% csrf_token %}
+            <input type="hidden" name="device_id" data-device-id>
             <label for="username">Usuario</label>
             <input id="username" name="username" type="text" autocomplete="username" required autofocus>
 
@@ -45,6 +60,7 @@
 
             <button class="primary-button" type="submit" data-login-submit>Entrar</button>
         </form>
+        {% endif %}
         <p class="login-legal">
             Sistema privado de uso exclusivo para sucursales, clientes autorizados y personal de Los Tocayos.
             Al ingresar, reconoces que el sistema se usa para gestión de pedidos, recordatorios operativos
@@ -57,6 +73,22 @@
 
 {% block scripts %}
 <script>
+    (() => {
+        let deviceId = "";
+        try {
+            deviceId = window.localStorage.getItem("pedidos_device_id") || "";
+            if (!deviceId) {
+                deviceId = window.crypto?.randomUUID?.() || `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+                window.localStorage.setItem("pedidos_device_id", deviceId);
+            }
+        } catch (error) {
+            deviceId = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+        }
+        document.querySelectorAll("[data-device-id]").forEach((input) => {
+            input.value = deviceId;
+        });
+    })();
+
     (() => {
         const passwordInput = document.getElementById("password");
         const toggle = document.querySelector("[data-password-toggle]");
@@ -90,9 +122,11 @@
         const etiquetaOriginal = submitButton.textContent;
         let enviando = false;
         let reintentoTimer = null;
+        let coldStartTimer = null;
 
         function liberar() {
             window.clearTimeout(reintentoTimer);
+            window.clearTimeout(coldStartTimer);
             enviando = false;
             submitButton.disabled = false;
             submitButton.textContent = etiquetaOriginal;
@@ -106,9 +140,12 @@
             enviando = true;
             submitButton.disabled = true;
             submitButton.textContent = "Entrando...";
+            coldStartTimer = window.setTimeout(() => {
+                submitButton.textContent = "Iniciando servidor, espera...";
+            }, 5000);
             // Nunca dejarlo bloqueado: si la navegación no ocurre (WebView in-app,
             // red caída), el usuario tiene que poder reintentar por su cuenta.
-            reintentoTimer = window.setTimeout(liberar, 15000);
+            reintentoTimer = window.setTimeout(liberar, 90000);
         });
 
         // Los navegadores in-app restauran la página desde bfcache al volver;

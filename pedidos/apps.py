@@ -19,6 +19,7 @@ COMANDOS_SIN_SCHEDULER = {
     "check",
     "dbshell",
     "showmigrations",
+    "sqlmigrate",
     "enviar_recordatorios",
 }
 
@@ -27,6 +28,8 @@ class PedidosConfig(AppConfig):
     name = 'pedidos'
 
     def ready(self):
+        from . import signals  # noqa: F401
+
         self._maybe_start_scheduler()
 
     def _maybe_start_scheduler(self):

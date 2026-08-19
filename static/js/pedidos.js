@@ -91,18 +91,22 @@ document.addEventListener("DOMContentLoaded", () => {
         return token ? decodeURIComponent(token.split("=")[1]) : "";
     }
 
-    function trace(evento, extra = {}) {
-        // Bitacora de clics: permite ver en los logs de Render un clic que NO
-        // produjo su peticion de negocio. Nunca debe romper la UI.
-        if (!apiUrls.log_cliente) return;
+    function trace(evento, extra = {}, intentoId = "") {
+        // Cola durable: sobrevive recargas y recupera los eventos cuando vuelve
+        // la red. El listener de captura vive en client_session.js.
         try {
+            if (window.clientAudit) {
+                window.clientAudit.record(evento, extra, intentoId);
+                return;
+            }
+            if (!apiUrls.log_cliente) return;
             fetch(apiUrls.log_cliente, {
                 method: "POST",
                 headers: {
                     "Content-Type": "application/json",
                     "X-CSRFToken": csrfToken(),
                 },
-                body: JSON.stringify({ evento, ...extra, ua: navigator.userAgent }),
+                body: JSON.stringify({ evento, detalle: extra, intento_id: intentoId, ua: navigator.userAgent }),
                 keepalive: true,
             }).catch(() => {});
         } catch (error) {
@@ -110,7 +114,7 @@ document.addEventListener("DOMContentLoaded", () => {
         }
     }
 
-    async function postJson(url, payload = {}) {
+    async function postJson(url, payload = {}, intentoId = "") {
         const requestPayload =
             isAdminOrder && selectedSucursalId
                 ? { ...payload, sucursal_id: selectedSucursalId }
@@ -119,7 +123,7 @@ document.addEventListener("DOMContentLoaded", () => {
         // Sin timeout, un fetch colgado (cold start de Render, red movil mala)
         // deja los cuatro botones deshabilitados de forma indefinida.
         const controller = new AbortController();
-        const timeoutId = window.setTimeout(() => controller.abort(), 20000);
+        const timeoutId = window.setTimeout(() => controller.abort(), 75000);
 
         let response;
         try {
@@ -128,6 +132,8 @@ document.addEventListener("DOMContentLoaded", () => {
                 headers: {
                     "Content-Type": "application/json",
                     "X-CSRFToken": csrfToken(),
+                    "X-Client-Device": window.clientAudit?.deviceId || "",
+                    "X-Order-Attempt-ID": intentoId,
                 },
                 body: JSON.stringify(requestPayload),
                 signal: controller.signal,
@@ -150,6 +156,9 @@ document.addEventListener("DOMContentLoaded", () => {
             success: false,
             mensaje: "Respuesta invalida del servidor.",
         }));
+        if (response.status === 401 && data.codigo === "sesion_reemplazada") {
+            window.location.assign("/login/?sesion=reemplazada");
+        }
         if (!response.ok || !data.success) {
             const error = new Error(data.mensaje || `Error ${response.status}`);
             error.status = response.status;
@@ -282,7 +291,7 @@ document.addEventListener("DOMContentLoaded", () => {
             busyGuard = window.setTimeout(() => {
                 setBusy(false);
                 showNotice("La operacion tardo demasiado. Intenta de nuevo.", "error");
-            }, 25000);
+            }, 90000);
         }
     }
 
@@ -491,7 +500,11 @@ document.addEventListener("DOMContentLoaded", () => {
     }
 
     async function confirmOrder() {
-        trace("confirmar_click", { items: (order.items || []).length });
+        const intentoId = window.__pedidoConfirmAttemptId
+            || window.clientAudit?.newAttemptId?.()
+            || `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+        window.__pedidoConfirmAttemptId = intentoId;
+        trace("confirmar_click", { items: (order.items || []).length }, intentoId);
         if (!(order.items || []).length) {
             showNotice("Agrega al menos un producto.", "error");
             return;
@@ -500,7 +513,7 @@ document.addEventListener("DOMContentLoaded", () => {
             trace("confirmar_bloqueado_horario", {
                 hora_actual: schedule.hora_actual,
                 hora_fin: schedule.hora_fin,
-            });
+            }, intentoId);
             showResultModal(
                 "Pedidos cerrados",
                 `${schedule.mensaje} Tu pedido sigue guardado en curso.`,
@@ -515,11 +528,18 @@ document.addEventListener("DOMContentLoaded", () => {
             "¿Confirmar pedido?",
         ].join("\n");
         const aceptado = await askConfirm(confirmation);
-        trace("confirmar_respuesta", { aceptado });
+        trace("confirmar_respuesta", { aceptado }, intentoId);
         if (!aceptado) return;
         try {
             setBusy(true);
-            const data = await postJson(apiUrls.confirmar_pedido || "/api/pedidos/confirmar/");
+            showNotice("Enviando pedido al servidor...", "success");
+            trace("confirmar_envio_iniciado", {}, intentoId);
+            const data = await postJson(
+                apiUrls.confirmar_pedido || "/api/pedidos/confirmar/",
+                {},
+                intentoId,
+            );
+            trace("confirmar_respuesta_exitosa", { pedido_id: data.pedido_id }, intentoId);
             renderDailyProgress(data.progreso_diario);
             order = { items: [], total: "0.00" };
             selectedItemId = null;
@@ -542,10 +562,11 @@ document.addEventListener("DOMContentLoaded", () => {
                 status: error.status || "red",
                 codigo: error.codigo || "sin_codigo",
                 mensaje: error.message,
-            });
+            }, intentoId);
             showResultModal("No se pudo confirmar", error.message, "error");
         } finally {
             setBusy(false);
+            window.__pedidoConfirmAttemptId = "";
         }
     }
 

@@ -246,6 +246,13 @@ class Pedido(models.Model):
 
     class Meta:
         ordering = ["-fecha_creacion"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["sucursal_cliente"],
+                condition=models.Q(estado="pendiente", eliminado=False),
+                name="pedido_pendiente_unico_por_sucursal",
+            )
+        ]
 
     def __str__(self):
         return f"Pedido {self.folio_fecha} - {self.sucursal_cliente}"
@@ -315,6 +322,72 @@ class ItemPedido(models.Model):
     def save(self, *args, **kwargs):
         self.subtotal = self.calcular_subtotal()
         super().save(*args, **kwargs)
+
+
+class SesionActiva(models.Model):
+    """Arrendamiento persistente para permitir un solo dispositivo por usuario."""
+
+    usuario = models.OneToOneField(
+        User,
+        on_delete=models.CASCADE,
+        related_name="sesion_activa_pedidos",
+    )
+    token = models.CharField(max_length=64, unique=True, editable=False)
+    dispositivo_id = models.CharField(max_length=64, blank=True)
+    dispositivo = models.CharField(max_length=200, blank=True)
+    direccion_ip = models.GenericIPAddressField(null=True, blank=True)
+    iniciada_en = models.DateTimeField(auto_now_add=True)
+    ultima_actividad = models.DateTimeField(db_index=True)
+
+    class Meta:
+        verbose_name = "Sesión activa"
+        verbose_name_plural = "Sesiones activas"
+
+    def __str__(self):
+        return f"{self.usuario} — {self.dispositivo or 'dispositivo desconocido'}"
+
+
+class EventoCliente(models.Model):
+    """Auditoría durable de interacción del navegador y confirmación del servidor."""
+
+    evento_id = models.UUIDField(default=uuid.uuid4, unique=True, editable=False)
+    usuario = models.ForeignKey(
+        User,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="eventos_cliente_pedidos",
+    )
+    sucursal_cliente = models.ForeignKey(
+        SucursalCliente,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="eventos_cliente",
+    )
+    evento = models.CharField(max_length=80, db_index=True)
+    intento_id = models.CharField(max_length=64, blank=True, db_index=True)
+    dispositivo_id = models.CharField(max_length=64, blank=True, db_index=True)
+    sesion_hash = models.CharField(max_length=16, blank=True)
+    ocurrido_en = models.DateTimeField(null=True, blank=True, db_index=True)
+    recibido_en = models.DateTimeField(auto_now_add=True, db_index=True)
+    detalle = models.JSONField(default=dict, blank=True)
+    user_agent = models.CharField(max_length=300, blank=True)
+    direccion_ip = models.GenericIPAddressField(null=True, blank=True)
+
+    class Meta:
+        ordering = ["-recibido_en"]
+        indexes = [
+            models.Index(
+                fields=["sucursal_cliente", "-recibido_en"],
+                name="evento_sucursal_fecha_idx",
+            ),
+        ]
+        verbose_name = "Evento de cliente"
+        verbose_name_plural = "Eventos de cliente"
+
+    def __str__(self):
+        return f"{self.evento} — {self.usuario or 'anónimo'}"
 
 
 class Configuracion(models.Model):

@@ -37,7 +37,9 @@ Los usernames internos sin espacios también funcionan para pruebas técnicas: `
 - `/api/pedidos/eliminar-item/`: elimina item del pedido pendiente.
 - `/api/pedidos/confirmar/`: confirma con transacción atómica, agrega el pedido al macropedido de la fecha local, impone el máximo diario de cinco, conserva el rate limit de 1 minuto y aplica la restricción horaria.
 - `/api/horarios/`: informa el horario vigente de pedidos (sin auth), mostrado en la pantalla de login.
+- `/api/sesion/heartbeat/`: renueva el arrendamiento de sesión única mientras la página permanece visible.
 - `/admin/`: dashboard propio de matriz. Cada fila es un macropedido diario, muestra la hora de su última confirmación y una barra verde-amarillo-rojo de cinco segmentos; la flecha despliega los pedidos que lo integran. El estado, la impresión acumulada, el envío, su reversión y el borrado operan sobre el macropedido completo. El usuario `juanmanuel` solo puede ver e imprimir.
+- `/admin/diagnostico/`: sesiones activas y bitácora persistente que correlaciona toques, ejecución JavaScript y respuesta del servidor por ID de intento.
 - `/admin/configuracion/`: productos, precios, sucursales/clientes (incluye correo de recordatorios), horarios de pedidos y recordatorios, cuenta admin.
 - `/admin/sucursales/imprimir/`: imprime barbacoa, tortilla y consomé acumulados del macropedido confirmado más reciente de las últimas 24 horas por sucursal; los macropedidos enviados se omiten para permitir tomar el confirmado anterior.
 - `/django-admin/`: admin nativo de Django.
@@ -67,7 +69,15 @@ EMAIL_HOST_USER=tocayos.tacos@gmail.com
 EMAIL_HOST_PASSWORD=contraseña-de-aplicacion-de-gmail
 DEFAULT_FROM_EMAIL=Los Tocayos <tocayos.tacos@gmail.com>
 SCHEDULER_ENABLED=True
+ACTIVE_SESSION_TTL_SECONDS=600
 ```
+
+Cada cuenta admite un dispositivo activo. La sesión se respalda en PostgreSQL,
+no en la memoria de Render: una segunda conexión se bloquea mientras el
+arrendamiento esté vigente, puede tomar control después de validar la contraseña
+y lo adopta automáticamente cuando lleva 10 minutos sin actividad. El navegador
+renueva cada minuto mientras la página está visible. El valor configurable se
+limita de forma segura al rango de 120–840 segundos.
 
 Build command:
 
