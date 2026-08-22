@@ -431,7 +431,12 @@
         padding: 0;
     }
 
-    .macro-component-grid {
+    .macro-component-row {
+        grid-template-columns: 1fr;
+    }
+
+    .macro-component-items {
+        margin-left: 0;
         grid-template-columns: 1fr;
     }
 

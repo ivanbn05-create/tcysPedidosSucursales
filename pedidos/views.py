@@ -1965,6 +1965,7 @@ def preparar_macropedidos_para_interfaz(macropedidos):
                 )
                 for item in pedido_items
             ]
+            pedido.items_count = len(pedido.detalle_items)
             pedido.numero_en_dia = indice
             pedido.hora_confirmacion = timezone.localtime(
                 pedido.fecha_confirmacion or pedido.fecha_creacion

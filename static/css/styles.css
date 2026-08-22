@@ -1036,8 +1036,8 @@ button.password-toggle:active {
 .summary-panel {
     grid-area: summary;
     padding: 12px;
-    display: grid;
-    grid-template-rows: auto auto 1fr auto;
+    display: flex;
+    flex-direction: column;
     gap: 8px;
     min-height: 0;
 }
@@ -1091,6 +1091,7 @@ button.password-toggle:active {
 }
 
 .items-list {
+    flex: 1 1 auto;
     overflow: auto;
     display: grid;
     align-content: start;
@@ -1496,72 +1497,85 @@ button.password-toggle:active {
     border-bottom: 1px solid var(--line);
 }
 
-.macro-aggregate-summary {
+.macro-component-list {
+    display: grid;
+    gap: 10px;
+}
+
+.macro-component-row {
+    min-width: 0;
     padding: 12px;
     border: 1px solid #d6e2e7;
     border-radius: 8px;
     background: #fff;
     display: grid;
-    gap: 10px;
+    grid-template-columns: minmax(150px, 1.15fr) minmax(130px, 1fr) minmax(70px, 0.48fr) minmax(80px, 0.55fr) minmax(92px, 0.68fr) minmax(220px, 1.35fr) minmax(90px, 0.65fr);
+    gap: 10px 12px;
+    align-items: center;
+    box-shadow: 0 1px 4px rgba(36, 36, 36, 0.04);
 }
 
-.macro-section-heading > span {
+.macro-component-cell {
+    min-width: 0;
+    color: var(--text);
+    font-size: 14px;
+    font-weight: 800;
+    overflow-wrap: anywhere;
+}
+
+.macro-component-cell::before,
+.macro-component-actions::before {
+    display: block;
+    margin-bottom: 3px;
+    content: attr(data-label);
+    color: var(--muted);
+    font-size: 10px;
+    font-weight: 900;
+    text-transform: uppercase;
+}
+
+.macro-component-order {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.macro-component-order > i {
+    width: 16px;
+    height: 28px;
+    flex: 0 0 16px;
+    border-left: 3px solid var(--yellow);
+    border-bottom: 3px solid var(--yellow);
+    border-radius: 0 0 0 7px;
+}
+
+.macro-component-order > span {
+    min-width: 0;
+    display: grid;
+    gap: 3px;
+}
+
+.macro-component-order strong {
+    color: var(--blue);
+    font-size: 15px;
+}
+
+.macro-component-order small,
+.macro-component-progress span {
     color: var(--muted);
     font-size: 12px;
     font-weight: 900;
 }
 
-.macro-aggregate-items {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 6px;
-}
-
-.macro-aggregate-items > span {
-    padding: 6px 8px;
-    border-radius: 999px;
-    color: var(--blue);
-    background: #edf4f7;
-    font-size: 12px;
-}
-
-.macro-component-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
-    gap: 10px;
-}
-
-.macro-component-card {
-    min-width: 0;
-    padding: 11px;
-    border: 1px solid #d6e2e7;
-    border-radius: 8px;
-    background: #fff;
-    display: grid;
-    align-content: start;
-    gap: 10px;
-}
-
-.macro-component-card header,
-.macro-component-card header > div {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 8px;
-}
-
-.macro-component-card header > div {
+.macro-component-actions {
     align-items: flex-start;
-    flex-direction: column;
-    gap: 2px;
-}
-
-.macro-component-card header > b {
-    color: var(--red);
 }
 
 .macro-component-items {
+    grid-column: 1 / -1;
+    margin-left: 24px;
     display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
     gap: 6px;
 }
 
@@ -1570,6 +1584,7 @@ button.password-toggle:active {
     border-radius: 6px;
     background: #f6f8f9;
     display: flex;
+    align-items: center;
     justify-content: space-between;
     gap: 8px;
     font-size: 12px;
@@ -2092,6 +2107,126 @@ button.password-toggle:active {
 
 .modal.wide {
     width: min(100%, 680px);
+}
+
+.ticket-preview-modal {
+    width: min(100%, 540px);
+    max-height: calc(100dvh - 36px);
+    display: grid;
+    grid-template-rows: auto minmax(0, 1fr) auto;
+}
+
+.ticket-preview-header {
+    align-items: center;
+}
+
+.ticket-preview-scroll {
+    min-height: 0;
+    margin-top: 16px;
+    padding: 14px;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    background: #eef5f8;
+    overflow: auto;
+}
+
+.ticket-preview-frame {
+    width: var(--ticket-preview-width, 72mm);
+    min-height: var(--ticket-preview-height, 73mm);
+    margin: 0 auto;
+    background: #fff;
+    color: #000;
+    box-shadow: 0 6px 22px rgba(23, 32, 51, 0.16);
+}
+
+.ticket-preview-frame .inline-print-sheet {
+    width: 100%;
+    margin: 0;
+    background: #fff;
+}
+
+.ticket-preview-frame .inline-ticket-table {
+    width: 100%;
+    table-layout: fixed;
+    border-collapse: collapse;
+    border-spacing: 0;
+}
+
+.ticket-preview-frame .inline-ticket-table,
+.ticket-preview-frame .inline-ticket-table * {
+    box-sizing: border-box;
+    color: #000;
+    font-family: Calibri, Arial, sans-serif;
+}
+
+.ticket-preview-frame .inline-ticket-title {
+    padding: 0;
+    border: 0;
+    font-size: 16pt;
+    font-weight: 700;
+    line-height: 1;
+    text-align: center;
+    vertical-align: middle;
+    white-space: nowrap;
+}
+
+.ticket-preview-frame .inline-ticket-date-row td {
+    padding: 0;
+    border: 0;
+}
+
+.ticket-preview-frame .inline-ticket-date-cell {
+    border: 1px solid #000;
+    font-size: 11pt;
+    font-weight: 700;
+    line-height: 1;
+    text-align: center;
+    vertical-align: middle;
+}
+
+.ticket-preview-frame .inline-ticket-item-row td {
+    padding: 0;
+    border: 1px solid #000;
+    line-height: 1;
+    vertical-align: middle;
+}
+
+.ticket-preview-frame .inline-ticket-product {
+    padding-left: 1mm;
+    font-size: 10pt;
+    font-weight: 700;
+    text-align: left;
+    white-space: nowrap;
+    overflow: hidden;
+}
+
+.ticket-preview-frame .inline-ticket-quantity {
+    padding: 0 0.5mm;
+    font-weight: 700;
+    text-align: center;
+    white-space: nowrap;
+    overflow: hidden;
+}
+
+.ticket-preview-frame .inline-ticket-quantity-value {
+    width: 100%;
+    display: inline-flex;
+    align-items: baseline;
+    justify-content: center;
+    gap: 0.45mm;
+}
+
+.ticket-preview-frame .inline-ticket-quantity-number {
+    font-size: 13pt;
+    font-weight: 900;
+    line-height: 1;
+}
+
+.ticket-preview-frame .inline-ticket-quantity-unit {
+    font-size: 6pt;
+    font-weight: 800;
+    line-height: 1;
+    text-transform: uppercase;
 }
 
 .modal p {

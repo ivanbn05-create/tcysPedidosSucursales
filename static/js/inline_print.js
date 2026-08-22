@@ -143,11 +143,31 @@ document.addEventListener("DOMContentLoaded", () => {
 
                 .inline-ticket-quantity {
                     padding: 0 0.5mm !important;
-                    font-size: 9pt;
                     font-weight: 700;
                     text-align: center;
                     white-space: nowrap;
                     overflow: hidden;
+                }
+
+                .inline-ticket-quantity-value {
+                    width: 100%;
+                    display: inline-flex;
+                    align-items: baseline;
+                    justify-content: center;
+                    gap: 0.45mm;
+                }
+
+                .inline-ticket-quantity-number {
+                    font-size: 13pt;
+                    font-weight: 900;
+                    line-height: 1;
+                }
+
+                .inline-ticket-quantity-unit {
+                    font-size: 6pt;
+                    font-weight: 800;
+                    line-height: 1;
+                    text-transform: uppercase;
                 }
 
                 .inline-aguas-sheet,

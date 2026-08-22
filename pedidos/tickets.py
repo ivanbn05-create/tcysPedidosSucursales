@@ -75,6 +75,25 @@ def format_ticket_quantity_with_unit(item):
     return f"{quantity} {item.producto.unidad_corta}".strip()
 
 
+def split_ticket_quantity(value):
+    parts = str(value or "").strip().split(maxsplit=1)
+    if not parts:
+        return "", ""
+    if len(parts) == 1:
+        return parts[0], ""
+    return parts[0], parts[1]
+
+
+def ticket_quantity_parts(quantity, unit):
+    quantity_text = format_ticket_quantity(quantity)
+    unit_text = str(unit or "").strip()
+    return {
+        "cantidad": f"{quantity_text} {unit_text}".strip(),
+        "cantidad_numero": quantity_text,
+        "cantidad_unidad": unit_text,
+    }
+
+
 def ticket_title(pedido):
     return pedido.sucursal_cliente.nombre.upper()
 
@@ -91,7 +110,7 @@ def ticket_items(pedido, items=None, etiquetas_por_item=None):
                 pedido=pedido,
                 etiqueta_ticket=etiquetas_por_item.get(item.id),
             ),
-            "cantidad": format_ticket_quantity_with_unit(item),
+            **ticket_quantity_parts(item.cantidad, item.producto.unidad_corta),
         }
         for item in items
     ]
@@ -100,9 +119,20 @@ def ticket_items(pedido, items=None, etiquetas_por_item=None):
 def ticket_context_from_rows(pedido, ticket_rows):
     rows = []
     for index, row in enumerate(ticket_rows, start=3):
+        quantity_display = str(row.get("cantidad", "")).strip()
+        quantity_number = str(row.get("cantidad_numero", "")).strip()
+        quantity_unit = str(row.get("cantidad_unidad", "")).strip()
+        if not quantity_number:
+            quantity_number, parsed_unit = split_ticket_quantity(quantity_display)
+            quantity_unit = quantity_unit or parsed_unit
+        if not quantity_display:
+            quantity_display = f"{quantity_number} {quantity_unit}".strip()
         rows.append(
             {
                 **row,
+                "cantidad": quantity_display,
+                "cantidad_numero": quantity_number,
+                "cantidad_unidad": quantity_unit,
                 "row_number": index,
                 "height_mm": (
                     TICKET_SHORT_ITEM_HEIGHT_MM

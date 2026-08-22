@@ -128,11 +128,31 @@
 
         .ticket-quantity {
             padding: 0 0.5mm !important;
-            font-size: 9pt;
             font-weight: 700;
             text-align: center;
             white-space: nowrap;
             overflow: hidden;
+        }
+
+        .ticket-quantity-value {
+            width: 100%;
+            display: inline-flex;
+            align-items: baseline;
+            justify-content: center;
+            gap: 0.45mm;
+        }
+
+        .ticket-quantity-number {
+            font-size: 13pt;
+            font-weight: 900;
+            line-height: 1;
+        }
+
+        .ticket-quantity-unit {
+            font-size: 6pt;
+            font-weight: 800;
+            line-height: 1;
+            text-transform: uppercase;
         }
 
         @media screen {
@@ -196,7 +216,14 @@
                 {% for row in rows %}
                 <tr class="ticket-item-row" style="--row-height: {{ row.height_mm }}mm;">
                     <td class="ticket-product">{{ row.producto }}</td>
-                    <td class="ticket-quantity">{{ row.cantidad }}</td>
+                    <td class="ticket-quantity" aria-label="{{ row.cantidad }}">
+                        <span class="ticket-quantity-value">
+                            <span class="ticket-quantity-number">{{ row.cantidad_numero }}</span>
+                            {% if row.cantidad_unidad %}
+                            <span class="ticket-quantity-unit">{{ row.cantidad_unidad }}</span>
+                            {% endif %}
+                        </span>
+                    </td>
                     <td></td>
                 </tr>
                 {% endfor %}

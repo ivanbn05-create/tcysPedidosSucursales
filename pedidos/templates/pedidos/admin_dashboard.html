@@ -157,12 +157,19 @@
                     <td data-label="Total">${{ macro.total|floatformat:2 }}</td>
                     <td data-label="Estado"><span class="status-pill {{ macro.estado }}">{{ macro.get_estado_display }}</span></td>
                     <td class="actions-cell" data-label="Acciones">
+                        <button
+                            class="secondary-button compact"
+                            type="button"
+                            data-ticket-preview
+                            data-print-template-id="{{ macro.print_template_id }}"
+                            data-ticket-preview-title="Detalles {{ macro.folio_dia }}"
+                        >Detalles</button>
                         <a
                             class="secondary-link compact print-link"
                             href="{% url 'imprimir_macropedido' macro.id %}"
                             data-inline-print
                             data-print-template-id="{{ macro.print_template_id }}"
-                        >Imprimir acumulado</a>
+                        >Imprimir</a>
                         {% if can_manage_pedidos %}
                         {% if macro.estado == "enviado" %}
                         <form method="post" action="{% url 'revertir_macropedido_enviado' macro.id %}">
@@ -197,33 +204,46 @@
                 </tr>
                 <tr class="macro-details-row" id="macro-details-{{ macro.id }}" hidden>
                     <td colspan="7">
-                        <div class="macro-details-shell">
-                            <section class="macro-aggregate-summary">
-                                <div class="macro-section-heading">
-                                    <div>
-                                        <span class="eyebrow">Acumulado del d&iacute;a</span>
-                                        <strong>{{ macro.items_count }} productos &middot; ${{ macro.total|floatformat:2 }}</strong>
-                                    </div>
-                                    <span>{{ macro.pedidos_count }} de 5 pedidos</span>
-                                </div>
-                                <div class="macro-aggregate-items">
-                                    {% for item in macro.items_agrupados %}
-                                    <span><strong>{{ item.producto }}</strong> {{ item.cantidad }} {{ item.unidad }}</span>
-                                    {% endfor %}
-                                </div>
-                            </section>
-
-                            <section class="macro-component-grid" aria-label="Pedidos individuales del d&iacute;a">
+                        <div class="macro-details-shell" aria-label="Pedidos que componen {{ macro.folio_dia }}">
+                            <section class="macro-component-list" aria-label="Pedidos individuales del d&iacute;a">
                                 {% for pedido in macro.pedidos_activos %}
-                                <article class="macro-component-card">
-                                    <header>
-                                        <div>
-                                            <span class="eyebrow">Pedido {{ pedido.numero_en_dia }}</span>
-                                            <strong>{{ pedido.hora_confirmacion|time:"H:i" }}</strong>
-                                        </div>
-                                        <b>${{ pedido.total|floatformat:2 }}</b>
-                                    </header>
-                                    <div class="macro-component-items">
+                                <article class="macro-component-row">
+                                    <div class="macro-component-cell macro-component-order" data-label="Pedido">
+                                        <i aria-hidden="true"></i>
+                                        <span>
+                                            <strong>Pedido {{ pedido.numero_en_dia }}</strong>
+                                            <small>{{ pedido.hora_confirmacion|date:"d/m/Y H:i" }}</small>
+                                        </span>
+                                    </div>
+                                    <div class="macro-component-cell" data-label="Sucursal/Cliente">{{ pedido.sucursal_cliente.nombre }}</div>
+                                    <div class="macro-component-cell" data-label="Productos">{{ pedido.items_count }}</div>
+                                    <div class="macro-component-cell" data-label="Total">${{ pedido.total|floatformat:2 }}</div>
+                                    <div class="macro-component-cell" data-label="Estado"><span class="status-pill {{ pedido.estado }}">{{ pedido.get_estado_display }}</span></div>
+                                    <div class="actions-cell macro-component-actions" data-label="Acciones">
+                                        <button
+                                            class="secondary-button compact"
+                                            type="button"
+                                            data-ticket-preview
+                                            data-print-template-id="{{ pedido.print_template_id }}"
+                                            data-ticket-preview-title="Detalles Pedido {{ pedido.numero_en_dia }}"
+                                        >Detalles</button>
+                                        <a
+                                            class="secondary-link compact print-link"
+                                            href="{% url 'imprimir_pedido' pedido.id %}"
+                                            data-inline-print
+                                            data-print-template-id="{{ pedido.print_template_id }}"
+                                        >Imprimir</a>
+                                        {% if can_manage_pedidos %}
+                                        <form method="post" action="{% url 'eliminar_pedido' pedido.id %}" data-confirm-delete data-delete-label="pedido {{ pedido.numero_en_dia }}">
+                                            {% csrf_token %}
+                                            <button class="danger-button compact" type="submit">Eliminar</button>
+                                        </form>
+                                        {% endif %}
+                                    </div>
+                                    <div class="macro-component-cell macro-component-progress" data-label="Pedido del d&iacute;a">
+                                        <span>{{ pedido.numero_en_dia }} de {{ macro.pedidos_count }}</span>
+                                    </div>
+                                    <div class="macro-component-items" aria-label="Productos de Pedido {{ pedido.numero_en_dia }}">
                                         {% for item in pedido.detalle_items %}
                                         <div>
                                             <span>{{ item.producto }}</span>
@@ -231,12 +251,6 @@
                                         </div>
                                         {% endfor %}
                                     </div>
-                                    <a
-                                        class="secondary-link compact print-link"
-                                        href="{% url 'imprimir_pedido' pedido.id %}"
-                                        data-inline-print
-                                        data-print-template-id="{{ pedido.print_template_id }}"
-                                    >Imprimir pedido</a>
                                 </article>
                                 {% endfor %}
                             </section>
@@ -279,9 +293,27 @@
     {% endif %}
 </main>
 
+<div class="modal-backdrop" id="ticketPreviewModal" hidden>
+    <div class="modal ticket-preview-modal" role="dialog" aria-modal="true" aria-labelledby="ticketPreviewTitle">
+        <div class="modal-header ticket-preview-header">
+            <div>
+                <span class="eyebrow">Vista previa</span>
+                <h2 id="ticketPreviewTitle">Detalles</h2>
+            </div>
+            <button class="icon-button" type="button" data-ticket-preview-close aria-label="Cerrar detalles">&times;</button>
+        </div>
+        <div class="ticket-preview-scroll">
+            <div class="ticket-preview-frame" id="ticketPreviewContent"></div>
+        </div>
+        <div class="modal-actions">
+            <button class="secondary-button" type="button" data-ticket-preview-close>Cerrar</button>
+        </div>
+    </div>
+</div>
+
 {% include "pedidos/partials/inline_print_templates.html" with inline_print_orders=inline_print_orders aguas_print=aguas_print sucursales_print=sucursales_print %}
 {% endblock %}
 
 {% block scripts %}
-<script src="{% static 'js/admin.js' %}?v=20260815-1" defer></script>
+<script src="{% static 'js/admin.js' %}?v=20260822-1" defer></script>
 {% endblock %}

@@ -108,7 +108,14 @@
                 {% for row in print_order.print_context.rows %}
                 <tr class="inline-ticket-item-row" style="height: {{ row.height_mm }}mm;">
                     <td class="inline-ticket-product">{{ row.producto }}</td>
-                    <td class="inline-ticket-quantity">{{ row.cantidad }}</td>
+                    <td class="inline-ticket-quantity" aria-label="{{ row.cantidad }}">
+                        <span class="inline-ticket-quantity-value">
+                            <span class="inline-ticket-quantity-number">{{ row.cantidad_numero }}</span>
+                            {% if row.cantidad_unidad %}
+                            <span class="inline-ticket-quantity-unit">{{ row.cantidad_unidad }}</span>
+                            {% endif %}
+                        </span>
+                    </td>
                     <td></td>
                 </tr>
                 {% endfor %}
