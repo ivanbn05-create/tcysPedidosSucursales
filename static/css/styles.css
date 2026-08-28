@@ -1066,22 +1066,6 @@ button.password-toggle:active {
     color: var(--red-dark);
 }
 
-.schedule-status {
-    padding: 10px 12px;
-    border: 1px solid #9ad9c1;
-    border-radius: 6px;
-    background: #e8f7f2;
-    color: #075f49;
-    font-size: 13px;
-    font-weight: 800;
-}
-
-.schedule-status.closed {
-    border-color: #f0aab0;
-    background: #ffe9ec;
-    color: var(--red-dark);
-}
-
 .empty-state {
     padding: 14px;
     border: 1px dashed var(--line);
@@ -1179,11 +1163,45 @@ button.password-toggle:active {
     background: #e9f0f4;
     color: var(--blue);
     display: grid;
-    grid-template-columns: minmax(0, 1fr) auto minmax(42px, 0.35fr);
+    grid-template-columns: 44px minmax(0, 1fr) auto minmax(42px, 0.35fr);
     align-items: center;
-    gap: 16px;
+    gap: 12px;
     min-height: 76px;
     transition: background-color 180ms ease, color 180ms ease, box-shadow 180ms ease;
+}
+
+.calculator-toggle {
+    width: 44px;
+    min-height: 44px;
+    padding: 0;
+    border: 0;
+    border-radius: 6px;
+    background: #fff;
+    color: var(--blue);
+    display: grid;
+    place-items: center;
+    cursor: pointer;
+    box-shadow: inset 0 0 0 1px rgba(36, 36, 36, 0.1);
+}
+
+.calculator-toggle:hover {
+    background: #fff8a8;
+    box-shadow: inset 0 0 0 1px #d6c000, 0 5px 12px rgba(36, 36, 36, 0.12);
+}
+
+.calculator-toggle svg {
+    width: 24px;
+    height: 24px;
+    fill: none;
+    stroke: currentColor;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+    stroke-width: 2.6;
+    transition: transform 180ms ease;
+}
+
+.calculator-panel.keyboard-collapsed .calculator-toggle svg {
+    transform: rotate(180deg);
 }
 
 .calculator-display span {
@@ -1215,12 +1233,26 @@ button.password-toggle:active {
     color: #fff;
 }
 
+.calculator-display.confirmed .calculator-toggle {
+    color: var(--green-dark);
+}
+
 .calculator-display strong {
     font-size: 36px;
     line-height: 1;
     white-space: nowrap;
     text-align: center;
     justify-self: center;
+}
+
+.calculator-controls {
+    min-height: 0;
+    display: grid;
+    gap: 8px;
+}
+
+.calculator-controls[hidden] {
+    display: none;
 }
 
 .keypad {

@@ -469,7 +469,9 @@ class PedidoFlowTests(TestCase):
         self.assertNotContains(response, '<span class="brand-title">Pedidos</span>')
         self.assertNotContains(response, "$193.00")
         self.assertNotContains(response, "precio_unitario")
-        self.assertContains(response, 'id="scheduleStatus"')
+        self.assertContains(response, 'id="keyboardToggle"')
+        self.assertContains(response, 'id="calculatorControls"')
+        self.assertNotContains(response, 'id="scheduleStatus"')
         self.assertContains(response, '"dentro_horario": true')
         self.assertNotContains(response, "Total tentativo")
 
@@ -1588,7 +1590,7 @@ class RestriccionHorariaTests(TestCase):
         self.assertEqual(pedido.estado, Pedido.Estado.PENDIENTE)
 
         page = self.client.get("/pedidos/")
-        self.assertContains(page, 'id="scheduleStatus"')
+        self.assertNotContains(page, 'id="scheduleStatus"')
         self.assertContains(page, '"dentro_horario": false')
 
     def test_login_muestra_pedidos_cerrados_fuera_de_horario(self):

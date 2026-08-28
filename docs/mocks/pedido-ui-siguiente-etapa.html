@@ -1,0 +1,364 @@
+<!doctype html>
+<html lang="es">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Mock pedido movil v2</title>
+    <style>
+        :root {
+            --red: #e21b23;
+            --red-dark: #c9151d;
+            --green: #197c35;
+            --yellow: #ffe600;
+            --text: #242424;
+            --muted: #6b665d;
+            --line: #e6e0d2;
+            --soft: #e9f0f4;
+            --panel: #fff;
+            --warm: #fffef0;
+            --shadow: 0 2px 12px rgba(36, 36, 36, 0.12);
+        }
+
+        * {
+            box-sizing: border-box;
+        }
+
+        html,
+        body {
+            width: 100%;
+            min-height: 100%;
+            margin: 0;
+            background: var(--yellow);
+            color: var(--text);
+            font-family: Arial, Helvetica, sans-serif;
+        }
+
+        button {
+            border: 0;
+            font: inherit;
+            cursor: default;
+        }
+
+        .phone-mock {
+            width: 390px;
+            height: 844px;
+            padding-bottom: 10px;
+            display: grid;
+            grid-template-rows: 60px 116px 50px minmax(0, 1fr) 58px;
+            gap: 8px;
+            overflow: hidden;
+            background: var(--yellow);
+        }
+
+        .topbar {
+            height: 60px;
+            padding: 8px 10px;
+            display: grid;
+            grid-template-columns: 34px auto auto minmax(0, 1fr) 56px;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .logo {
+            width: 30px;
+            height: 30px;
+            border-radius: 6px;
+            display: grid;
+            place-items: center;
+            background: #fff8a8;
+            color: var(--red);
+            font-size: 10px;
+            font-weight: 900;
+        }
+
+        .topbar strong {
+            color: var(--red);
+            font-size: 19px;
+            font-weight: 900;
+        }
+
+        .topbar a {
+            color: var(--text);
+            font-size: 12px;
+            font-weight: 900;
+            text-decoration: underline;
+            text-decoration-thickness: 2px;
+            text-underline-offset: 3px;
+        }
+
+        .topbar span {
+            min-width: 0;
+            overflow: hidden;
+            font-size: 12px;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .topbar button,
+        .branch-row button,
+        .summary-sheet button {
+            min-height: 42px;
+            border-radius: 7px;
+            color: #fff;
+            background: var(--red);
+            font-weight: 900;
+        }
+
+        .branch-row {
+            margin: 0 10px;
+            padding: 10px;
+            border-radius: 8px;
+            background: var(--panel);
+            box-shadow: var(--shadow);
+            display: grid;
+            gap: 8px;
+        }
+
+        .branch-row label {
+            color: var(--muted);
+            font-size: 12px;
+            font-weight: 900;
+            text-transform: uppercase;
+        }
+
+        .branch-row div {
+            display: grid;
+            grid-template-columns: minmax(0, 1fr) 86px;
+            gap: 8px;
+        }
+
+        .branch-row span {
+            min-height: 46px;
+            padding: 0 14px;
+            border: 1px solid var(--line);
+            border-radius: 7px;
+            background: #fff;
+            display: flex;
+            align-items: center;
+        }
+
+        .mode-tabs {
+            margin: 0 10px;
+            padding: 4px;
+            border-radius: 8px;
+            background: #fff8a8;
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 4px;
+        }
+
+        .mode-tabs button {
+            min-height: 42px;
+            border-radius: 6px;
+            background: transparent;
+            color: var(--text);
+            font-weight: 900;
+        }
+
+        .mode-tabs .active {
+            color: #fff;
+            background: var(--red);
+        }
+
+        .mode-tabs b {
+            min-width: 24px;
+            min-height: 24px;
+            margin-left: 4px;
+            border-radius: 999px;
+            display: inline-grid;
+            place-items: center;
+            background: var(--red);
+            color: #fff;
+        }
+
+        .work-area {
+            min-height: 0;
+            margin: 0 10px;
+            display: grid;
+            grid-template-columns: minmax(0, 1fr) 126px;
+            gap: 8px;
+        }
+
+        .search-row {
+            grid-column: 1 / -1;
+            height: 38px;
+            padding: 0 12px;
+            border: 1px solid var(--line);
+            border-radius: 7px;
+            background: #fff;
+            color: var(--muted);
+            display: flex;
+            align-items: center;
+            font-weight: 800;
+        }
+
+        .product-grid {
+            min-height: 0;
+            overflow: hidden;
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            grid-auto-rows: 92px;
+            gap: 8px;
+        }
+
+        .product-grid button {
+            padding: 8px;
+            border: 1px solid var(--line);
+            border-radius: 7px;
+            background: #f7f9fb;
+            color: var(--text);
+            font-size: 14px;
+            font-weight: 900;
+            line-height: 1.15;
+        }
+
+        .product-grid .selected {
+            background: var(--yellow);
+            box-shadow: inset 0 -3px 0 #d6c000;
+        }
+
+        .summary-sheet {
+            min-height: 0;
+            padding: 10px;
+            border-radius: 8px;
+            background: var(--warm);
+            box-shadow: var(--shadow);
+            display: grid;
+            align-content: start;
+            gap: 8px;
+        }
+
+        .summary-sheet div {
+            display: grid;
+            gap: 2px;
+        }
+
+        .summary-sheet strong {
+            color: var(--text);
+            font-size: 14px;
+        }
+
+        .summary-sheet div b {
+            color: var(--red);
+            font-size: 16px;
+        }
+
+        .summary-sheet p {
+            margin: 0;
+            padding: 8px;
+            border-radius: 6px;
+            background: #fff;
+            display: grid;
+            gap: 3px;
+            font-size: 11px;
+            font-weight: 900;
+        }
+
+        .summary-sheet p b {
+            color: var(--green);
+            font-size: 13px;
+        }
+
+        .summary-sheet button {
+            margin-top: 4px;
+            font-size: 13px;
+        }
+
+        .keyboard-bar {
+            height: 58px;
+            margin: 0 10px;
+            padding: 5px 8px;
+            border-radius: 8px;
+            background: #fff;
+            box-shadow: var(--shadow);
+            display: grid;
+            grid-template-columns: 48px minmax(0, 1fr) 56px 34px;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .keyboard-bar button {
+            width: 44px;
+            height: 44px;
+            border: 2px solid var(--red);
+            border-radius: 7px;
+            background: #fff;
+            color: var(--text);
+            font-size: 26px;
+            font-weight: 900;
+            line-height: 1;
+        }
+
+        .keyboard-bar strong {
+            min-width: 0;
+            overflow: hidden;
+            font-size: 13px;
+            font-weight: 900;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .keyboard-bar b {
+            font-size: 28px;
+            text-align: right;
+        }
+
+        .keyboard-bar span {
+            font-size: 13px;
+            font-weight: 900;
+            text-align: right;
+        }
+    </style>
+</head>
+<body>
+    <main class="phone-mock" aria-label="Mock pedido movil v2">
+        <header class="topbar">
+            <div class="logo">LT</div>
+            <strong>Pedidos</strong>
+            <a>Privacidad</a>
+            <span>Juan Carlos</span>
+            <button>Salir</button>
+        </header>
+        <section class="branch-row" aria-label="Levantar pedido">
+            <label>Levantar pedido para</label>
+            <div>
+                <span>Brot CAT</span>
+                <button>Cambiar</button>
+            </div>
+        </section>
+        <nav class="mode-tabs" aria-label="Cambiar vista">
+            <button class="active">Productos</button>
+            <button>Pedido <b>3</b></button>
+        </nav>
+        <section class="work-area">
+            <div class="search-row">Buscar producto</div>
+            <div class="product-grid">
+                <button class="selected">LITRO DE BARBACOA</button>
+                <button>TORTILLA ESPECIAL</button>
+                <button>BOLILLO</button>
+                <button>QUESO</button>
+                <button>CEBOLLA BLANCA</button>
+                <button>CEBOLLA GUISADA</button>
+                <button>CHILE GUERO</button>
+                <button>SALSA DE TOMATE</button>
+            </div>
+            <aside class="summary-sheet" aria-label="Resumen del pedido">
+                <div>
+                    <strong>Pedido actual</strong>
+                    <b>$1,240.00</b>
+                </div>
+                <p><span>BARBACOA.M</span><b>2 LT</b></p>
+                <p><span>TORTILLA</span><b>4 KG</b></p>
+                <p><span>SALSA VERDE</span><b>1 PZA</b></p>
+                <button>Confirmar pedido</button>
+            </aside>
+        </section>
+        <footer class="keyboard-bar">
+            <button aria-label="Mostrar teclado">^</button>
+            <strong>BARBACOA.M</strong>
+            <b>2</b>
+            <span>LT</span>
+        </footer>
+    </main>
+</body>
+</html>

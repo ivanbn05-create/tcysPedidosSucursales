@@ -19,14 +19,16 @@ document.addEventListener("DOMContentLoaded", () => {
     const selectedName = document.getElementById("selectedName");
     const selectedUnit = document.getElementById("selectedUnit");
     const quantityDisplay = document.getElementById("quantityDisplay");
+    const calculatorPanel = document.querySelector(".calculator-panel");
     const calculatorDisplay = document.querySelector(".calculator-display");
+    const calculatorControls = document.getElementById("calculatorControls");
+    const keyboardToggle = document.getElementById("keyboardToggle");
     const focusProduct = document.getElementById("focusProduct");
     const itemsList = document.getElementById("itemsList");
     const emptyState = document.getElementById("emptyState");
     const totalAmount = document.getElementById("totalAmount");
     const itemCount = document.getElementById("itemCount");
     const notice = document.getElementById("notice");
-    const scheduleStatus = document.getElementById("scheduleStatus");
     const addButton = document.getElementById("addItem");
     const clearButton = document.getElementById("clearOrder");
     const confirmButton = document.getElementById("confirmOrder");
@@ -198,18 +200,6 @@ document.addEventListener("DOMContentLoaded", () => {
         }
     }
 
-    function renderScheduleStatus() {
-        if (!scheduleStatus || !schedule.aplica) {
-            if (scheduleStatus) scheduleStatus.hidden = true;
-            return;
-        }
-        const open = schedule.dentro_horario !== false;
-        scheduleStatus.textContent =
-            schedule.mensaje || (open ? "Pedidos abiertos." : "Pedidos cerrados.");
-        scheduleStatus.classList.toggle("closed", !open);
-        scheduleStatus.hidden = false;
-    }
-
     async function refreshScheduleStatus() {
         if (!schedule.aplica || !apiUrls.horarios) return;
         try {
@@ -219,13 +209,13 @@ document.addEventListener("DOMContentLoaded", () => {
             });
             if (!response.ok) return;
             schedule = { ...schedule, ...(await response.json()) };
-            renderScheduleStatus();
         } catch (error) {
             // Conserva el ultimo estado conocido; el backend vuelve a validarlo.
         }
     }
 
     let pendingConfirm = null;
+    let isKeyboardCollapsed = false;
 
     function askConfirm(message) {
         // Fallback: si el modal no existe en el DOM, no bloqueamos la accion.
@@ -299,6 +289,20 @@ document.addEventListener("DOMContentLoaded", () => {
         orderShell.classList.toggle("summary-open", panelName === "summary");
     }
 
+    function setKeyboardCollapsed(nextCollapsed) {
+        isKeyboardCollapsed = nextCollapsed;
+        orderShell?.classList.toggle("keyboard-collapsed", nextCollapsed);
+        calculatorPanel?.classList.toggle("keyboard-collapsed", nextCollapsed);
+        if (calculatorControls) calculatorControls.hidden = nextCollapsed;
+
+        if (keyboardToggle) {
+            const label = nextCollapsed ? "Mostrar teclado" : "Ocultar teclado";
+            keyboardToggle.setAttribute("aria-expanded", String(!nextCollapsed));
+            keyboardToggle.setAttribute("aria-label", label);
+            keyboardToggle.title = label;
+        }
+    }
+
     function renderQuantity() {
         quantityDisplay.textContent = quantityInput || "0";
     }
@@ -340,6 +344,7 @@ document.addEventListener("DOMContentLoaded", () => {
         }
 
         setQuantityConfirmed(false);
+        setKeyboardCollapsed(false);
         refreshSelectedState();
     }
 
@@ -352,6 +357,7 @@ document.addEventListener("DOMContentLoaded", () => {
         quantityInput = editableQuantity(item.cantidad);
         replaceOnNextKey = true;
         setQuantityConfirmed(false);
+        setKeyboardCollapsed(false);
         refreshSelectedState();
     }
 
@@ -554,7 +560,6 @@ document.addEventListener("DOMContentLoaded", () => {
         } catch (error) {
             if (error.horario) {
                 schedule = { ...schedule, ...error.horario };
-                renderScheduleStatus();
             }
             if (error.progresoDiario) renderDailyProgress(error.progresoDiario);
             showNotice(error.message, "error");
@@ -577,6 +582,8 @@ document.addEventListener("DOMContentLoaded", () => {
     mobilePanelTabs.forEach((button) => {
         button.addEventListener("click", () => setMobilePanel(button.dataset.mobilePanel));
     });
+
+    keyboardToggle?.addEventListener("click", () => setKeyboardCollapsed(!isKeyboardCollapsed));
 
     document.getElementById("keypad").addEventListener("click", (event) => {
         const button = event.target.closest("[data-key]");
@@ -605,7 +612,6 @@ document.addEventListener("DOMContentLoaded", () => {
     selectProduct(selectedProduct?.id);
     renderDailyProgress();
     renderOrder();
-    renderScheduleStatus();
     refreshScheduleStatus();
     if (schedule.aplica) window.setInterval(refreshScheduleStatus, 60000);
 });
