@@ -286,7 +286,9 @@ document.addEventListener("DOMContentLoaded", () => {
     }
 
     function setMobilePanel(panelName) {
-        orderShell.classList.toggle("summary-open", panelName === "summary");
+        const opensSummary = panelName === "summary";
+        orderShell.classList.toggle("summary-open", opensSummary);
+        if (opensSummary) setKeyboardCollapsed(true);
     }
 
     function setKeyboardCollapsed(nextCollapsed) {

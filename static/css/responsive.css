@@ -263,13 +263,19 @@
         height: 48px;
         padding: 5px 8px;
         border-radius: 6px;
-        grid-template-columns: 44px minmax(0, 1fr) auto minmax(32px, 0.25fr);
+        grid-template-columns: 40px minmax(0, 1fr) auto minmax(32px, 0.25fr);
         gap: 6px;
     }
 
     .calculator-toggle {
-        width: 44px;
-        min-height: 44px;
+        width: 36px;
+        height: 36px;
+        min-height: 0;
+    }
+
+    .calculator-toggle svg {
+        width: 20px;
+        height: 20px;
     }
 
     .calculator-controls {
@@ -767,13 +773,19 @@
         height: 48px;
         padding: 5px 8px;
         border-radius: 6px;
-        grid-template-columns: 44px minmax(0, 1fr) auto minmax(32px, 0.25fr);
+        grid-template-columns: 40px minmax(0, 1fr) auto minmax(32px, 0.25fr);
         gap: 6px;
     }
 
     body.order-page .calculator-toggle {
-        width: 44px;
-        min-height: 44px;
+        width: 36px;
+        height: 36px;
+        min-height: 0;
+    }
+
+    body.order-page .calculator-toggle svg {
+        width: 20px;
+        height: 20px;
     }
 
     body.order-page .calculator-controls {
