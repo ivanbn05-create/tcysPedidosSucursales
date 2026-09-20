@@ -11,7 +11,7 @@ Todo el código, UI y mensajes están en español (México). Mantén ese idioma 
 ## Stack y versiones reales
 
 - Django `>=4.2,<6.1` (los comentarios en `settings.py` apuntan a docs de Django 6.0 → asume que corre en 6.0.x salvo que `requirements.txt` diga otra cosa).
-- `gunicorn` (server WSGI en prod), `whitenoise` (estáticos, `CompressedManifestStaticFilesStorage`), `dj-database-url` + `psycopg2-binary` (Postgres), `python-decouple` (config por env), `APScheduler` (disparo del recordatorio diario mientras el proyecto vive en Render, ver sección "Automatización de correos").
+- `gunicorn` (server WSGI en prod), `whitenoise` (estáticos, `CompressedManifestStaticFilesStorage`), `dj-database-url` + `psycopg2-binary` (Postgres) y `python-decouple` (config por env).
 - Sin DRF, sin Celery, sin React/Vue. No los introduzcas salvo que se pida explícitamente.
 - Python `3.13.12` (`runtime.txt`).
 
@@ -24,8 +24,7 @@ pedidos/
   views.py         TODA la lógica de negocio vive aquí (sin services/ separado)
   urls.py          rutas de la app (home, login, pedidos, api/*, admin/*)
   admin.py         Django admin nativo (django-admin/, uso interno/dev, no confundir con /admin/)
-  apps.py          arranca el scheduler de recordatorios en ready() (con guardas, ver scheduler.py)
-  scheduler.py      APScheduler que dispara enviar_recordatorios (solo mientras viva en Render)
+  apps.py          registra señales en ready(); no inicia tareas en segundo plano
   tickets.py       arma el contexto y las dimensiones del ticket térmico HTML
   seed.py          seed_demo_data() — datos demo idempotentes (usuarios, productos, precios, Configuracion)
   management/commands/seed_demo.py            wrapper de management command sobre seed.py
@@ -99,23 +98,16 @@ python manage.py enviar_recordatorios --sucursal "Aguilas"   # solo esa sucursal
 python manage.py enviar_recordatorios --fuerza    # ignora día configurado y el flag recordatorios_habilitados
 ```
 
-**Quién lo dispara automáticamente — Nota: Este proyecto está en Render ahora, irá a VPS después. Usa APScheduler para esta implementación (Render). Cuando migremos a VPS, cambiaremos a cron nativo (mismo management command).**
-
-Concretamente: `pedidos/scheduler.py` arranca un `BackgroundScheduler` de APScheduler desde `pedidos/apps.py::ready()` (con guardas para no duplicarse en el watcher de `runserver` ni en comandos de mantenimiento como `test`/`migrate`). Ese scheduler revisa cada minuto si ya es la `hora_envio_recordatorio` configurada y si no se ha enviado hoy (dedupe vía `LogRecordatorio.fecha_envio__date`), y si aplica, llama a `call_command("enviar_recordatorios")` — es decir, dispara el mismo comando de siempre, no una copia de su lógica. `SCHEDULER_ENABLED` (env var, default `True`) apaga esto por completo si hace falta.
-
-Cuando el proyecto se mueva a un VPS: pon `SCHEDULER_ENABLED=False`, agrega un cron nativo que llame al mismo comando (ejemplo abajo), y `pedidos/scheduler.py`/el arranque en `apps.py` quedan sin uso (se pueden dejar o borrar, no son necesarios en VPS):
-```bash
-0 14 * * 1-5 cd /ruta/del/proyecto && venv/bin/python manage.py enviar_recordatorios
-```
-Nota que la hora del cron en VPS debe capturarse a mano según `Configuracion.hora_envio_recordatorio`; a diferencia de APScheduler, cron no relee la configuración dinámicamente — si el negocio cambia la hora de envío desde `/admin/configuracion/`, hay que actualizar también el crontab.
-
-**Caveat de concurrencia**: si `gunicorn proyecto.wsgi` llega a correr con más de un worker, cada worker arrancaría su propio scheduler y el recordatorio se mandaría duplicado. El `Procfile` actual no fija `--workers` (gunicorn usa 1 por defecto), así que hoy no pasa, pero si se agrega concurrencia hay que revisar esto antes.
+**Quién lo dispara automáticamente**: nadie. El scheduler embebido y APScheduler
+fueron retirados porque los recordatorios dejaron de usarse. No configures cron ni
+timer en Render o VPS. El comando se conserva temporalmente para compatibilidad
+y pruebas manuales; `SCHEDULER_ENABLED` debe permanecer en `False`.
 
 **Credenciales SMTP**: `EMAIL_HOST_USER`/`EMAIL_HOST_PASSWORD`/`EMAIL_HOST`/`EMAIL_PORT`/`DEFAULT_FROM_EMAIL` son variables de entorno (`python-decouple`), **no** campos de `Configuracion` — se decidió así para no guardar una contraseña de Gmail en texto plano en la base de datos, siguiendo el mismo patrón que `SECRET_KEY`/`DATABASE_URL`. `Configuracion.email_remitente` solo controla el nombre visible del remitente (ej. `"Los Tocayos <tocayos.tacos@gmail.com>"`); si se deja vacío se usa `DEFAULT_FROM_EMAIL`.
 
 **Troubleshooting**:
 - *"El correo no se envía"*: revisa que `EMAIL_HOST_USER`/`EMAIL_HOST_PASSWORD` estén en el entorno (Gmail requiere una "contraseña de aplicación", no la contraseña normal de la cuenta), que la sucursal tenga `email` capturado, que `Configuracion.recordatorios_habilitados` esté activo y que hoy sea uno de los `dias_recordatorio`. Corre `python manage.py enviar_recordatorios --sucursal "Nombre" --fuerza` para aislar el problema y revisa `LogRecordatorio` (o `/django-admin/pedidos/logrecordatorio/`) para ver el `mensaje_error` exacto.
-- *"No se envía a la hora esperada"*: en Render, revisa que `SCHEDULER_ENABLED` no esté en `False` y que los logs de arranque muestren `"APScheduler iniciado..."`. En local con `DEBUG=True`, `EMAIL_BACKEND` cae al backend de consola por default (no manda correos reales aunque todo esté "bien configurado") — está pensado así para no mandar correos de prueba sin querer.
+- *"No se envía a la hora esperada"*: no existe disparo automático. En local con `DEBUG=True`, `EMAIL_BACKEND` cae al backend de consola por default (no manda correos reales aunque todo esté "bien configurado") — está pensado así para no mandar correos de prueba sin querer.
 - *"Confirmar pedido rechaza fuera de horario"*: es la restricción horaria (ver sección arriba), no un bug — revisa `/api/horarios/`, el aviso del login y `Configuracion.hora_inicio_pedidos`/`hora_fin_pedidos`.
 
 ## Deploy (Render free tier) — decisiones ya tomadas, no las deshagas sin motivo
@@ -129,19 +121,22 @@ Por eso `DATABASE_URL` en producción apunta a **Postgres externo (Supabase, ví
 También ten presente el cold start: los servicios gratuitos se duermen tras 15 min de inactividad y tardan 30–60s en responder la siguiente petición. No es un bug si una demo tarda en cargar la primera vez.
 
 Comandos de Render (de `README.md`):
-- Build recomendado en plan gratuito: `pip install -r requirements.txt && python manage.py collectstatic --noinput && python manage.py migrate && python manage.py seed_demo`
-- Si el plan tiene Release/pre-deploy: puedes mover ahi `python manage.py migrate && python manage.py seed_demo`
+- Build recomendado en plan gratuito: `pip install -r requirements.txt && python manage.py collectstatic --noinput`
+- Si el commit contiene migraciones, ejecútalas en Release/pre-deploy sólo después de respaldo y revisión.
 - Start: `gunicorn proyecto.wsgi` (`Procfile` ya lo define igual)
 
-**Riesgo real a vigilar**: `seed_demo` corre en cada deploy y es idempotente en estructura; hoy fija la contraseña del admin `juancarlos` a `TocayosMO2026`, la del usuario de impresión `juanmanuel` a `imprimir`, y solo asigna contraseñas de sucursal/cliente al crear usuarios nuevos o si no tienen contraseña usable. Si en algún momento el negocio cambia contraseñas desde `/admin/configuracion/`, revisa `seed.py` antes de cambiar esa política para no pisar claves reales de operación.
+**Riesgo real a vigilar**: `seed_demo` crea cuentas conocidas y sólo debe usarse
+en bases locales desechables. Nunca debe formar parte de un build o release de
+Render/VPS ni ejecutarse contra Supabase.
 
 ## Variables de entorno
 
-Vía `python-decouple`, leídas de `.env` (gitignored) o del entorno de Render: `SECRET_KEY`, `DEBUG`, `ALLOWED_HOSTS`, `CSRF_TRUSTED_ORIGINS`, `DATABASE_URL`, `LOG_LEVEL`, `SECURE_SSL_REDIRECT`, `SECURE_HSTS_SECONDS`. El `.env` local de este repo trae credenciales reales de Supabase — **nunca las imprimas, loguees, commitees ni las incluyas en respuestas**; si necesitas referirte a ellas, hazlo por nombre de variable, no por valor.
+Vía `python-decouple`, leídas de `.env` (gitignored) o del entorno de Render: `DJANGO_ENV`, `SECRET_KEY`, `DEBUG`, `ALLOWED_HOSTS`, `CSRF_TRUSTED_ORIGINS`, `DATABASE_URL`, `LOG_LEVEL`, `SECURE_SSL_REDIRECT`, `SECURE_HSTS_SECONDS`. El perfil `production`/`vps` rechaza secretos ausentes o débiles y `DEBUG=True`. El `.env` local puede traer credenciales reales de Supabase — **nunca las imprimas, loguees, commitees ni las incluyas en respuestas**; si necesitas referirte a ellas, hazlo por nombre de variable, no por valor.
 
 Para recordatorios por correo (ver esa sección arriba): `EMAIL_BACKEND` (default: consola si `DEBUG=True`, SMTP si no), `EMAIL_HOST` (default `smtp.gmail.com`), `EMAIL_PORT` (default `587`), `EMAIL_USE_TLS` (default `True`), `EMAIL_HOST_USER`, `EMAIL_HOST_PASSWORD` (contraseña de aplicación de Gmail, **nunca** la contraseña normal de la cuenta), `DEFAULT_FROM_EMAIL`. Trátalas con el mismo cuidado que `SECRET_KEY`/`DATABASE_URL`: nunca las imprimas ni las loguees.
 
-Para el scheduler (ver esa sección arriba): `SCHEDULER_ENABLED` (default `True`; ponlo en `False` cuando el proyecto pase a VPS con cron nativo).
+`SCHEDULER_ENABLED` es una variable de compatibilidad y debe ser `False`; el
+codigo fija el ajuste de Django a `False` y no contiene scheduler embebido.
 
 Para sesión única: `ACTIVE_SESSION_TTL_SECONDS` (default `600`). Debe mantenerse por debajo de los 15 minutos de inactividad que duermen Render Free y muy por encima del heartbeat de 60 segundos.
 
@@ -150,7 +145,6 @@ Para sesión única: `ACTIVE_SESSION_TTL_SECONDS` (default `600`). Debe mantener
 ```bash
 pip install -r requirements.txt
 python manage.py migrate
-python manage.py seed_demo          # datos demo idempotentes, ver riesgo de contraseñas arriba
 python manage.py runserver
 
 python manage.py check
@@ -180,4 +174,4 @@ No hay linter, `pyproject.toml`, `pre-commit` ni CI configurados en el repo. Si 
 - No guardes credenciales SMTP (usuario/password de Gmail) en `Configuracion` ni en ningún modelo — van por variable de entorno, igual que `SECRET_KEY`/`DATABASE_URL`.
 - No quites la validación de horario de `confirmar_pedido` (`validar_horario_pedidos()`) ni la muevas a un middleware genérico que también bloquee `crear_item`/`eliminar_item` — es una decisión explícita que solo bloquea la confirmación, no la captura.
 - Al modificar horarios/recordatorios en código, invalida `CONFIGURACION_CACHE_KEY` (`django.core.cache.cache.delete(...)`) o los cambios tardan hasta 5 minutos en reflejarse por el caché de `get_configuracion()`.
-- Si se agrega más de un worker de gunicorn, revisa primero el caveat de duplicado en `pedidos/scheduler.py` antes de hacer deploy.
+- Los workers de Gunicorn no deben iniciar tareas periodicas; cualquier automatizacion futura debe vivir en un servicio separado y tener deduplicacion.

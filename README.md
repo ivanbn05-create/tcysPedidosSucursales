@@ -7,27 +7,14 @@ App Django tipo SPA para que sucursales y clientes mayoristas capturen pedidos y
 ```bash
 python -m pip install -r requirements.txt
 python manage.py migrate
-python manage.py seed_demo
+python manage.py createsuperuser
 python manage.py runserver
 ```
 
 Abrir `http://127.0.0.1:8000/`.
 
-## Credenciales demo
-
-La contraseña de cada sucursal/cliente es su nombre más 4 dígitos:
-
-- `Aguilas` / `Aguilas8445`
-- `Fortin` / `Fortin9481`
-- `Estancia` / `Estancia7608`
-- `Brot Nueva Galicia` / `Brot Nueva Galicia0846`
-- `Brot CAT` / `Brot CAT7721`
-- `Rakebela` / `Rakebela4349`
-- Admin: `juancarlos` / `TocayosMO2026`
-- Solo impresión: `juanmanuel` / `imprimir`
-- Pruebas/debugging: `ivanprueba` / `prueba8989`
-
-Los usernames internos sin espacios también funcionan para pruebas técnicas: `aguilas`, `fortin`, `estancia`, `brot_nueva_galicia`, `brot_cat`, `rakebela`.
+`seed_demo` se reserva para bases locales desechables. Crea cuentas propias para
+desarrollo y nunca ejecutes ese comando contra Supabase o una base productiva.
 
 ## Flujos
 
@@ -44,7 +31,7 @@ Los usernames internos sin espacios también funcionan para pruebas técnicas: `
 - `/admin/sucursales/imprimir/`: imprime barbacoa, tortilla y consomé acumulados del macropedido confirmado más reciente de las últimas 24 horas por sucursal; los macropedidos enviados se omiten para permitir tomar el confirmado anterior.
 - `/django-admin/`: admin nativo de Django.
 
-## Recordatorios diarios por correo
+## Recordatorios por correo (legado)
 
 ```bash
 python manage.py enviar_recordatorios            # respeta día configurado + recordatorios_habilitados
@@ -53,22 +40,26 @@ python manage.py enviar_recordatorios --sucursal "Aguilas"
 python manage.py enviar_recordatorios --fuerza    # ignora día/recordatorios_habilitados
 ```
 
-Mientras el proyecto vive en Render, este comando se dispara solo vía APScheduler (`pedidos/scheduler.py`, arrancado desde `pedidos/apps.py`), que revisa cada minuto si toca enviar según `Configuracion.hora_envio_recordatorio`. Al migrar a un VPS, esto se reemplaza por un cron nativo llamando al mismo comando (ver CLAUDE.md, sección "Automatización de correos") y se debe poner `SCHEDULER_ENABLED=False`.
+El scheduler embebido fue retirado y ningún worker web inicia envíos automáticos.
+El comando se conserva temporalmente para compatibilidad y ejecución manual; no
+hay cron ni timer recomendado porque la funcionalidad ya no está activa.
+`SCHEDULER_ENABLED` debe permanecer en `False` en todos los entornos.
 
 ## Render
 
 Crear un Web Service con PostgreSQL externo (por ejemplo Supabase) y configurar variables de entorno:
 
 ```env
+DJANGO_ENV=production
 DEBUG=False
-SECRET_KEY=your-secret-key-here
+SECRET_KEY=<REEMPLAZAR_CON_UN_VALOR_ALEATORIO_NUEVO>
 ALLOWED_HOSTS=tu-app.render.com
 CSRF_TRUSTED_ORIGINS=https://tu-app.render.com
-DATABASE_URL=postgresql://user:password@host:port/database
-EMAIL_HOST_USER=tocayos.tacos@gmail.com
-EMAIL_HOST_PASSWORD=contraseña-de-aplicacion-de-gmail
-DEFAULT_FROM_EMAIL=Los Tocayos <tocayos.tacos@gmail.com>
-SCHEDULER_ENABLED=True
+DATABASE_URL=postgresql://<USUARIO>:<PASSWORD>@<HOST>:<PUERTO>/<BASE>?sslmode=require
+EMAIL_HOST_USER=<USUARIO_SMTP_OPCIONAL>
+EMAIL_HOST_PASSWORD=<PASSWORD_SMTP_OPCIONAL>
+DEFAULT_FROM_EMAIL=<REMITENTE_OPCIONAL>
+SCHEDULER_ENABLED=False
 ACTIVE_SESSION_TTL_SECONDS=600
 ```
 
@@ -82,16 +73,17 @@ limita de forma segura al rango de 120–840 segundos.
 Build command:
 
 ```bash
-pip install -r requirements.txt && python manage.py collectstatic --noinput && python manage.py migrate && python manage.py seed_demo
+pip install -r requirements.txt && python manage.py collectstatic --noinput
 ```
 
-Si tu plan de Render tiene Pre-deploy o Release command, puedes mover ahí la parte de base de datos:
+Ejecuta migraciones en un paso de release separado, con respaldo previo y sólo
+cuando el commit incluya migraciones nuevas:
 
 ```bash
-python manage.py migrate && python manage.py seed_demo
+python manage.py migrate
 ```
 
-En el plan gratuito, dejar `migrate && seed_demo` dentro del Build command evita depender de Shell.
+No ejecutes `seed_demo` como parte de un build o release productivo.
 
 Start command:
 
@@ -108,3 +100,6 @@ python manage.py collectstatic --noinput
 ```
 
 El ticket sólo imprime una fila por producto pedido; no agrega filas vacías de relleno.
+
+La configuración reproducible del VPS, el lock exacto y los procedimientos de
+release/rollback están en [`deploy/vps/`](deploy/vps/README.md).
