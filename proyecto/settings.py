@@ -89,12 +89,14 @@ if IS_PRODUCTION and not DATABASE_URL:
     raise ImproperlyConfigured("DATABASE_URL es obligatoria en produccion.")
 
 if DATABASE_URL:
+    database_config = dj_database_url.parse(
+        DATABASE_URL,
+        conn_max_age=600,
+    )
+    if IS_PRODUCTION and database_config["ENGINE"] != "django.db.backends.sqlite3":
+        database_config.setdefault("OPTIONS", {}).setdefault("sslmode", "require")
     DATABASES = {
-        "default": dj_database_url.parse(
-            DATABASE_URL,
-            conn_max_age=600,
-            ssl_require=not DEBUG,
-        )
+        "default": database_config,
     }
 else:
     DATABASES = {
