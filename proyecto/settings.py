@@ -3,18 +3,26 @@ from pathlib import Path
 
 import dj_database_url
 from decouple import config
+from django.core.exceptions import ImproperlyConfigured
+
+from .runtime_config import cargar_configuracion_segura
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
 
 
-SECRET_KEY = config("SECRET_KEY", default="django-insecure-local-los-tocayos-change-me")
-
-DEBUG = config("DEBUG", default=True, cast=bool)
+RUNTIME_SECURITY = cargar_configuracion_segura(config)
+DJANGO_ENV = RUNTIME_SECURITY.perfil
+IS_PRODUCTION = RUNTIME_SECURITY.es_produccion
+SECRET_KEY = RUNTIME_SECURITY.secret_key
+DEBUG = RUNTIME_SECURITY.debug
 
 ALLOWED_HOSTS = [
     host.strip()
-    for host in config("ALLOWED_HOSTS", default="localhost,127.0.0.1,[::1],testserver").split(",")
+    for host in config(
+        "ALLOWED_HOSTS",
+        default="" if IS_PRODUCTION else "localhost,127.0.0.1,[::1],testserver",
+    ).split(",")
     if host.strip()
 ]
 
@@ -23,6 +31,12 @@ CSRF_TRUSTED_ORIGINS = [
     for origin in config("CSRF_TRUSTED_ORIGINS", default="").split(",")
     if origin.strip()
 ]
+
+if IS_PRODUCTION and not ALLOWED_HOSTS:
+    raise ImproperlyConfigured("ALLOWED_HOSTS es obligatorio en produccion.")
+
+if IS_PRODUCTION and not CSRF_TRUSTED_ORIGINS:
+    raise ImproperlyConfigured("CSRF_TRUSTED_ORIGINS es obligatorio en produccion.")
 
 
 # Application definition
@@ -70,6 +84,9 @@ WSGI_APPLICATION = 'proyecto.wsgi.application'
 
 
 DATABASE_URL = config("DATABASE_URL", default="")
+
+if IS_PRODUCTION and not DATABASE_URL:
+    raise ImproperlyConfigured("DATABASE_URL es obligatoria en produccion.")
 
 if DATABASE_URL:
     DATABASES = {
@@ -170,13 +187,13 @@ CACHES = {
     }
 }
 
-# Scheduler de recordatorios (solo aplica en Render, ver pedidos/scheduler.py).
-# En VPS se debe poner en False y usar cron nativo llamando al management command.
-SCHEDULER_ENABLED = config("SCHEDULER_ENABLED", default=True, cast=bool)
+# El scheduler embebido fue retirado. Se conserva este ajuste fijo para hacer
+# explicito que ningun worker web debe iniciar tareas automaticas.
+SCHEDULER_ENABLED = False
 
 SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
-SESSION_COOKIE_SECURE = not DEBUG
-CSRF_COOKIE_SECURE = not DEBUG
+SESSION_COOKIE_SECURE = IS_PRODUCTION or not DEBUG
+CSRF_COOKIE_SECURE = IS_PRODUCTION or not DEBUG
 
 # Explícito a propósito: "Lax" es el default de Django, pero las sucursales abren
 # el sistema desde un link en WhatsApp o en la app de Google, y con "Strict" la
@@ -184,10 +201,23 @@ CSRF_COOKIE_SECURE = not DEBUG
 # login). No lo subas a "Strict" sin probar antes desde un navegador in-app.
 SESSION_COOKIE_SAMESITE = "Lax"
 CSRF_COOKIE_SAMESITE = "Lax"
-SECURE_SSL_REDIRECT = config("SECURE_SSL_REDIRECT", default=not DEBUG, cast=bool)
-SECURE_HSTS_SECONDS = config("SECURE_HSTS_SECONDS", default=31536000 if not DEBUG else 0, cast=int)
-SECURE_HSTS_INCLUDE_SUBDOMAINS = not DEBUG
-SECURE_HSTS_PRELOAD = not DEBUG
+SECURE_SSL_REDIRECT = config(
+    "SECURE_SSL_REDIRECT",
+    default=IS_PRODUCTION or not DEBUG,
+    cast=bool,
+)
+if IS_PRODUCTION and not SECURE_SSL_REDIRECT:
+    raise ImproperlyConfigured("SECURE_SSL_REDIRECT debe estar habilitado en produccion.")
+
+# HSTS empieza deshabilitado hasta validar HTTPS y el plan de rollback. Su
+# activacion y alcance son decisiones explicitas del entorno, no del codigo.
+SECURE_HSTS_SECONDS = config("SECURE_HSTS_SECONDS", default=0, cast=int)
+SECURE_HSTS_INCLUDE_SUBDOMAINS = config(
+    "SECURE_HSTS_INCLUDE_SUBDOMAINS",
+    default=False,
+    cast=bool,
+)
+SECURE_HSTS_PRELOAD = config("SECURE_HSTS_PRELOAD", default=False, cast=bool)
 
 LOGGING = {
     "version": 1,
@@ -201,11 +231,6 @@ LOGGING = {
             "level": config("LOG_LEVEL", default="INFO"),
         },
         "pedidos.management.commands.enviar_recordatorios": {
-            "handlers": ["console"],
-            "level": config("LOG_LEVEL", default="INFO"),
-            "propagate": False,
-        },
-        "pedidos.scheduler": {
             "handlers": ["console"],
             "level": config("LOG_LEVEL", default="INFO"),
             "propagate": False,

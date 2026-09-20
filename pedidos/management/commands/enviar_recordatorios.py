@@ -8,11 +8,9 @@ Se ejecuta con:
     python manage.py enviar_recordatorios --fuerza    # ignora día configurado y el flag
                                                        # recordatorios_habilitados
 
-Nota sobre cómo se dispara automáticamente (ver también CLAUDE.md):
-Mientras el proyecto viva en Render usamos APScheduler (pedidos/scheduler.py,
-arrancado desde pedidos/apps.py) para llamar a este mismo comando todos los
-días. Cuando migremos a un VPS, cambiaremos a un cron job nativo del SO que
-invoque este comando directamente — el comando en sí no cambia.
+Este comando se conserva temporalmente para compatibilidad y uso manual. No se
+dispara automaticamente: el scheduler embebido fue retirado y no debe crearse
+un cron o timer mientras la funcionalidad de recordatorios permanezca inactiva.
 """
 
 import logging

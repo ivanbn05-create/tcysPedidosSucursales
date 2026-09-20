@@ -1,4 +1,5 @@
 import json
+import inspect
 from datetime import datetime, time, timedelta
 from decimal import Decimal
 from io import StringIO
@@ -9,12 +10,15 @@ from django.conf import settings
 from django.contrib.auth.models import User
 from django.core import mail
 from django.core.cache import cache
+from django.core.exceptions import ImproperlyConfigured
 from django.core.management import call_command
 from django.db import IntegrityError, connection, transaction
-from django.test import Client, TestCase, override_settings
+from django.test import Client, SimpleTestCase, TestCase, override_settings
 from django.test.utils import CaptureQueriesContext
 from django.utils import timezone
-from .apps import COMANDOS_SIN_SCHEDULER
+from proyecto.runtime_config import cargar_configuracion_segura
+
+from .apps import PedidosConfig
 from .models import (
     CONFIGURACION_CACHE_KEY,
     Configuracion,
@@ -43,6 +47,71 @@ def abrir_horario_completo():
     return config
 
 
+class RuntimeSecuritySettingsTests(SimpleTestCase):
+    @staticmethod
+    def config_reader(valores):
+        def read(nombre, default=None, cast=None):
+            valor = valores.get(nombre, default)
+            return cast(valor) if cast else valor
+
+        return read
+
+    def test_produccion_rechaza_secret_key_ausente(self):
+        read = self.config_reader({"DJANGO_ENV": "production", "DEBUG": False})
+
+        with self.assertRaisesMessage(ImproperlyConfigured, "SECRET_KEY es obligatoria"):
+            cargar_configuracion_segura(read)
+
+    def test_debug_false_sin_perfil_tambien_rechaza_secret_key_ausente(self):
+        read = self.config_reader({"DEBUG": False})
+
+        with self.assertRaisesMessage(ImproperlyConfigured, "SECRET_KEY es obligatoria"):
+            cargar_configuracion_segura(read)
+
+    def test_produccion_rechaza_secret_key_insegura(self):
+        read = self.config_reader(
+            {
+                "DJANGO_ENV": "vps",
+                "DEBUG": False,
+                "SECRET_KEY": "django-insecure-valor-de-prueba-no-utilizable-en-produccion",
+            }
+        )
+
+        with self.assertRaisesMessage(ImproperlyConfigured, "requisitos minimos"):
+            cargar_configuracion_segura(read)
+
+    def test_produccion_rechaza_debug_habilitado(self):
+        read = self.config_reader(
+            {
+                "DJANGO_ENV": "production",
+                "DEBUG": True,
+                "SECRET_KEY": "valor-de-prueba-con-longitud-y-variedad-suficientes-1234567890",
+            }
+        )
+
+        with self.assertRaisesMessage(ImproperlyConfigured, "DEBUG no puede"):
+            cargar_configuracion_segura(read)
+
+    def test_produccion_acepta_configuracion_segura(self):
+        read = self.config_reader(
+            {
+                "DJANGO_ENV": "production",
+                "DEBUG": False,
+                "SECRET_KEY": "valor-de-prueba-con-longitud-y-variedad-suficientes-1234567890",
+            }
+        )
+
+        runtime = cargar_configuracion_segura(read)
+
+        self.assertTrue(runtime.es_produccion)
+        self.assertFalse(runtime.debug)
+
+    def test_scheduler_embebido_no_puede_arrancar(self):
+        self.assertFalse(settings.SCHEDULER_ENABLED)
+        self.assertFalse(hasattr(PedidosConfig, "_maybe_start_scheduler"))
+        self.assertNotIn("scheduler", inspect.getsource(PedidosConfig.ready).lower())
+
+
 class PedidoFlowTests(TestCase):
     def setUp(self):
         seed_demo_data()
@@ -50,7 +119,6 @@ class PedidoFlowTests(TestCase):
 
     def test_configuracion_estaticos_mantiene_whitenoise(self):
         self.assertIn("whitenoise.middleware.WhiteNoiseMiddleware", settings.MIDDLEWARE)
-        self.assertIn("compactar_precios", COMANDOS_SIN_SCHEDULER)
 
     def test_css_movil_no_bloquea_scroll_global(self):
         responsive_css = Path(settings.BASE_DIR, "static", "css", "responsive.css").read_text(
