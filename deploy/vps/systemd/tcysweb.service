@@ -1,0 +1,31 @@
+[Unit]
+Description=TCYS Pedidos Sucursales (Gunicorn)
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=simple
+User=deploy
+Group=deploy
+WorkingDirectory=/home/deploy/apps/tcysPedidosSucursales/current
+EnvironmentFile=/home/deploy/apps/tcysPedidosSucursales/shared/.env
+Environment=PYTHONUNBUFFERED=1
+ExecStart=/home/deploy/apps/tcysPedidosSucursales/current/.venv/bin/gunicorn proyecto.wsgi:application --bind 127.0.0.1:8002 --workers 3 --timeout 60 --access-logfile - --error-logfile -
+ExecReload=/bin/kill -s HUP $MAINPID
+KillSignal=SIGQUIT
+TimeoutStopSec=30
+Restart=on-failure
+RestartSec=5
+UMask=0027
+PrivateTmp=true
+NoNewPrivileges=true
+ProtectSystem=full
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+LockPersonality=true
+LimitNOFILE=4096
+
+[Install]
+WantedBy=multi-user.target

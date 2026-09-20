@@ -1,0 +1,13 @@
+# Runtime validado para CPython 3.13.12.
+# Regeneracion documentada en deploy/vps/README.md.
+Django==6.0.8
+asgiref==3.12.1
+dj-database-url==2.3.0
+gunicorn==23.0.0
+packaging==26.3
+psycopg2-binary==2.9.13
+python-decouple==3.8
+sqlparse==0.6.0
+typing-extensions==4.16.0
+tzdata==2026.3 ; sys_platform == "win32"
+whitenoise==6.12.0
