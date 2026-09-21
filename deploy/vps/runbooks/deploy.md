@@ -216,6 +216,26 @@ sudo systemd-run --unit="$TEST_UNIT" --collect \
   SCHEDULER_ENABLED=False \
   "$RELEASE/.venv/bin/gunicorn" proyecto.wsgi:application \
   --bind 127.0.0.1:8012 --workers 1 --timeout 60 --access-logfile - --error-logfile -
+
+SMOKE_READY=false
+SMOKE_DEADLINE=$((SECONDS + 30))
+while (( SECONDS < SMOKE_DEADLINE )); do
+  if sudo systemctl is-active --quiet "$TEST_UNIT" &&
+     sudo ss -H -lnt 'sport = :8012' | grep -q .; then
+    SMOKE_READY=true
+    break
+  fi
+  sleep 1
+done
+
+if test "$SMOKE_READY" != true; then
+  sudo journalctl -u "$TEST_UNIT" -n 100 --no-pager
+  sudo systemctl stop "$TEST_UNIT" || true
+  rm -f -- "$SMOKE_DB"
+  echo 'La unidad transitoria no quedo lista en 30 segundos' >&2
+  exit 1
+fi
+
 curl --fail --silent --show-error --output /dev/null \
   -H 'Host: tcysweb.lostocayos-lostcys.com.mx' \
   -H 'X-Forwarded-Proto: https' \
@@ -234,7 +254,7 @@ Confirma que `tcysweb-prod` nunca se detuvo y que el puerto productivo conserva
 su proceso. El rollback de esta prueba es simplemente detener la unidad
 transitoria; conserva el release y sus logs para revision.
 
-## 6. Activacion atomica (solo con autorizacion)
+## Preflight Linux previo a la fase 6
 
 La unidad canonica apunta a un solo archivo:
 `/home/deploy/apps/tcysPedidosSucursales/shared/.env`. Antes de una futura
@@ -266,6 +286,57 @@ fi
 
 Conserva los dos archivos originales sin cambios durante toda la ventana de
 rollback. No ejecutes esta migracion de entorno durante las fases 1 a 5.
+
+Renderiza las plantillas versionadas hacia copias temporales con las rutas del
+release candidato. `systemd-analyze verify` y el primer `nginx -t` no instalan
+nada; el segundo `nginx -t` comprueba la configuracion activa sin recargarla:
+
+```bash
+VERIFY_DIR=$(mktemp -d /tmp/tcysweb-release-verify.XXXXXX)
+SYSTEMD_VERIFY="$VERIFY_DIR/tcysweb-candidate-${COMMIT:0:12}.service"
+NGINX_SITE_VERIFY="$VERIFY_DIR/tcysweb-candidate.conf"
+NGINX_MAIN_VERIFY="$VERIFY_DIR/nginx.conf"
+trap 'rm -f -- "$SYSTEMD_VERIFY" "$NGINX_SITE_VERIFY" "$NGINX_MAIN_VERIFY" "$VERIFY_DIR/nginx.pid"; rmdir -- "$VERIFY_DIR" 2>/dev/null || true' EXIT
+
+sed \
+  -e "s|/home/deploy/apps/tcysPedidosSucursales/current|$RELEASE|g" \
+  -e "s|/home/deploy/apps/tcysPedidosSucursales/shared/.env|$TARGET_ENV|g" \
+  "$RELEASE/deploy/vps/systemd/tcysweb.service" > "$SYSTEMD_VERIFY"
+sudo systemd-analyze verify "$SYSTEMD_VERIFY"
+
+sed \
+  -e "s|/home/deploy/apps/tcysPedidosSucursales/current|$RELEASE|g" \
+  "$RELEASE/deploy/vps/nginx/tcysweb.conf" > "$NGINX_SITE_VERIFY"
+cat > "$NGINX_MAIN_VERIFY" <<EOF
+error_log stderr;
+pid $VERIFY_DIR/nginx.pid;
+events {}
+http {
+    access_log off;
+    include /etc/nginx/mime.types;
+    include $NGINX_SITE_VERIFY;
+}
+EOF
+sudo nginx -t -p "$VERIFY_DIR/" -c "$NGINX_MAIN_VERIFY"
+sudo nginx -t
+
+rm -f -- "$SYSTEMD_VERIFY" "$NGINX_SITE_VERIFY" "$NGINX_MAIN_VERIFY" "$VERIFY_DIR/nginx.pid"
+rmdir -- "$VERIFY_DIR"
+trap - EXIT
+```
+
+Inmediatamente antes de autorizar la fase 6, confirma que la produccion actual
+sigue activa en `127.0.0.1:8002` y que el candidato y su entorno estan listos:
+
+```bash
+sudo systemctl is-active --quiet tcysweb-prod.service
+sudo ss -H -lnt 'sport = :8002' | grep -q '127.0.0.1:8002'
+test -d "$RELEASE"
+test -x "$RELEASE/.venv/bin/gunicorn"
+validar_archivo_entorno "$TARGET_ENV"
+```
+
+## 6. Activacion atomica (solo con autorizacion)
 
 No ejecutes esta fase durante la prueba inicial. Antes de sustituir la unidad,
 selecciona y registra uno de estos caminos de rollback:
