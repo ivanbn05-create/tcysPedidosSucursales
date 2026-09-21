@@ -66,13 +66,29 @@ base de zonas horarias del sistema.
 
 ## 3. Pruebas sin Supabase
 
-La suite usa SQLite de test, backend de correo en memoria y no carga el `.env`
-productivo:
+La suite usa SQLite de test, backend de correo en memoria y un entorno vacio.
+`env -i` evita heredar credenciales o configuracion del operador y no carga
+ningun `.env`:
 
 ```bash
 cd "$RELEASE"
-DJANGO_ENV=test DEBUG=True DATABASE_URL= EMAIL_BACKEND=django.core.mail.backends.locmem.EmailBackend .venv/bin/python manage.py check
-DJANGO_ENV=test DEBUG=True DATABASE_URL= EMAIL_BACKEND=django.core.mail.backends.locmem.EmailBackend .venv/bin/python manage.py test pedidos
+test ! -e "$RELEASE/.env"
+/usr/bin/env -i \
+  PATH=/usr/bin:/bin \
+  DJANGO_ENV=test \
+  DEBUG=True \
+  DATABASE_URL= \
+  EMAIL_BACKEND=django.core.mail.backends.locmem.EmailBackend \
+  SCHEDULER_ENABLED=False \
+  "$RELEASE/.venv/bin/python" manage.py check
+/usr/bin/env -i \
+  PATH=/usr/bin:/bin \
+  DJANGO_ENV=test \
+  DEBUG=True \
+  DATABASE_URL= \
+  EMAIL_BACKEND=django.core.mail.backends.locmem.EmailBackend \
+  SCHEDULER_ENABLED=False \
+  "$RELEASE/.venv/bin/python" manage.py test pedidos
 ```
 
 No ejecutes `seed_demo`, no envíes correos y no uses la URL de Supabase para
@@ -80,30 +96,81 @@ estas pruebas.
 
 ## 4. Validar el perfil productivo y estaticos
 
-Carga ambos archivos dentro de un subshell, sin imprimirlos, y sustituye
-temporalmente la base por SQLite para los checks y `collectstatic`; así se
-valida el perfil real sin escribir en Supabase y las variables sensibles no
-quedan exportadas en la shell del operador:
+Delega la lectura de ambos archivos a systemd; nunca ejecutes `source` ni `.`
+sobre ellos. Cada unidad carga primero el `.env` base y después los overrides.
+`/usr/bin/env` aplica al final SQLite, correo en memoria y scheduler apagado:
 
 ```bash
-(
-  set -a
-  . "$BASE_ENV"
-  . "$PROD_OVERRIDES_ENV"
-  set +a
-  DATABASE_URL="sqlite:///$RELEASE/.release-check.sqlite3" "$RELEASE/.venv/bin/python" manage.py check
-  DATABASE_URL="sqlite:///$RELEASE/.release-check.sqlite3" "$RELEASE/.venv/bin/python" manage.py check --deploy
-  DATABASE_URL="sqlite:///$RELEASE/.release-check.sqlite3" "$RELEASE/.venv/bin/python" manage.py collectstatic --noinput
-)
+CHECK_UNIT="tcysweb-release-check-${COMMIT:0:12}"
+CHECK_DB="$RELEASE/.release-check.sqlite3"
+CHECK_DATABASE_URL="sqlite:///$CHECK_DB"
+test ! -e "$CHECK_DB"
+install -m 0600 /dev/null "$CHECK_DB"
+
+sudo systemd-run --unit="${CHECK_UNIT}-django" --wait --pipe --collect \
+  --property=Type=oneshot \
+  --property=User=deploy \
+  --property=Group=deploy \
+  --property="WorkingDirectory=$RELEASE" \
+  --property="EnvironmentFile=$BASE_ENV" \
+  --property="EnvironmentFile=$PROD_OVERRIDES_ENV" \
+  /usr/bin/env \
+  "DATABASE_URL=$CHECK_DATABASE_URL" \
+  EMAIL_BACKEND=django.core.mail.backends.locmem.EmailBackend \
+  SCHEDULER_ENABLED=False \
+  "$RELEASE/.venv/bin/python" manage.py check
+
+sudo systemd-run --unit="${CHECK_UNIT}-deploy" --wait --pipe --collect \
+  --property=Type=oneshot \
+  --property=User=deploy \
+  --property=Group=deploy \
+  --property="WorkingDirectory=$RELEASE" \
+  --property="EnvironmentFile=$BASE_ENV" \
+  --property="EnvironmentFile=$PROD_OVERRIDES_ENV" \
+  /usr/bin/env \
+  "DATABASE_URL=$CHECK_DATABASE_URL" \
+  EMAIL_BACKEND=django.core.mail.backends.locmem.EmailBackend \
+  SCHEDULER_ENABLED=False \
+  "$RELEASE/.venv/bin/python" manage.py check --deploy
+
+sudo systemd-run --unit="${CHECK_UNIT}-static" --wait --pipe --collect \
+  --property=Type=oneshot \
+  --property=User=deploy \
+  --property=Group=deploy \
+  --property="WorkingDirectory=$RELEASE" \
+  --property="EnvironmentFile=$BASE_ENV" \
+  --property="EnvironmentFile=$PROD_OVERRIDES_ENV" \
+  /usr/bin/env \
+  "DATABASE_URL=$CHECK_DATABASE_URL" \
+  EMAIL_BACKEND=django.core.mail.backends.locmem.EmailBackend \
+  SCHEDULER_ENABLED=False \
+  "$RELEASE/.venv/bin/python" manage.py collectstatic --noinput
+
+rm -f -- "$CHECK_DB"
 ```
 
 `check --deploy` puede advertir que HSTS vale `0`; es intencional durante el
 piloto. Cualquier otro warning de seguridad se investiga antes de continuar.
 
-Revisa si el commit contiene migraciones respecto al release activo:
+Revisa si el commit contiene migraciones respecto al release activo. Durante
+el bootstrap, cuando `current` aun no existe, toma el commit del checkout
+productivo actual; en releases posteriores valida y usa el symlink:
 
 ```bash
-CURRENT_COMMIT=$(basename "$(readlink -f "$APP_ROOT/current")")
+if test -L "$APP_ROOT/current"; then
+  CURRENT_RELEASE=$(readlink -f "$APP_ROOT/current")
+  case "$CURRENT_RELEASE" in
+    "$APP_ROOT"/releases/*) ;;
+    *) echo 'El symlink current apunta fuera del arbol de releases' >&2; exit 1 ;;
+  esac
+  CURRENT_COMMIT=$(basename "$CURRENT_RELEASE")
+elif test ! -e "$APP_ROOT/current"; then
+  CURRENT_COMMIT=$(git -C "$ACTIVE_CHECKOUT" rev-parse HEAD)
+else
+  echo 'current existe pero no es un symlink' >&2
+  exit 1
+fi
+test "$(git --git-dir="$REPO_CACHE" rev-parse "$CURRENT_COMMIT^{commit}")" = "$CURRENT_COMMIT"
 git --git-dir="$REPO_CACHE" diff --name-only "$CURRENT_COMMIT" "$COMMIT" -- '*/migrations/*.py'
 ```
 
@@ -178,33 +245,69 @@ al repositorio:
 
 ```bash
 TARGET_ENV="$APP_ROOT/shared/.env"
-test ! -e "$TARGET_ENV"
-sudo install -d -o deploy -g deploy -m 0700 "$APP_ROOT/shared"
-TARGET_ENV_TMP=$(mktemp "$APP_ROOT/shared/.env.new.XXXXXX")
-trap 'rm -f -- "$TARGET_ENV_TMP"' EXIT
-chmod 600 "$TARGET_ENV_TMP"
-{
-  cat "$BASE_ENV"
-  printf '\n'
-  cat "$PROD_OVERRIDES_ENV"
-  printf '\n'
-} > "$TARGET_ENV_TMP"
-mv -T "$TARGET_ENV_TMP" "$TARGET_ENV"
-trap - EXIT
-test "$(stat -c '%U:%G' "$TARGET_ENV")" = "deploy:deploy"
-test "$(stat -c '%a' "$TARGET_ENV")" = "600"
+if test -e "$TARGET_ENV"; then
+  validar_archivo_entorno "$TARGET_ENV"
+else
+  sudo install -d -o deploy -g deploy -m 0700 "$APP_ROOT/shared"
+  TARGET_ENV_TMP=$(mktemp "$APP_ROOT/shared/.env.new.XXXXXX")
+  trap 'rm -f -- "$TARGET_ENV_TMP"' EXIT
+  chmod 600 "$TARGET_ENV_TMP"
+  {
+    cat "$BASE_ENV"
+    printf '\n'
+    cat "$PROD_OVERRIDES_ENV"
+    printf '\n'
+  } > "$TARGET_ENV_TMP"
+  mv -T "$TARGET_ENV_TMP" "$TARGET_ENV"
+  trap - EXIT
+  validar_archivo_entorno "$TARGET_ENV"
+fi
 ```
 
 Conserva los dos archivos originales sin cambios durante toda la ventana de
 rollback. No ejecutes esta migracion de entorno durante las fases 1 a 5.
 
-No ejecutes esta fase durante la prueba inicial. Registra la ruta y la unidad
-anteriores, instala la plantilla canonica bajo el nombre activo, cambia el
-symlink y reinicia de forma controlada:
+No ejecutes esta fase durante la prueba inicial. Antes de sustituir la unidad,
+selecciona y registra uno de estos caminos de rollback:
+
+- `bootstrap`: `current` no existe. Conserva el checkout productivo actual y
+  exige que siga exactamente en `ba7330bf006417cc1377b20bdcb532a4a27c37b9`.
+- `release`: `current` ya existe. Registra su destino como `previous_release`.
+
+Ambos caminos respaldan la unidad activa antes de instalar la plantilla
+canonica. Luego crean o sustituyen `current` y reinician de forma controlada:
 
 ```bash
-readlink -f "$APP_ROOT/current" > "$APP_ROOT/shared/previous_release"
-sudo install -m 0644 /etc/systemd/system/tcysweb-prod.service "$APP_ROOT/shared/tcysweb-prod.service.before-release"
+ROLLBACK_MODE_FILE="$APP_ROOT/shared/rollback_mode"
+UNIT_BACKUP="$APP_ROOT/shared/tcysweb-prod.service.before-release"
+
+if test -L "$APP_ROOT/current"; then
+  DEPLOY_MODE=release
+  PREVIOUS_RELEASE=$(readlink -f "$APP_ROOT/current")
+  case "$PREVIOUS_RELEASE" in
+    "$APP_ROOT"/releases/*) ;;
+    *) echo 'El symlink current apunta fuera del arbol de releases' >&2; exit 1 ;;
+  esac
+  test -x "$PREVIOUS_RELEASE/.venv/bin/gunicorn"
+  printf '%s\n' "$PREVIOUS_RELEASE" > "$APP_ROOT/shared/previous_release.next"
+  mv -T "$APP_ROOT/shared/previous_release.next" "$APP_ROOT/shared/previous_release"
+elif test ! -e "$APP_ROOT/current"; then
+  DEPLOY_MODE=bootstrap
+  BOOTSTRAP_COMMIT=$(git -C "$ACTIVE_CHECKOUT" rev-parse HEAD)
+  test "$BOOTSTRAP_COMMIT" = ba7330bf006417cc1377b20bdcb532a4a27c37b9
+  printf '%s\n' "$ACTIVE_CHECKOUT" > "$APP_ROOT/shared/bootstrap_previous_checkout.next"
+  mv -T "$APP_ROOT/shared/bootstrap_previous_checkout.next" "$APP_ROOT/shared/bootstrap_previous_checkout"
+  printf '%s\n' "$BOOTSTRAP_COMMIT" > "$APP_ROOT/shared/bootstrap_previous_commit.next"
+  mv -T "$APP_ROOT/shared/bootstrap_previous_commit.next" "$APP_ROOT/shared/bootstrap_previous_commit"
+else
+  echo 'current existe pero no es un symlink' >&2
+  exit 1
+fi
+
+sudo test -f /etc/systemd/system/tcysweb-prod.service
+sudo install -m 0644 /etc/systemd/system/tcysweb-prod.service "$UNIT_BACKUP"
+printf '%s\n' "$DEPLOY_MODE" > "$ROLLBACK_MODE_FILE.next"
+mv -T "$ROLLBACK_MODE_FILE.next" "$ROLLBACK_MODE_FILE"
 sudo install -m 0644 "$RELEASE/deploy/vps/systemd/tcysweb.service" /etc/systemd/system/tcysweb-prod.service
 sudo systemctl daemon-reload
 ln -s "$RELEASE" "$APP_ROOT/current.next"
