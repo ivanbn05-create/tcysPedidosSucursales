@@ -11,14 +11,39 @@ Define un SHA-1 completo revisado, nunca una rama flotante:
 ```bash
 APP_ROOT=/home/deploy/apps/tcysPedidosSucursales
 REPO_CACHE="$APP_ROOT/repo.git"
+ACTIVE_CHECKOUT=/home/deploy/src/tcysPedidosSucursales
+BASE_ENV="$ACTIVE_CHECKOUT/.env"
+PROD_OVERRIDES_ENV=/home/deploy/secrets/tcysweb-prod-overrides.env
 COMMIT=<SHA_DE_40_CARACTERES>
 RELEASE="$APP_ROOT/releases/$COMMIT"
 PYTHON=/home/deploy/.local/share/uv/python/cpython-3.13.12-linux-x86_64-gnu/bin/python3.13
+
+validar_archivo_entorno() {
+  local archivo=$1
+  test -f "$archivo" || { echo "Falta el archivo de entorno: $archivo" >&2; exit 1; }
+  test -r "$archivo" || { echo "El archivo de entorno no es legible: $archivo" >&2; exit 1; }
+  test "$(stat -c '%U:%G' "$archivo")" = "deploy:deploy" || {
+    echo "Propietario/grupo inesperado en $archivo" >&2
+    exit 1
+  }
+  test "$(stat -c '%a' "$archivo")" = "600" || {
+    echo "Permisos inesperados en $archivo; se requiere 600" >&2
+    exit 1
+  }
+}
+
+validar_archivo_entorno "$BASE_ENV"
+validar_archivo_entorno "$PROD_OVERRIDES_ENV"
+
 test "${#COMMIT}" -eq 40
 case "$COMMIT" in *[!0-9a-f]*) exit 1 ;; esac
 git --git-dir="$REPO_CACHE" fetch origin "$COMMIT"
 test "$(git --git-dir="$REPO_CACHE" rev-parse "$COMMIT^{commit}")" = "$COMMIT"
 ```
+
+El preflight sólo consulta existencia y metadatos de los archivos; no imprime
+ni copia sus valores. El orden es significativo: el archivo de overrides se
+carga después del `.env` base.
 
 La obtencion es por commit exacto. El checkout servido nunca ejecuta
 `git pull`.
@@ -55,17 +80,21 @@ estas pruebas.
 
 ## 4. Validar el perfil productivo y estaticos
 
-Carga el entorno sin imprimirlo y sustituye temporalmente la base por SQLite
-para los checks y `collectstatic`; así se valida el perfil real sin escribir en
-Supabase:
+Carga ambos archivos dentro de un subshell, sin imprimirlos, y sustituye
+temporalmente la base por SQLite para los checks y `collectstatic`; así se
+valida el perfil real sin escribir en Supabase y las variables sensibles no
+quedan exportadas en la shell del operador:
 
 ```bash
-set -a
-. "$APP_ROOT/shared/.env"
-set +a
-DATABASE_URL="sqlite:///$RELEASE/.release-check.sqlite3" "$RELEASE/.venv/bin/python" manage.py check
-DATABASE_URL="sqlite:///$RELEASE/.release-check.sqlite3" "$RELEASE/.venv/bin/python" manage.py check --deploy
-DATABASE_URL="sqlite:///$RELEASE/.release-check.sqlite3" "$RELEASE/.venv/bin/python" manage.py collectstatic --noinput
+(
+  set -a
+  . "$BASE_ENV"
+  . "$PROD_OVERRIDES_ENV"
+  set +a
+  DATABASE_URL="sqlite:///$RELEASE/.release-check.sqlite3" "$RELEASE/.venv/bin/python" manage.py check
+  DATABASE_URL="sqlite:///$RELEASE/.release-check.sqlite3" "$RELEASE/.venv/bin/python" manage.py check --deploy
+  DATABASE_URL="sqlite:///$RELEASE/.release-check.sqlite3" "$RELEASE/.venv/bin/python" manage.py collectstatic --noinput
+)
 ```
 
 `check --deploy` puede advertir que HSTS vale `0`; es intencional durante el
@@ -90,26 +119,84 @@ para el smoke test; no captures ni confirmes pedidos reales.
 ```bash
 sudo ss -lnt '( sport = :8012 )'
 TEST_UNIT="tcysweb-release-test-${COMMIT:0:12}"
+SMOKE_DB="/tmp/tcysweb-release-${COMMIT:0:12}.sqlite3"
+SMOKE_DATABASE_URL="sqlite:///$SMOKE_DB"
+test ! -e "$SMOKE_DB"
+install -m 0600 /dev/null "$SMOKE_DB"
+
+sudo systemd-run --unit="${TEST_UNIT}-migrate" --wait --pipe --collect \
+  --property=Type=oneshot \
+  --property=User=deploy \
+  --property=Group=deploy \
+  --property="WorkingDirectory=$RELEASE" \
+  --property="EnvironmentFile=$BASE_ENV" \
+  --property="EnvironmentFile=$PROD_OVERRIDES_ENV" \
+  /usr/bin/env \
+  "DATABASE_URL=$SMOKE_DATABASE_URL" \
+  EMAIL_BACKEND=django.core.mail.backends.locmem.EmailBackend \
+  SCHEDULER_ENABLED=False \
+  "$RELEASE/.venv/bin/python" manage.py migrate --noinput
+
 sudo systemd-run --unit="$TEST_UNIT" --collect \
   --property=User=deploy \
   --property=Group=deploy \
   --property="WorkingDirectory=$RELEASE" \
-  --property="EnvironmentFile=$APP_ROOT/shared/.env" \
+  --property="EnvironmentFile=$BASE_ENV" \
+  --property="EnvironmentFile=$PROD_OVERRIDES_ENV" \
+  /usr/bin/env \
+  "DATABASE_URL=$SMOKE_DATABASE_URL" \
+  EMAIL_BACKEND=django.core.mail.backends.locmem.EmailBackend \
+  SCHEDULER_ENABLED=False \
   "$RELEASE/.venv/bin/gunicorn" proyecto.wsgi:application \
   --bind 127.0.0.1:8012 --workers 1 --timeout 60 --access-logfile - --error-logfile -
 curl --fail --silent --show-error --output /dev/null \
   -H 'Host: tcysweb.lostocayos-lostcys.com.mx' \
   -H 'X-Forwarded-Proto: https' \
-  http://127.0.0.1:8012/
+  http://127.0.0.1:8012/api/horarios/
 sudo journalctl -u "$TEST_UNIT" -n 100 --no-pager
 sudo systemctl stop "$TEST_UNIT"
+rm -f -- "$SMOKE_DB"
 ```
+
+systemd carga primero el `.env` base y después los overrides productivos. El
+`/usr/bin/env` del comando aplica al final `DATABASE_URL` hacia el SQLite
+temporal, por lo que ni la migracion local ni el smoke test se conectan a
+Supabase. Tampoco se envían correos ni se ejecuta `seed_demo`.
 
 Confirma que `tcysweb-prod` nunca se detuvo y que el puerto productivo conserva
 su proceso. El rollback de esta prueba es simplemente detener la unidad
 transitoria; conserva el release y sus logs para revision.
 
 ## 6. Activacion atomica (solo con autorizacion)
+
+La unidad canonica apunta a un solo archivo:
+`/home/deploy/apps/tcysPedidosSucursales/shared/.env`. Antes de una futura
+activacion autorizada, migra los dos archivos actuales a esa ubicacion
+directamente en el VPS. El segundo archivo se concatena al final para conservar
+la precedencia de sus overrides; ningún valor se muestra ni entra al release o
+al repositorio:
+
+```bash
+TARGET_ENV="$APP_ROOT/shared/.env"
+test ! -e "$TARGET_ENV"
+sudo install -d -o deploy -g deploy -m 0700 "$APP_ROOT/shared"
+TARGET_ENV_TMP=$(mktemp "$APP_ROOT/shared/.env.new.XXXXXX")
+trap 'rm -f -- "$TARGET_ENV_TMP"' EXIT
+chmod 600 "$TARGET_ENV_TMP"
+{
+  cat "$BASE_ENV"
+  printf '\n'
+  cat "$PROD_OVERRIDES_ENV"
+  printf '\n'
+} > "$TARGET_ENV_TMP"
+mv -T "$TARGET_ENV_TMP" "$TARGET_ENV"
+trap - EXIT
+test "$(stat -c '%U:%G' "$TARGET_ENV")" = "deploy:deploy"
+test "$(stat -c '%a' "$TARGET_ENV")" = "600"
+```
+
+Conserva los dos archivos originales sin cambios durante toda la ventana de
+rollback. No ejecutes esta migracion de entorno durante las fases 1 a 5.
 
 No ejecutes esta fase durante la prueba inicial. Registra la ruta y la unidad
 anteriores, instala la plantilla canonica bajo el nombre activo, cambia el
