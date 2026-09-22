@@ -52,6 +52,7 @@ atomico; systemd y Nginx apuntan siempre al symlink estable.
 - `runbooks/provision.md`: preparacion no destructiva.
 - `runbooks/deploy.md`: build, prueba paralela y activacion autorizada.
 - `runbooks/rollback.md`: vuelta a un release ya presente, sin GitHub.
+- `runbooks/api_pos.md`: staging, despliegue y rollback de la API HTTPS para el POS.
 
 ## Dependencias
 

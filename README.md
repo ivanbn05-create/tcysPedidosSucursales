@@ -24,6 +24,7 @@ desarrollo y nunca ejecutes ese comando contra Supabase o una base productiva.
 - `/api/pedidos/eliminar-item/`: elimina item del pedido pendiente.
 - `/api/pedidos/confirmar/`: confirma con transacción atómica, agrega el pedido al macropedido de la fecha local, impone el máximo diario de cinco, conserva el rate limit de 1 minuto y aplica la restricción horaria.
 - `/api/horarios/`: informa el horario vigente de pedidos (sin auth), mostrado en la pantalla de login.
+- `/api/v1/pos/pedidos/`: API HTTPS autenticada y de sólo lectura para que el POS consulte pedidos confirmados mediante cursor estable. El contrato está en [`docs/api_pos_v1.md`](docs/api_pos_v1.md).
 - `/api/sesion/heartbeat/`: renueva el arrendamiento de sesión única mientras la página permanece visible.
 - `/admin/`: dashboard propio de matriz. Cada fila es un macropedido diario, muestra la hora de su última confirmación y una barra verde-amarillo-rojo de cinco segmentos; la flecha despliega los pedidos que lo integran. El estado, la impresión acumulada, el envío, su reversión y el borrado operan sobre el macropedido completo. El usuario `juanmanuel` solo puede ver e imprimir.
 - `/admin/diagnostico/`: sesiones activas y bitácora persistente que correlaciona toques, ejecución JavaScript y respuesta del servidor por ID de intento.

@@ -1,4 +1,5 @@
 import sys
+from datetime import timedelta
 from pathlib import Path
 
 import dj_database_url
@@ -163,6 +164,63 @@ LOGOUT_REDIRECT_URL = "login"
 # la página está activa; 10 minutos es menor a los 15 minutos de inactividad
 # que provocan el spin-down de Render Free.
 ACTIVE_SESSION_TTL_SECONDS = config("ACTIVE_SESSION_TTL_SECONDS", default=600, cast=int)
+
+# API HTTPS de solo lectura para el POS. Sin tokens o sucursales permitidas la
+# vista falla cerrada con HTTP 503. Durante una rotacion pueden coexistir dos
+# tokens separados por coma; nunca se registran ni se incluyen en respuestas.
+POS_API_TOKENS = tuple(
+    token.strip()
+    for token in config("POS_API_TOKENS", default="").split(",")
+    if token.strip()
+)
+if any(len(token) < 32 or len(token) > 512 for token in POS_API_TOKENS):
+    raise ImproperlyConfigured(
+        "Cada token de POS_API_TOKENS debe tener entre 32 y 512 caracteres."
+    )
+
+try:
+    POS_API_ALLOWED_SUCURSAL_IDS = tuple(
+        sorted(
+            {
+                int(value.strip())
+                for value in config(
+                    "POS_API_ALLOWED_SUCURSAL_IDS", default=""
+                ).split(",")
+                if value.strip()
+            }
+        )
+    )
+except ValueError as exc:
+    raise ImproperlyConfigured(
+        "POS_API_ALLOWED_SUCURSAL_IDS debe contener enteros separados por coma."
+    ) from exc
+if any(value <= 0 for value in POS_API_ALLOWED_SUCURSAL_IDS):
+    raise ImproperlyConfigured(
+        "POS_API_ALLOWED_SUCURSAL_IDS solo admite enteros positivos."
+    )
+
+POS_API_DEFAULT_PAGE_SIZE = config(
+    "POS_API_DEFAULT_PAGE_SIZE", default=100, cast=int
+)
+POS_API_MAX_PAGE_SIZE = config("POS_API_MAX_PAGE_SIZE", default=500, cast=int)
+POS_API_MAX_WINDOW_DAYS = config("POS_API_MAX_WINDOW_DAYS", default=31, cast=int)
+POS_API_RATE_LIMIT_PER_MINUTE = config(
+    "POS_API_RATE_LIMIT_PER_MINUTE", default=120, cast=int
+)
+POS_API_REQUIRE_HTTPS = config(
+    "POS_API_REQUIRE_HTTPS", default=IS_PRODUCTION, cast=bool
+)
+if not 1 <= POS_API_DEFAULT_PAGE_SIZE <= POS_API_MAX_PAGE_SIZE <= 1000:
+    raise ImproperlyConfigured(
+        "Los limites de pagina de la API POS deben cumplir 1 <= default <= max <= 1000."
+    )
+if not 1 <= POS_API_MAX_WINDOW_DAYS <= 90:
+    raise ImproperlyConfigured("POS_API_MAX_WINDOW_DAYS debe estar entre 1 y 90.")
+if not 0 <= POS_API_RATE_LIMIT_PER_MINUTE <= 10000:
+    raise ImproperlyConfigured(
+        "POS_API_RATE_LIMIT_PER_MINUTE debe estar entre 0 y 10000."
+    )
+POS_API_MAX_WINDOW = timedelta(days=POS_API_MAX_WINDOW_DAYS)
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
