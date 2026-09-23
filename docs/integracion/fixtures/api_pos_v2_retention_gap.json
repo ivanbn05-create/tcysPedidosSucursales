@@ -1,0 +1,7 @@
+{
+  "error": {
+    "code": "retention_gap",
+    "message": "El historial solicitado ya no puede entregarse completo; requiere conciliacion.",
+    "request_id": "pos-laboratorio-002"
+  }
+}

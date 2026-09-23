@@ -1,0 +1,40 @@
+{
+  "version": "v2",
+  "request_id": "pos-laboratorio-001",
+  "data": [
+    {
+      "id": 12001,
+      "fecha_confirmacion": "2026-09-22T14:30:00.123456Z",
+      "total": "245.50",
+      "sucursal": {
+        "id": 3,
+        "nombre": "Sucursal de prueba",
+        "tipo": "sucursal"
+      },
+      "items": [
+        {
+          "id": 45001,
+          "pedido_id": 12001,
+          "producto": {
+            "id": 8,
+            "nombre": "Producto de prueba",
+            "nombre_ticket": "PROD PRUEBA",
+            "unidad_medida": "PIEZA (PZA)",
+            "unidad_abreviatura": "PZA",
+            "cantidad_por_precio": "1.000"
+          },
+          "cantidad": "2.000",
+          "precio_unitario": "122.75",
+          "subtotal": "245.50"
+        }
+      ],
+      "codigo_publico": "d8fdb924-0f4c-4270-a6f5-eedfdc522aa7"
+    }
+  ],
+  "page": {
+    "has_more": false,
+    "limit": 100,
+    "next_cursor": null,
+    "returned": 1
+  }
+}

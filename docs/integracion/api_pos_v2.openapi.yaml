@@ -1,0 +1,305 @@
+openapi: 3.0.3
+info:
+  title: Pedidos para POS, API v2
+  version: 2.0.0-draft
+  description: >-
+    Contrato propuesto de solo lectura. Requiere acuerdo y pruebas con el agente
+    POS antes de cambiar el consumidor. La API v1 permanece separada. La ventana
+    maxima de consulta no garantiza disponibilidad historica: una descarga
+    confirmada puede anticipar la purga.
+servers:
+  - url: https://pedidos.example.invalid
+    description: Host ficticio para ejemplos; configurar el destino real fuera de Git.
+paths:
+  /api/v2/pos/pedidos/:
+    get:
+      operationId: listarPedidosPosV2
+      summary: Leer pedidos confirmados para el POS
+      description: >-
+        Devuelve pedidos confirmados, no eliminados, de sucursales autorizadas.
+        Orden ascendente por (fecha_confirmacion, id). Un cursor v2 esta firmado,
+        ligado a los filtros y a la epoca de purga. HTTP 410 exige conciliacion;
+        nunca debe interpretarse como pagina vacia ni omitirse automaticamente.
+      security:
+        - posBearer: []
+      parameters:
+        - name: X-Request-ID
+          in: header
+          required: false
+          description: Identificador opcional de 1 a 64 caracteres A-Z, a-z, 0-9, punto, guion o guion bajo.
+          schema:
+            type: string
+            pattern: '^[A-Za-z0-9._-]{1,64}$'
+        - name: desde
+          in: query
+          required: true
+          description: Timestamp ISO 8601 con zona; limite inferior inclusivo.
+          schema:
+            type: string
+            format: date-time
+          example: '2026-09-22T14:00:00Z'
+        - name: hasta
+          in: query
+          required: true
+          description: Timestamp ISO 8601 con zona; limite superior exclusivo.
+          schema:
+            type: string
+            format: date-time
+          example: '2026-09-22T15:00:00Z'
+        - name: sucursal_id
+          in: query
+          required: false
+          description: IDs enteros de SucursalCliente separados por coma; todos deben estar en la allowlist.
+          schema:
+            type: string
+          example: '3,4'
+        - name: limite
+          in: query
+          required: false
+          description: >-
+            Tamano de pagina. Por defecto 100, maximo 500 con la configuracion
+            documentada; el servidor puede configurar otro maximo.
+          schema:
+            type: integer
+            minimum: 1
+            default: 100
+          example: 100
+        - name: cursor
+          in: query
+          required: false
+          description: Cursor opaco next_cursor de la pagina anterior, usando identicos filtros.
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Pagina de pedidos actualmente consultables.
+          headers:
+            Cache-Control:
+              $ref: '#/components/headers/CacheControl'
+            X-Request-ID:
+              $ref: '#/components/headers/RequestId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginaPedidos'
+              examples:
+                unaPagina:
+                  summary: Fixture sintetico
+                  externalValue: ./fixtures/api_pos_v2_pagina.json
+        '400':
+          description: Filtro, ventana, limite o cursor invalido.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorRespuesta'
+        '401':
+          description: Bearer ausente o incorrecto.
+          headers:
+            WWW-Authenticate:
+              schema:
+                type: string
+                example: Bearer
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorRespuesta'
+        '405':
+          description: Metodo distinto de GET; la respuesta incluye Allow GET.
+          headers:
+            Allow:
+              schema:
+                type: string
+                example: GET
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorRespuesta'
+        '410':
+          description: >-
+            retention_gap: la ventana intersecta una purga registrada o la epoca
+            de purga del cursor difiere de la vigente. Detener y conciliar.
+          headers:
+            Cache-Control:
+              $ref: '#/components/headers/CacheControl'
+            X-Request-ID:
+              $ref: '#/components/headers/RequestId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorRespuesta'
+              examples:
+                brechaRetencion:
+                  summary: Fixture sintetico
+                  externalValue: ./fixtures/api_pos_v2_retention_gap.json
+        '426':
+          description: Se exige HTTPS cuando POS_API_REQUIRE_HTTPS esta activado.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorRespuesta'
+        '429':
+          description: Limite temporal de solicitudes excedido.
+          headers:
+            Retry-After:
+              description: Segundos hasta el siguiente minuto del limite temporal.
+              schema:
+                type: integer
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorRespuesta'
+        '503':
+          description: Tokens o allowlist de sucursales no configurados.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorRespuesta'
+components:
+  securitySchemes:
+    posBearer:
+      type: http
+      scheme: bearer
+      description: Token de servicio configurado fuera de Git y enviado solo por HTTPS.
+  headers:
+    CacheControl:
+      description: Las respuestas no deben almacenarse en cache.
+      schema:
+        type: string
+        enum: [no-store]
+    RequestId:
+      description: Identificador de correlacion de la solicitud.
+      schema:
+        type: string
+  schemas:
+    PaginaPedidos:
+      type: object
+      additionalProperties: false
+      required: [version, request_id, data, page]
+      properties:
+        version:
+          type: string
+          enum: [v2]
+        request_id:
+          type: string
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/Pedido'
+        page:
+          $ref: '#/components/schemas/Paginacion'
+    Pedido:
+      type: object
+      additionalProperties: false
+      required: [id, codigo_publico, fecha_confirmacion, total, sucursal, items]
+      properties:
+        id:
+          type: integer
+          description: PK entero conservado; el POS debe acordar codigo_publico como identidad externa.
+        codigo_publico:
+          type: string
+          format: uuid
+          description: Identidad publica estable del pedido.
+        fecha_confirmacion:
+          type: string
+          format: date-time
+          description: Fecha en UTC con precision de microsegundos.
+        total:
+          $ref: '#/components/schemas/DecimalTexto'
+        sucursal:
+          $ref: '#/components/schemas/Sucursal'
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/ItemPedido'
+    Sucursal:
+      type: object
+      additionalProperties: false
+      required: [id, nombre, tipo]
+      properties:
+        id:
+          type: integer
+          description: ID de Pedidos; requiere mapeo explicito al UUID/clave de sucursal POS.
+        nombre:
+          type: string
+        tipo:
+          type: string
+          enum: [sucursal]
+    ItemPedido:
+      type: object
+      additionalProperties: false
+      required: [id, pedido_id, producto, cantidad, precio_unitario, subtotal]
+      properties:
+        id:
+          type: integer
+        pedido_id:
+          type: integer
+        producto:
+          $ref: '#/components/schemas/Producto'
+        cantidad:
+          $ref: '#/components/schemas/DecimalTexto'
+        precio_unitario:
+          $ref: '#/components/schemas/DecimalTexto'
+        subtotal:
+          $ref: '#/components/schemas/DecimalTexto'
+    Producto:
+      type: object
+      additionalProperties: false
+      required: [id, nombre, nombre_ticket, unidad_medida, unidad_abreviatura, cantidad_por_precio]
+      properties:
+        id:
+          type: integer
+        nombre:
+          type: string
+        nombre_ticket:
+          type: string
+        unidad_medida:
+          type: string
+        unidad_abreviatura:
+          type: string
+        cantidad_por_precio:
+          $ref: '#/components/schemas/DecimalTexto'
+    Paginacion:
+      type: object
+      additionalProperties: false
+      required: [has_more, limit, next_cursor, returned]
+      properties:
+        has_more:
+          type: boolean
+        limit:
+          type: integer
+          minimum: 1
+        next_cursor:
+          type: string
+          nullable: true
+          description: Null si no hay otra pagina actualmente consultable.
+        returned:
+          type: integer
+          minimum: 0
+    DecimalTexto:
+      type: string
+      pattern: '^-?[0-9]+(\.[0-9]+)?$'
+      description: Numero decimal serializado como cadena para preservar precision.
+    ErrorRespuesta:
+      type: object
+      additionalProperties: false
+      required: [error]
+      properties:
+        error:
+          type: object
+          additionalProperties: false
+          required: [code, message, request_id]
+          properties:
+            code:
+              type: string
+              enum:
+                - invalid_parameter
+                - unauthorized
+                - method_not_allowed
+                - retention_gap
+                - https_required
+                - rate_limited
+                - service_unavailable
+            message:
+              type: string
+            request_id:
+              type: string

@@ -16,13 +16,18 @@ from django.db.models import Prefetch, Q
 from django.http import JsonResponse
 from django.utils.dateparse import parse_datetime
 
-from .models import ItemPedido, Pedido, SucursalCliente
+from .models import ItemPedido, Pedido, RegistroPurga, SucursalCliente
 
 
 logger = logging.getLogger(__name__)
 
 CURSOR_SALT = "pedidos.api_pos.v1.cursor"
+CURSOR_SALT_V2 = "pedidos.api_pos.v2.cursor"
 REQUEST_ID_PATTERN = re.compile(r"^[A-Za-z0-9._-]{1,64}$")
+
+
+class RetentionGap(Exception):
+    """El historial pedido ya no puede entregarse como una secuencia completa."""
 
 
 def _request_id(request):
@@ -84,14 +89,14 @@ def _authenticate(request):
     return hashlib.sha256(candidate.encode("utf-8")).hexdigest()[:24], None
 
 
-def _rate_limit(token_fingerprint):
+def _rate_limit(token_fingerprint, *, version=1):
     limit = settings.POS_API_RATE_LIMIT_PER_MINUTE
     if limit <= 0:
         return None, {}
 
     now = time.time()
     bucket = int(now // 60)
-    key = f"pos-api:v1:{token_fingerprint}:{bucket}"
+    key = f"pos-api:v{version}:{token_fingerprint}:{bucket}"
     if cache.add(key, 1, timeout=70):
         count = 1
     else:
@@ -162,13 +167,13 @@ def _parse_sucursal_ids(raw_value):
     return tuple(sorted(requested))
 
 
-def _filter_fingerprint(desde, hasta, sucursal_ids):
+def _filter_fingerprint(desde, hasta, sucursal_ids, *, version=1):
     canonical = json.dumps(
         {
             "desde": _iso_utc(desde),
             "hasta": _iso_utc(hasta),
             "sucursal_ids": list(sucursal_ids),
-            "version": 1,
+            "version": version,
         },
         sort_keys=True,
         separators=(",", ":"),
@@ -176,30 +181,38 @@ def _filter_fingerprint(desde, hasta, sucursal_ids):
     return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
 
 
-def _encode_cursor(pedido, fingerprint):
+def _encode_cursor(pedido, fingerprint, *, version=1, purge_epoch=None):
+    payload = {
+        "f": fingerprint,
+        "id": pedido.id,
+        "ts": _iso_utc(pedido.fecha_confirmacion),
+        "v": version,
+    }
+    if version == 2:
+        payload["purge_epoch"] = purge_epoch
     return signing.dumps(
-        {
-            "f": fingerprint,
-            "id": pedido.id,
-            "ts": _iso_utc(pedido.fecha_confirmacion),
-            "v": 1,
-        },
-        salt=CURSOR_SALT,
+        payload,
+        salt=CURSOR_SALT_V2 if version == 2 else CURSOR_SALT,
         compress=True,
     )
 
 
-def _decode_cursor(raw_cursor, fingerprint, desde, hasta):
+def _decode_cursor(
+    raw_cursor, fingerprint, desde, hasta, *, version=1, purge_epoch=None
+):
     if not raw_cursor:
         return None
     if len(raw_cursor) > 2048:
         raise ValueError("cursor invalido.")
     try:
-        payload = signing.loads(raw_cursor, salt=CURSOR_SALT)
+        payload = signing.loads(
+            raw_cursor,
+            salt=CURSOR_SALT_V2 if version == 2 else CURSOR_SALT,
+        )
         cursor_id = int(payload["id"])
         cursor_timestamp = _parse_aware_datetime(payload["ts"], "cursor")
         valid = (
-            payload.get("v") == 1
+            payload.get("v") == version
             and payload.get("f") == fingerprint
             and cursor_id > 0
             and desde <= cursor_timestamp < hasta
@@ -208,11 +221,17 @@ def _decode_cursor(raw_cursor, fingerprint, desde, hasta):
         raise ValueError("cursor invalido.") from exc
     if not valid:
         raise ValueError("cursor invalido para los filtros solicitados.")
+    if version == 2:
+        cursor_epoch = payload.get("purge_epoch")
+        if type(cursor_epoch) is not int or cursor_epoch < 0:
+            raise ValueError("cursor invalido.")
+        if cursor_epoch != purge_epoch:
+            raise RetentionGap
     return cursor_timestamp, cursor_id
 
 
-def _serialize_pedido(pedido):
-    return {
+def _serialize_pedido(pedido, *, version=1):
+    serialized = {
         "id": pedido.id,
         "fecha_confirmacion": _iso_utc(pedido.fecha_confirmacion),
         "total": _decimal_string(pedido.total),
@@ -242,10 +261,29 @@ def _serialize_pedido(pedido):
             for item in pedido.items.all()
         ],
     }
+    if version == 2:
+        serialized["codigo_publico"] = str(pedido.codigo_publico)
+    return serialized
 
 
-def pedidos_pos_v1(request):
-    """Entrega pedidos confirmados mediante paginacion keyset de solo lectura."""
+def _latest_purge_epoch():
+    return (
+        RegistroPurga.objects.order_by("-id").values_list("id", flat=True).first()
+        or 0
+    )
+
+
+def _purge_range_intersects(desde, hasta):
+    # Los extremos son las fechas reales mínima y máxima de pedidos purgados.
+    # Un rango sin ambos extremos no representa pedidos confirmados consultables.
+    return RegistroPurga.objects.filter(
+        fecha_confirmacion_min__lt=hasta,
+        fecha_confirmacion_max__gte=desde,
+    ).exists()
+
+
+def _pedidos_pos(request, *, version):
+    """Entrega pedidos confirmados mediante paginación keyset de sólo lectura."""
 
     request_id = _request_id(request)
     if request.method != "GET":
@@ -283,7 +321,7 @@ def pedidos_pos_v1(request):
             headers={"WWW-Authenticate": "Bearer"},
         )
 
-    rate_error, rate_headers = _rate_limit(token_fingerprint)
+    rate_error, rate_headers = _rate_limit(token_fingerprint, version=version)
     if rate_error:
         logger.warning("pos_api request_id=%s resultado=rate_limit", request_id)
         return _error(
@@ -322,9 +360,29 @@ def pedidos_pos_v1(request):
             )
         limit = _parse_limit(request.GET.get("limite"))
         sucursal_ids = _parse_sucursal_ids(request.GET.get("sucursal_id"))
-        fingerprint = _filter_fingerprint(desde, hasta, sucursal_ids)
+        fingerprint = _filter_fingerprint(
+            desde, hasta, sucursal_ids, version=version
+        )
+        purge_epoch = None
+        if version == 2:
+            purge_epoch = _latest_purge_epoch()
+            if _purge_range_intersects(desde, hasta):
+                raise RetentionGap
         cursor = _decode_cursor(
-            request.GET.get("cursor"), fingerprint, desde, hasta
+            request.GET.get("cursor"),
+            fingerprint,
+            desde,
+            hasta,
+            version=version,
+            purge_epoch=purge_epoch,
+        )
+    except RetentionGap:
+        return _error(
+            "retention_gap",
+            "El historial solicitado ya no puede entregarse completo; requiere conciliacion.",
+            status=410,
+            request_id=request_id,
+            headers=rate_headers,
         )
     except RuntimeError:
         return _error(
@@ -366,15 +424,27 @@ def pedidos_pos_v1(request):
         )
 
     page = list(pedidos[: limit + 1])
+    if version == 2 and (
+        _latest_purge_epoch() != purge_epoch or _purge_range_intersects(desde, hasta)
+    ):
+        return _error(
+            "retention_gap",
+            "El historial cambio durante la consulta; requiere conciliacion.",
+            status=410,
+            request_id=request_id,
+            headers=rate_headers,
+        )
     has_more = len(page) > limit
     page = page[:limit]
-    next_cursor = (
-        _encode_cursor(page[-1], fingerprint) if has_more and page else None
-    )
+    next_cursor = None
+    if has_more and page:
+        next_cursor = _encode_cursor(
+            page[-1], fingerprint, version=version, purge_epoch=purge_epoch
+        )
     payload = {
-        "version": "v1",
+        "version": f"v{version}",
         "request_id": request_id,
-        "data": [_serialize_pedido(pedido) for pedido in page],
+        "data": [_serialize_pedido(pedido, version=version) for pedido in page],
         "page": {
             "has_more": has_more,
             "limit": limit,
@@ -383,7 +453,8 @@ def pedidos_pos_v1(request):
         },
     }
     logger.info(
-        "pos_api request_id=%s resultado=ok pedidos=%s limite=%s cursor=%s",
+        "pos_api_v%s request_id=%s resultado=ok pedidos=%s limite=%s cursor=%s",
+        version,
         request_id,
         len(page),
         limit,
@@ -395,3 +466,13 @@ def pedidos_pos_v1(request):
         request_id=request_id,
         headers=rate_headers,
     )
+
+
+def pedidos_pos_v1(request):
+    """Contrato v1 conservado para consumidores existentes."""
+    return _pedidos_pos(request, version=1)
+
+
+def pedidos_pos_v2(request):
+    """Contrato v2 con UUID público y señal explícita de brecha de retención."""
+    return _pedidos_pos(request, version=2)

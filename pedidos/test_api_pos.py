@@ -6,7 +6,7 @@ from django.test import TestCase, override_settings
 from django.urls import reverse
 from django.utils import timezone
 
-from .models import ItemPedido, Pedido, Producto, SucursalCliente
+from .models import ItemPedido, Pedido, Producto, RegistroPurga, SucursalCliente
 
 
 TOKEN = "token-pos-pruebas-abcdefghijklmnopqrstuvwxyz-0123456789"
@@ -335,3 +335,171 @@ class PosApiV1Tests(TestCase):
         self.assertEqual(unknown.status_code, 400)
         self.assertEqual(excessive.status_code, 400)
         self.assertNotIn("valor", unknown.content.decode("utf-8"))
+
+
+@override_settings(
+    POS_API_TOKENS=(TOKEN,),
+    POS_API_ALLOWED_SUCURSAL_IDS=(101,),
+    POS_API_REQUIRE_HTTPS=False,
+    POS_API_DEFAULT_PAGE_SIZE=100,
+    POS_API_MAX_PAGE_SIZE=500,
+    POS_API_RATE_LIMIT_PER_MINUTE=0,
+    POS_API_MAX_WINDOW=timedelta(days=31),
+)
+class PosApiV2Tests(TestCase):
+    def setUp(self):
+        self.url = reverse("api_pos_pedidos_v2")
+        self.base_time = timezone.now().replace(microsecond=123456)
+        self.sucursal = SucursalCliente.objects.create(
+            id=101, nombre="Sucursal POS v2", tipo=SucursalCliente.Tipo.SUCURSAL
+        )
+        self.producto = Producto.objects.create(
+            nombre="Producto POS v2", cantidad_por_precio=Decimal("1.000")
+        )
+
+    def _params(self, **overrides):
+        params = {
+            "desde": (self.base_time - timedelta(hours=1)).isoformat(),
+            "hasta": (self.base_time + timedelta(hours=1)).isoformat(),
+        }
+        params.update(overrides)
+        return params
+
+    def _get(self, **overrides):
+        return self.client.get(
+            self.url,
+            data=self._params(**overrides),
+            HTTP_AUTHORIZATION=f"Bearer {TOKEN}",
+        )
+
+    def _pedido(self, *, fecha=None):
+        pedido = Pedido.objects.create(
+            sucursal_cliente=self.sucursal,
+            usuario_nombre="usuario-sintetico",
+            estado=Pedido.Estado.CONFIRMADO,
+            fecha_confirmacion=fecha or self.base_time,
+            total=Decimal("8.00"),
+        )
+        ItemPedido.objects.create(
+            pedido=pedido,
+            producto=self.producto,
+            cantidad=Decimal("1.000"),
+            precio_unitario=Decimal("8.00"),
+        )
+        return pedido
+
+    def _purga(self, minimum, maximum):
+        return RegistroPurga.objects.create(
+            motivo="antiguedad",
+            numero_pedidos=1,
+            numero_items=1,
+            numero_macropedidos=1,
+            fecha_confirmacion_min=minimum,
+            fecha_confirmacion_max=maximum,
+        )
+
+    def test_v2_expone_uuid_publico_y_preserva_v1(self):
+        pedido = self._pedido()
+
+        v2 = self._get()
+        v1 = self.client.get(
+            reverse("api_pos_pedidos_v1"),
+            data=self._params(),
+            HTTP_AUTHORIZATION=f"Bearer {TOKEN}",
+        )
+
+        self.assertEqual(v2.status_code, 200)
+        self.assertEqual(v2.json()["version"], "v2")
+        self.assertEqual(v2.json()["data"][0]["codigo_publico"], str(pedido.codigo_publico))
+        self.assertEqual(v2.json()["data"][0]["id"], pedido.id)
+        self.assertEqual(v1.status_code, 200)
+        self.assertNotIn("codigo_publico", v1.json()["data"][0])
+
+    def test_cursor_v2_usa_id_para_desempatar_fechas_iguales(self):
+        pedidos = [self._pedido() for _ in range(3)]
+
+        first = self._get(limite="1")
+        second = self._get(limite="1", cursor=first.json()["page"]["next_cursor"])
+        third = self._get(limite="1", cursor=second.json()["page"]["next_cursor"])
+
+        self.assertEqual([first.status_code, second.status_code, third.status_code], [200] * 3)
+        self.assertEqual(
+            [response.json()["data"][0]["codigo_publico"] for response in (first, second, third)],
+            [str(pedido.codigo_publico) for pedido in pedidos],
+        )
+        self.assertIsNone(third.json()["page"]["next_cursor"])
+
+    def test_cursores_v1_y_v2_no_son_intercambiables(self):
+        self._pedido()
+        self._pedido()
+        v1_url = reverse("api_pos_pedidos_v1")
+        v1_page = self.client.get(
+            v1_url,
+            data=self._params(limite="1"),
+            HTTP_AUTHORIZATION=f"Bearer {TOKEN}",
+        ).json()
+        v2_page = self._get(limite="1").json()
+
+        v1_cursor_in_v2 = self._get(
+            limite="1", cursor=v1_page["page"]["next_cursor"]
+        )
+        v2_cursor_in_v1 = self.client.get(
+            v1_url,
+            data=self._params(limite="1", cursor=v2_page["page"]["next_cursor"]),
+            HTTP_AUTHORIZATION=f"Bearer {TOKEN}",
+        )
+
+        self.assertEqual(v1_cursor_in_v2.status_code, 400)
+        self.assertEqual(v2_cursor_in_v1.status_code, 400)
+
+    def test_rango_purgado_devuelve_410_aun_si_no_quedan_filas(self):
+        self._purga(self.base_time, self.base_time)
+
+        response = self._get()
+
+        self.assertEqual(response.status_code, 410)
+        self.assertEqual(response.json()["error"]["code"], "retention_gap")
+        self.assertEqual(response["Cache-Control"], "no-store")
+
+    def test_cursor_anterior_a_purga_fuera_de_ventana_es_obsoleto(self):
+        self._pedido()
+        self._pedido()
+        old_cursor = self._get(limite="1").json()["page"]["next_cursor"]
+        self._purga(
+            self.base_time - timedelta(days=2),
+            self.base_time - timedelta(days=2),
+        )
+
+        stale = self._get(limite="1", cursor=old_cursor)
+        fresh = self._get(limite="1")
+
+        self.assertEqual(stale.status_code, 410)
+        self.assertEqual(stale.json()["error"]["code"], "retention_gap")
+        self.assertEqual(fresh.status_code, 200)
+        self.assertEqual(len(fresh.json()["data"]), 1)
+
+    def test_datos_posteriores_a_purga_y_limite_exclusivo(self):
+        self._purga(
+            self.base_time - timedelta(hours=2),
+            self.base_time - timedelta(hours=1, microseconds=1),
+        )
+        self._purga(
+            self.base_time + timedelta(hours=1),
+            self.base_time + timedelta(hours=1),
+        )
+        retained = self._pedido()
+
+        response = self._get()
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(
+            [record["codigo_publico"] for record in response.json()["data"]],
+            [str(retained.codigo_publico)],
+        )
+
+    def test_v2_reutiliza_autenticacion_y_allowlist(self):
+        unauthorized = self.client.get(self.url, data=self._params())
+        forbidden = self._get(sucursal_id="999")
+
+        self.assertEqual(unauthorized.status_code, 401)
+        self.assertEqual(forbidden.status_code, 400)
