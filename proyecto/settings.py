@@ -85,6 +85,11 @@ WSGI_APPLICATION = 'proyecto.wsgi.application'
 
 
 DATABASE_URL = config("DATABASE_URL", default="")
+DB_SSLMODE = config("DB_SSLMODE", default="").strip().lower()
+if DB_SSLMODE and DB_SSLMODE not in {
+    "disable", "allow", "prefer", "require", "verify-ca", "verify-full"
+}:
+    raise ImproperlyConfigured("DB_SSLMODE no es un valor PostgreSQL admitido.")
 
 if IS_PRODUCTION and not DATABASE_URL:
     raise ImproperlyConfigured("DATABASE_URL es obligatoria en produccion.")
@@ -94,8 +99,13 @@ if DATABASE_URL:
         DATABASE_URL,
         conn_max_age=600,
     )
-    if IS_PRODUCTION and database_config["ENGINE"] != "django.db.backends.sqlite3":
-        database_config.setdefault("OPTIONS", {}).setdefault("sslmode", "require")
+    if database_config["ENGINE"] == "django.db.backends.postgresql":
+        if DB_SSLMODE:
+            database_config.setdefault("OPTIONS", {})["sslmode"] = DB_SSLMODE
+        elif IS_PRODUCTION:
+            database_config.setdefault("OPTIONS", {}).setdefault("sslmode", "require")
+    elif DB_SSLMODE:
+        raise ImproperlyConfigured("DB_SSLMODE sólo aplica a PostgreSQL.")
     DATABASES = {
         "default": database_config,
     }
@@ -221,6 +231,14 @@ if not 0 <= POS_API_RATE_LIMIT_PER_MINUTE <= 10000:
         "POS_API_RATE_LIMIT_PER_MINUTE debe estar entre 0 y 10000."
     )
 POS_API_MAX_WINDOW = timedelta(days=POS_API_MAX_WINDOW_DAYS)
+
+# El borrado físico y la reconciliación de restauraciones son operaciones
+# manuales, con autorización y ventanas propias. Ningún worker/timer las inicia.
+RETENTION_PURGE_ENABLED = config("RETENTION_PURGE_ENABLED", default=False, cast=bool)
+RETENTION_EXPORT_CLEANUP_ENABLED = config("RETENTION_EXPORT_CLEANUP_ENABLED", default=False, cast=bool)
+RETENTION_RESTORE_ISOLATED = config("RETENTION_RESTORE_ISOLATED", default=False, cast=bool)
+RETENTION_BACKFILL_ENABLED = config("RETENTION_BACKFILL_ENABLED", default=False, cast=bool)
+RETENTION_LOCAL_DB_CONFIRMED = config("RETENTION_LOCAL_DB_CONFIRMED", default=False, cast=bool)
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 

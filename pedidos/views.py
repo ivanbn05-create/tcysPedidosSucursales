@@ -30,6 +30,7 @@ from .models import (
     EventoCliente,
     ItemPedido,
     Pedido,
+    PedidoPurgado,
     MacroPedido,
     Precio,
     Producto,
@@ -686,6 +687,25 @@ def normalizar_detalle_evento(detalle):
     return normalizado
 
 
+def ocultar_referencia_pedido_purgado(detalle):
+    """Un evento tardío nunca debe reintroducir el detalle de un pedido purgado."""
+
+    pedido_id = detalle.get("pedido_id")
+    try:
+        pedido_id = int(pedido_id) if pedido_id is not None else None
+    except (TypeError, ValueError):
+        pedido_id = None
+    codigo = detalle.get("codigo_publico") or detalle.get("pedido_uuid")
+    try:
+        codigo = uuid.UUID(str(codigo)) if codigo else None
+    except (TypeError, ValueError, AttributeError):
+        codigo = None
+    if ((pedido_id is not None and PedidoPurgado.objects.filter(pedido_id_origen=pedido_id).exists())
+            or (codigo is not None and PedidoPurgado.objects.filter(codigo_publico=codigo).exists())):
+        return {"retencion": "pedido_purgado"}
+    return detalle
+
+
 def parse_fecha_cliente(value):
     fecha = parse_datetime(str(value or ""))
     if fecha is None:
@@ -719,21 +739,39 @@ def registrar_evento_persistente(request, evento, detalle=None, payload=None):
     token = request.session.get(SESSION_TOKEN_KEY, "")
 
     try:
-        registro, _ = EventoCliente.objects.get_or_create(
-            evento_id=evento_id,
-            defaults={
-                "usuario": request.user if request.user.is_authenticated else None,
-                "sucursal_cliente": sucursal,
-                "evento": str(evento or "desconocido")[:80],
-                "intento_id": intento_id,
-                "dispositivo_id": dispositivo_id,
-                "sesion_hash": hash_sesion(token),
-                "ocurrido_en": parse_fecha_cliente(payload.get("ocurrido_en")),
-                "detalle": normalizar_detalle_evento(detalle or payload.get("detalle") or {}),
-                "user_agent": user_agent,
-                "direccion_ip": direccion_ip(request),
-            },
-        )
+        detalle_normalizado = normalizar_detalle_evento(detalle or payload.get("detalle") or {})
+        with transaction.atomic():
+            # Comparte el bloqueo del pedido con aplicar_purga. Un evento que
+            # llegue durante la purga espera el COMMIT y verá el tombstone.
+            pedido_id = detalle_normalizado.get("pedido_id")
+            try:
+                pedido_id = int(pedido_id) if pedido_id is not None else None
+            except (TypeError, ValueError):
+                pedido_id = None
+            if pedido_id is not None:
+                list(Pedido.objects.select_for_update().filter(pk=pedido_id).values_list("pk", flat=True))
+            codigo = detalle_normalizado.get("codigo_publico") or detalle_normalizado.get("pedido_uuid")
+            try:
+                codigo = uuid.UUID(str(codigo)) if codigo else None
+            except (TypeError, ValueError, AttributeError):
+                codigo = None
+            if codigo is not None:
+                list(Pedido.objects.select_for_update().filter(codigo_publico=codigo).values_list("pk", flat=True))
+            registro, _ = EventoCliente.objects.get_or_create(
+                evento_id=evento_id,
+                defaults={
+                    "usuario": request.user if request.user.is_authenticated else None,
+                    "sucursal_cliente": sucursal,
+                    "evento": str(evento or "desconocido")[:80],
+                    "intento_id": intento_id,
+                    "dispositivo_id": dispositivo_id,
+                    "sesion_hash": hash_sesion(token),
+                    "ocurrido_en": parse_fecha_cliente(payload.get("ocurrido_en")),
+                    "detalle": ocultar_referencia_pedido_purgado(detalle_normalizado),
+                    "user_agent": user_agent,
+                    "direccion_ip": direccion_ip(request),
+                },
+            )
         return registro
     except Exception:
         # La auditoría nunca debe impedir capturar o confirmar un pedido.

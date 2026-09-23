@@ -235,6 +235,9 @@ class Pedido(models.Model):
     codigo_publico = models.UUIDField(default=uuid.uuid4, unique=True, editable=False)
     usuario_nombre = models.CharField(max_length=150)
     fecha_creacion = models.DateTimeField(auto_now_add=True)
+    # Primera recepción en el VPS. Los registros migrados quedan en NULL hasta
+    # un backfill documentado; nunca se deriva de la fecha de negocio.
+    first_received_at = models.DateTimeField(null=True, blank=True, editable=False, db_index=True)
     fecha_confirmacion = models.DateTimeField(null=True, blank=True)
     estado = models.CharField(
         max_length=16,
@@ -324,6 +327,82 @@ class ItemPedido(models.Model):
         super().save(*args, **kwargs)
 
 
+class ExportacionRetencion(models.Model):
+    """Comprobante técnico de un ZIP generado y, después, verificado en destino."""
+
+    class Estado(models.TextChoices):
+        GENERADA = "generada", "Generada"
+        CONFIRMADA = "confirmada", "Confirmada en destino"
+        INVALIDADA = "invalidada", "Invalidada por cambios"
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    estado = models.CharField(max_length=12, choices=Estado.choices, default=Estado.GENERADA)
+    generada_en = models.DateTimeField(auto_now_add=True)
+    confirmada_en = models.DateTimeField(null=True, blank=True)
+    archivo_local_eliminado_en = models.DateTimeField(null=True, blank=True)
+    desde_recepcion = models.DateTimeField()
+    hasta_recepcion = models.DateTimeField()
+    sha256_archivo = models.CharField(max_length=64)
+    sha256_contenido = models.CharField(max_length=64)
+    archivo_local = models.CharField(max_length=500, blank=True)
+    numero_pedidos = models.PositiveIntegerField()
+    numero_items = models.PositiveIntegerField()
+    version_formato = models.PositiveSmallIntegerField(default=1)
+    referencia_confirmacion = models.CharField(max_length=120, blank=True)
+
+    class Meta:
+        ordering = ["-generada_en"]
+
+
+class PedidoEnExportacion(models.Model):
+    """Identidad y firma de cada pedido del lote; desaparece con el pedido."""
+
+    exportacion = models.ForeignKey(
+        ExportacionRetencion, on_delete=models.CASCADE, related_name="miembros"
+    )
+    pedido = models.ForeignKey(Pedido, on_delete=models.CASCADE, related_name="exportaciones_retencion")
+    sha256_contenido = models.CharField(max_length=64)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=["exportacion", "pedido"], name="pedido_unico_por_exportacion"
+            )
+        ]
+
+
+class RegistroPurga(models.Model):
+    """Recibo mínimo, sin contenido transaccional, para auditoría y cursores POS."""
+
+    ejecutada_en = models.DateTimeField(auto_now_add=True)
+    motivo = models.CharField(max_length=24)
+    numero_pedidos = models.PositiveIntegerField()
+    numero_items = models.PositiveIntegerField()
+    numero_macropedidos = models.PositiveIntegerField()
+    numero_eventos = models.PositiveIntegerField(default=0)
+    fecha_confirmacion_min = models.DateTimeField(null=True, blank=True)
+    fecha_confirmacion_max = models.DateTimeField(null=True, blank=True)
+    exportacion = models.ForeignKey(
+        ExportacionRetencion, null=True, blank=True,
+        on_delete=models.PROTECT, related_name="purgas",
+    )
+
+
+class PedidoPurgado(models.Model):
+    """Tombstone técnico para impedir reintroducción al restaurar copias antiguas."""
+
+    codigo_publico = models.UUIDField(primary_key=True, editable=False)
+    pedido_id_origen = models.PositiveBigIntegerField(unique=True)
+    motivo = models.CharField(max_length=24)
+    exportacion = models.ForeignKey(
+        ExportacionRetencion, null=True, blank=True,
+        on_delete=models.PROTECT, related_name="pedidos_purgados",
+    )
+    registro = models.ForeignKey(
+        RegistroPurga, on_delete=models.PROTECT, related_name="pedidos_purgados"
+    )
+
+
 class SesionActiva(models.Model):
     """Arrendamiento persistente para permitir un solo dispositivo por usuario."""
 
@@ -371,6 +450,7 @@ class EventoCliente(models.Model):
     sesion_hash = models.CharField(max_length=16, blank=True)
     ocurrido_en = models.DateTimeField(null=True, blank=True, db_index=True)
     recibido_en = models.DateTimeField(auto_now_add=True, db_index=True)
+    first_received_at = models.DateTimeField(null=True, blank=True, editable=False, db_index=True)
     detalle = models.JSONField(default=dict, blank=True)
     user_agent = models.CharField(max_length=300, blank=True)
     direccion_ip = models.GenericIPAddressField(null=True, blank=True)
