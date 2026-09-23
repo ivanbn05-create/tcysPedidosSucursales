@@ -104,3 +104,14 @@ El ticket sólo imprime una fila por producto pedido; no agrega filas vacías de
 
 La configuración reproducible del VPS, el lock exacto y los procedimientos de
 release/rollback están en [`deploy/vps/`](deploy/vps/README.md).
+
+La siguiente etapa, aún sin desplegar, prepara PostgreSQL productivo local del
+VPS, exportación manual y retención física de pedidos. La política usa el
+primero entre descarga verificada/confirmada y 30 días desde la primera
+recepción en el VPS; no incluye maestros ni clientes del POS. Véanse la
+[matriz de datos](docs/retencion/matriz_datos.md), el
+[runbook de retención](deploy/vps/runbooks/retencion.md) y el
+[runbook de migración](deploy/vps/runbooks/migracion_postgresql_local.md).
+Ventas y clientes del POS pertenecen al backend central separado; el
+[handoff](docs/integracion/handoff_backend_central.md) no declara ese servicio
+implementado ni autorizado.

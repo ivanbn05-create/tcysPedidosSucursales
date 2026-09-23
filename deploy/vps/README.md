@@ -1,9 +1,10 @@
 # Despliegue reproducible en VPS
 
 Esta carpeta define el runtime de `tcysPedidosSucursales` sin modificar el
-checkout activo ni depender de `git pull`. El primer despliegue mantiene
-Supabase como base productiva; no abre PostgreSQL local a Internet y no retira
-Render.
+checkout activo ni depender de `git pull`. El primer despliegue documentado
+mantiene la base externa que use la producción real; el cambio a PostgreSQL
+local tiene un runbook aparte y requiere autorización. No abre PostgreSQL
+local a Internet ni retira Render por sí mismo.
 
 ## Perfil de produccion
 
@@ -53,6 +54,18 @@ atomico; systemd y Nginx apuntan siempre al symlink estable.
 - `runbooks/deploy.md`: build, prueba paralela y activacion autorizada.
 - `runbooks/rollback.md`: vuelta a un release ya presente, sin GitHub.
 - `runbooks/api_pos.md`: staging, despliegue y rollback de la API HTTPS para el POS.
+- `runbooks/retencion.md`: exportación confirmada, dry-run, purga manual aún
+  deshabilitada y reconciliación de restores.
+- `runbooks/migracion_postgresql_local.md`: ensayo y corte propuesto hacia una
+  base PostgreSQL local exclusiva de Pedidos, con rollback dependiente de datos.
+- `scripts/ensayar_copia_postgresql.sh` y `scripts/manifesto_postgresql.sql`:
+  herramientas de ensayo aislado e inventario técnico sin secretos.
+
+Estos procedimientos no cambian por sí solos la producción actual ni activan
+purga. La política de retención requiere aprobación, ensayo en PostgreSQL local,
+resolución de pedidos abiertos y auditoría de backups/snapshots antes de
+habilitar una tarea destructiva. Los clientes del POS son permanentes y se
+almacenan en el backend central separado; no se migran a esta base.
 
 ## Dependencias
 
