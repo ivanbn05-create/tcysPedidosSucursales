@@ -5,6 +5,7 @@ from pathlib import Path
 
 from django.conf import settings
 from django.contrib import admin
+from django.db import connection
 from django.test import TestCase, override_settings
 from django.utils import timezone
 
@@ -46,6 +47,29 @@ class RetencionTests(TestCase):
         )
         self.configuracion = Configuracion.get_solo()
 
+    def marcar_recepcion_historica(self, instancia, instante):
+        """Prepara un dato histórico en la base de prueba sin quitar el guard real.
+
+        El trigger de PostgreSQL fija la recepción al INSERT, como debe ocurrir
+        en operación normal. Sólo este fixture de ensayo necesita representar
+        filas restauradas que ya tenían una marca antigua.
+        """
+        if connection.vendor != "postgresql":
+            return
+        tabla = connection.ops.quote_name(instancia._meta.db_table)
+        trigger = connection.ops.quote_name(
+            f"{instancia._meta.db_table}_first_received_guard_trigger"
+        )
+        with connection.cursor() as cursor:
+            cursor.execute(f"ALTER TABLE {tabla} DISABLE TRIGGER {trigger}")
+            try:
+                type(instancia).objects.filter(pk=instancia.pk).update(
+                    first_received_at=instante
+                )
+            finally:
+                cursor.execute(f"ALTER TABLE {tabla} ENABLE TRIGGER {trigger}")
+        instancia.first_received_at = instante
+
     def pedido(self, *, dias=1, estado=Pedido.Estado.RECIBIDO, macro=None):
         recibido = self.ahora - timedelta(days=dias)
         pedido = Pedido.objects.create(
@@ -57,6 +81,7 @@ class RetencionTests(TestCase):
             first_received_at=recibido,
             total=Decimal("10.00"),
         )
+        self.marcar_recepcion_historica(pedido, recibido)
         ItemPedido.objects.create(
             pedido=pedido,
             producto=self.producto,
@@ -381,6 +406,7 @@ class RetencionTests(TestCase):
         antiguo = EventoCliente.objects.create(
             evento="prueba", first_received_at=self.ahora - timedelta(days=31)
         )
+        self.marcar_recepcion_historica(antiguo, self.ahora - timedelta(days=31))
         nuevo = EventoCliente.objects.create(evento="prueba", first_received_at=self.ahora)
         sin_marca = EventoCliente.objects.create(evento="prueba")
         plan = aplicar_purga(ahora=self.ahora)

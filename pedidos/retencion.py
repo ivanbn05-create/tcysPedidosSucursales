@@ -182,7 +182,7 @@ def _generar_exportacion_transaccional(
 
     with transaction.atomic():
         consulta = (
-            Pedido.objects.select_for_update()
+            Pedido.objects.select_for_update(of=("self",))
             .filter(
                 first_received_at__gte=desde,
                 first_received_at__lt=hasta,
@@ -284,7 +284,9 @@ def confirmar_exportacion(*, lote_id, archivo_local, sha256_destino, referencia)
         pedidos = {
             pedido.pk: pedido
             for pedido in _pedidos_con_relaciones(
-                Pedido.objects.select_for_update().filter(pk__in=[m.pedido_id for m in miembros])
+                Pedido.objects.select_for_update(of=("self",)).filter(
+                    pk__in=[m.pedido_id for m in miembros]
+                )
             )
         }
         if len(pedidos) != lote.numero_pedidos or any(

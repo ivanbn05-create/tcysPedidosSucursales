@@ -51,11 +51,12 @@ paths:
           example: '2026-09-22T15:00:00Z'
         - name: sucursal_id
           in: query
-          required: false
+          required: true
           description: ID entero de SucursalCliente aprobado para el Edge; otro ID devuelve 403.
           schema:
             type: string
-          example: '3,4'
+            pattern: '^[1-9][0-9]*(,[1-9][0-9]*)*$'
+          example: '3'
         - name: limite
           in: query
           required: false
@@ -166,7 +167,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorRespuesta'
         '503':
-          description: Tokens o allowlist de sucursales no configurados.
+          description: No hay credenciales v2 configuradas.
           content:
             application/json:
               schema:
