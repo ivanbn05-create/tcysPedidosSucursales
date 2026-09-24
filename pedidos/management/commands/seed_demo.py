@@ -1,4 +1,5 @@
-from django.core.management.base import BaseCommand
+from django.conf import settings
+from django.core.management.base import BaseCommand, CommandError
 
 from pedidos.seed import seed_demo_data
 
@@ -7,6 +8,8 @@ class Command(BaseCommand):
     help = "Crea datos demo de Los Tocayos: usuarios, productos y precios."
 
     def handle(self, *args, **options):
+        if settings.IS_PRODUCTION:
+            raise CommandError("seed_demo está prohibido en perfiles productivos.")
         stats = seed_demo_data()
         self.stdout.write(
             self.style.SUCCESS(

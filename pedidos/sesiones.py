@@ -9,6 +9,8 @@ from django.contrib.auth.models import User
 from django.db import transaction
 from django.utils import timezone
 
+from proyecto.security import login_client_ip
+
 from .models import SesionActiva
 
 
@@ -29,8 +31,9 @@ def sesion_esta_vigente(sesion, ahora=None):
 
 
 def direccion_ip(request):
-    reenviada = request.META.get("HTTP_X_FORWARDED_FOR", "")
-    return (reenviada.split(",", 1)[0].strip() if reenviada else request.META.get("REMOTE_ADDR")) or None
+    # Sólo el proxy local de Nginx puede aportar X-Real-IP. X-Forwarded-For
+    # recibido desde Internet no es una identidad confiable para auditoría.
+    return login_client_ip(request)
 
 
 def describir_dispositivo(request):
@@ -87,7 +90,14 @@ def intentar_iniciar_sesion(request, user, forzar=False):
             return False, sesion
 
         token = secrets.token_urlsafe(32)
-        login(request, usuario_bloqueado)
+        # El usuario se relee con bloqueo y pierde el atributo `.backend` que
+        # añadió authenticate(). Con Axes + ModelBackend hay dos backends y
+        # Django exige indicar explícitamente cuál estableció la identidad.
+        login(
+            request,
+            usuario_bloqueado,
+            backend=getattr(user, "backend", "django.contrib.auth.backends.ModelBackend"),
+        )
         request.session[SESSION_TOKEN_KEY] = token
         request.session.modified = True
         SesionActiva.objects.update_or_create(
@@ -113,6 +123,8 @@ def validar_sesion_request(request):
     if token:
         sesion = SesionActiva.objects.filter(usuario=request.user, token=token).first()
         if sesion is None:
+            return False
+        if not sesion_esta_vigente(sesion, ahora):
             return False
         if sesion.ultima_actividad < ahora - timedelta(seconds=60):
             SesionActiva.objects.filter(pk=sesion.pk, token=token).update(ultima_actividad=ahora)

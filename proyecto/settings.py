@@ -43,13 +43,21 @@ if IS_PRODUCTION and not CSRF_TRUSTED_ORIGINS:
 # Application definition
 
 INSTALLED_APPS = [
-    'django.contrib.admin',
+    'proyecto.apps.AdminSeguroConfig',
     'django.contrib.auth',
     'django.contrib.contenttypes',
     'django.contrib.sessions',
     'django.contrib.messages',
     'django.contrib.staticfiles',
+    'axes',
+    'django_otp',
+    'django_otp.plugins.otp_totp',
     'pedidos',
+]
+
+AUTHENTICATION_BACKENDS = [
+    'axes.backends.AxesStandaloneBackend',
+    'django.contrib.auth.backends.ModelBackend',
 ]
 
 MIDDLEWARE = [
@@ -59,9 +67,32 @@ MIDDLEWARE = [
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
     'django.contrib.auth.middleware.AuthenticationMiddleware',
+    'django_otp.middleware.OTPMiddleware',
     'django.contrib.messages.middleware.MessageMiddleware',
     'pedidos.middleware.SesionUnicaMiddleware',
+    'pedidos.middleware.MFAEnforcementMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
+    'axes.middleware.AxesMiddleware',
+]
+
+MFA_ENFORCE = True
+MFA_STEP_UP_SECONDS = 300
+MFA_PENDING_SECONDS = 300
+MFA_MAX_ATTEMPTS = 5
+MFA_LOCK_SECONDS = 900
+OTP_TOTP_ISSUER = 'Los Tocayos Pedidos'
+OTP_ADMIN_HIDE_SENSITIVE_DATA = True
+OTP_TOTP_THROTTLE_FACTOR = 1
+
+AXES_FAILURE_LIMIT = 5
+AXES_COOLOFF_TIME = timedelta(minutes=15)
+AXES_LOCKOUT_PARAMETERS = ['username', 'ip_address']
+AXES_CLIENT_IP_CALLABLE = 'proyecto.security.login_client_ip'
+AXES_LOCKOUT_CALLABLE = 'proyecto.security.login_lockout'
+AXES_RESET_ON_SUCCESS = True
+AXES_SENSITIVE_PARAMETERS = [
+    'username', 'ip_address', 'codigo', 'otp_token', 'otp_device',
+    'csrfmiddlewaretoken', 'device_id',
 ]
 
 ROOT_URLCONF = 'proyecto.urls'
@@ -272,6 +303,10 @@ SCHEDULER_ENABLED = False
 SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
 SESSION_COOKIE_SECURE = IS_PRODUCTION or not DEBUG
 CSRF_COOKIE_SECURE = IS_PRODUCTION or not DEBUG
+SESSION_COOKIE_HTTPONLY = True
+SESSION_COOKIE_AGE = 3600
+SESSION_EXPIRE_AT_BROWSER_CLOSE = True
+SESSION_SAVE_EVERY_REQUEST = True
 
 # Explícito a propósito: "Lax" es el default de Django, pero las sucursales abren
 # el sistema desde un link en WhatsApp o en la app de Google, y con "Strict" la

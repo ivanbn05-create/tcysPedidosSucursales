@@ -77,9 +77,7 @@ class Command(BaseCommand):
         if solo_sucursal:
             sucursales = sucursales.filter(nombre__iexact=solo_sucursal)
             if not sucursales.exists():
-                raise CommandError(
-                    f'No se encontró una sucursal/cliente activa con nombre "{solo_sucursal}".'
-                )
+                raise CommandError("No se encontró una sucursal/cliente activa con ese nombre.")
 
         if not sucursales.exists():
             self.stdout.write(self.style.WARNING("No hay sucursales/clientes activos."))
@@ -100,7 +98,9 @@ class Command(BaseCommand):
                     estado=LogRecordatorio.Estado.SALTADO,
                     mensaje_error="Sin correo configurado.",
                 )
-                self.stdout.write(self.style.WARNING(f"Saltado: {sucursal.nombre} no tiene correo configurado."))
+                self.stdout.write(self.style.WARNING(
+                    f"Saltado: sucursal_id={sucursal.pk}, sin correo configurado."
+                ))
                 continue
 
             contexto = {
@@ -109,36 +109,39 @@ class Command(BaseCommand):
                 "hora_actual": timezone.localtime(),
                 "contacto_correo": settings.REMINDER_CONTACT_EMAIL,
             }
-            texto_plano = render_to_string("pedidos/emails/recordatorio.txt", contexto)
-            html = render_to_string("pedidos/emails/recordatorio.html", contexto)
-
-            if modo_test:
-                self.stdout.write(
-                    self.style.SUCCESS(f"[TEST] Se simuló el envío a {sucursal.nombre} <{sucursal.email}>.")
-                )
-                enviados += 1
-                continue
-
             try:
+                texto_plano = render_to_string("pedidos/emails/recordatorio.txt", contexto)
+                html = render_to_string("pedidos/emails/recordatorio.html", contexto)
+                if modo_test:
+                    self.stdout.write(self.style.SUCCESS(
+                        f"[TEST] Envío simulado para sucursal_id={sucursal.pk}."
+                    ))
+                    enviados += 1
+                    continue
                 mensaje = EmailMultiAlternatives(asunto, texto_plano, remitente, [sucursal.email])
                 mensaje.attach_alternative(html, "text/html")
                 mensaje.send(fail_silently=False)
             except Exception as error:  # noqa: BLE001 - se registra y se continúa con las demás sucursales
                 fallidos += 1
+                tipo_error = type(error).__name__
                 LogRecordatorio.objects.create(
                     sucursal_cliente=sucursal,
                     estado=LogRecordatorio.Estado.ERROR,
-                    mensaje_error=str(error),
+                    mensaje_error=f"Error de recordatorio: {tipo_error}.",
                 )
-                logger.error("Error enviando recordatorio a %s <%s>: %s", sucursal.nombre, sucursal.email, error)
-                self.stdout.write(self.style.ERROR(f"Error enviando a {sucursal.nombre}: {error}"))
+                logger.error(
+                    "recordatorio_error sucursal_id=%s tipo=%s", sucursal.pk, tipo_error
+                )
+                self.stdout.write(self.style.ERROR(
+                    f"Error enviando a sucursal_id={sucursal.pk}: {tipo_error}."
+                ))
             else:
                 enviados += 1
                 LogRecordatorio.objects.create(
                     sucursal_cliente=sucursal,
                     estado=LogRecordatorio.Estado.ENVIADO,
                 )
-                logger.info("Recordatorio enviado a %s <%s>.", sucursal.nombre, sucursal.email)
+                logger.info("recordatorio_enviado sucursal_id=%s", sucursal.pk)
 
         resumen = f"Recordatorios: {enviados} enviados, {fallidos} fallidos, {saltados} saltados."
         self.stdout.write(self.style.SUCCESS(resumen) if fallidos == 0 else self.style.WARNING(resumen))

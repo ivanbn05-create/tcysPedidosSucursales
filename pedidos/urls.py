@@ -1,12 +1,16 @@
 from django.urls import path
 
 from . import views
+from . import mfa
 from .api_pos import pedidos_pos_v1, pedidos_pos_v2
 
 urlpatterns = [
     path("", views.home, name="home"),
     path("privacidad/", views.privacidad_view, name="privacidad"),
     path("login/", views.login_view, name="login"),
+    path("mfa/login/", mfa.desafio_login, name="mfa_login"),
+    path("mfa/revalidar/", mfa.revalidar_mfa, name="mfa_revalidar"),
+    path("mfa/recuperacion/", mfa.recuperar_mfa, name="mfa_recuperacion"),
     path("logout/", views.logout_view, name="logout"),
     path("pedidos/", views.pedidos_view, name="pedidos"),
     path("pedidos/historial/", views.historial_pedidos, name="historial_pedidos"),

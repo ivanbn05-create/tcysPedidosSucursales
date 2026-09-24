@@ -35,16 +35,16 @@ Los importes son cadenas decimales. En una respuesta real, `items` contiene los 
 
 ## Orden, cursor y brechas
 
-El orden sigue siendo `(fecha_confirmacion, Pedido.id)` ascendente, de modo que dos pedidos con la misma marca temporal no se pierden. El cursor opaco v2 está firmado, ligado a filtros y versión, e incluye el identificador del último `RegistroPurga` observado al crear la página. No se acepta un cursor v1 en v2 ni viceversa.
+El orden sigue siendo `(fecha_confirmacion, Pedido.id)` ascendente, de modo que dos pedidos con la misma marca temporal no se pierden. El cursor v2 está firmado y ligado a filtros y versión. Su época de purga es un HMAC opaco del último recibo de purga relevante para las sucursales consultadas: **no** expone `RegistroPurga.id` ni debe ser interpretado por el POS. El consumidor debe guardar y reenviar `next_cursor` sin decodificarlo. No se acepta un cursor v1 en v2 ni viceversa.
 
 La v2 responde HTTP **410 Gone** con código estable `retention_gap` si:
 
-1. la ventana `[desde, hasta)` intersecta el rango inclusivo entre `fecha_confirmacion_min` y `fecha_confirmacion_max` de algún `RegistroPurga`; o
-2. un cursor v2 fue creado antes o después de un cambio del último `RegistroPurga.id`, incluso si la purga ocurrió fuera de la ventana solicitada.
+1. la ventana `[desde, hasta)` incluye la `fecha_confirmacion` exacta de un `PedidoPurgado` de una sucursal consultada y retornable por la API; o
+2. la época del cursor v2 difiere de la época vigente para esas sucursales, aunque la purga haya ocurrido fuera de la ventana solicitada. Un cursor v2 anterior, todavía firmado pero con época numérica, también recibe 410 y requiere conciliación.
 
-La comprobación de rango es conservadora: un recibo de purga puede cubrir fechas de pedidos de varias sucursales y huecos entre su mínimo y máximo. Si ambos extremos son nulos, el recibo no afirma un rango de pedidos confirmados y sólo cambia la época de los cursores. Se comprueba la época de nuevo antes de responder para detectar purgas que terminen durante la consulta. La API no entrega una página vacía como sustituto de un 410 conocido. Sin registros de purga que cubran la ventana, una página vacía significa que no hay pedidos *actualmente consultables* bajo esos filtros; no certifica historial completo anterior a la introducción del registro de purgas.
+La comprobación usa tombstones por pedido, sucursal y fecha; una purga de otra sucursal, de un cliente mayorista o en un hueco entre dos fechas purgadas **no** produce 410 para esta consulta. Una purga sólo de eventos, sin pedido con `fecha_confirmacion`, tampoco altera la época POS. La época se comprueba de nuevo antes de responder para detectar purgas que terminen durante la consulta. La API no entrega una página vacía como sustituto de un 410 conocido. Sin tombstones que cubran la ventana, una página vacía significa que no hay pedidos *actualmente consultables* bajo esos filtros; no certifica historial completo anterior a la introducción del registro de purgas.
 
-Los recibos `RegistroPurga` y la secuencia de sus IDs son parte del estado necesario para recuperar el servicio: una restauración no puede omitirlos ni reiniciar la época de cursores sin conciliación y reemisión controlada. Restaurar sólo filas de pedidos desde una copia antigua tampoco debe reintroducir contenido purgado.
+Los recibos `RegistroPurga` y tombstones `PedidoPurgado` son parte del estado necesario para recuperar el servicio: una restauración no puede omitirlos ni reiniciar la época de cursores sin conciliación y reemisión controlada. El HMAC evita revelar el ID secuencial, pero no sustituye el ledger técnico ni la reconciliación. Restaurar sólo filas de pedidos desde una copia antigua tampoco debe reintroducir contenido purgado.
 
 ```json
 {
@@ -56,7 +56,7 @@ Los recibos `RegistroPurga` y la secuencia de sus IDs son parte del estado neces
 }
 ```
 
-La API mantiene `Cache-Control: no-store` y `X-Request-ID` también en errores. Un cursor malformado o manipulado continúa dando 400 `invalid_parameter`; uno válido pero obsoleto por purga da 410. La v1 conserva su semántica histórica y **no detecta** estas brechas.
+La API mantiene `Cache-Control: no-store` y `X-Request-ID` también en errores. Un cursor malformado o manipulado continúa dando 400 `invalid_parameter`; uno firmado pero obsoleto por purga o por el cambio a época opaca da 410. La v1 conserva su semántica histórica y **no detecta** estas brechas.
 
 ## Reanudación y conciliación del POS
 
@@ -71,7 +71,9 @@ La política de retención permite que un pedido salga del VPS tras descarga man
 - Comparar una página v1/v2 con fixtures sintéticos: mismos pedidos e ítems; `codigo_publico` sólo en v2.
 - Paginar pedidos con `fecha_confirmacion` idéntica y repetir páginas sin duplicados.
 - Crear cursor, registrar purga fuera de ventana y comprobar 410 al reanudar; una consulta fresca de ventana no afectada puede continuar.
-- Consultar ventana que cubre un registro de purga aunque ya no existan filas: 410, no 200 vacío.
+- Consultar ventana que cubre la fecha exacta de un pedido purgado de la sucursal autorizada aunque ya no existan filas: 410, no 200 vacío.
+- Purgar una sucursal ajena o un mayorista: no filtrar esa actividad por 410 ni invalidar un cursor de la sucursal consultada. Un hueco entre dos fechas purgadas tampoco es una brecha conocida.
+- Presentar un cursor v2 anterior con época numérica: 410 y conciliación, sin interpretar el contenido del token en el POS.
 - Simular Edge desconectado más de 30 días y completar el procedimiento de conciliación sin pérdida ni duplicación.
 - Verificar sucursal sin mapeo, mapeo duplicado y cambio de clave antes de abrir acceso productivo.
 

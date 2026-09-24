@@ -18,7 +18,9 @@ paths:
       description: >-
         Devuelve pedidos confirmados, no eliminados, de sucursales autorizadas.
         Orden ascendente por (fecha_confirmacion, id). Un cursor v2 esta firmado,
-        ligado a los filtros y a la epoca de purga. HTTP 410 exige conciliacion;
+        ligado a los filtros y a una epoca HMAC opaca de las purgas de las
+        sucursales solicitadas; no expone el ID secuencial de RegistroPurga.
+        HTTP 410 exige conciliacion;
         nunca debe interpretarse como pagina vacia ni omitirse automaticamente.
       security:
         - posBearer: []
@@ -67,7 +69,10 @@ paths:
         - name: cursor
           in: query
           required: false
-          description: Cursor opaco next_cursor de la pagina anterior, usando identicos filtros.
+          description: >-
+            Cursor opaco next_cursor de la pagina anterior, usando identicos
+            filtros. El POS debe reenviarlo sin decodificarlo. Un cursor v2
+            firmado anterior con epoca numerica recibe 410.
           schema:
             type: string
       responses:
@@ -116,8 +121,12 @@ paths:
                 $ref: '#/components/schemas/ErrorRespuesta'
         '410':
           description: >-
-            retention_gap: la ventana intersecta una purga registrada o la epoca
-            de purga del cursor difiere de la vigente. Detener y conciliar.
+            retention_gap: la ventana contiene la fecha exacta de un pedido
+            purgado de una sucursal autorizada y retornable, o la epoca opaca
+            del cursor difiere de la vigente para esas sucursales. No revela
+            purgas de otras sucursales, mayoristas ni huecos entre fechas.
+            Un cursor v2 anterior con epoca numerica tambien recibe 410.
+            Detener y conciliar.
           headers:
             Cache-Control:
               $ref: '#/components/headers/CacheControl'
@@ -271,7 +280,9 @@ components:
         next_cursor:
           type: string
           nullable: true
-          description: Null si no hay otra pagina actualmente consultable.
+          description: >-
+            Null si no hay otra pagina actualmente consultable. Token firmado
+            y opaco; su epoca HMAC no debe ser interpretada por el consumidor.
         returned:
           type: integer
           minimum: 0

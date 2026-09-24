@@ -4,6 +4,7 @@ import hashlib
 import hmac
 import json
 import os
+import stat
 import uuid
 import zipfile
 from dataclasses import asdict, dataclass
@@ -131,6 +132,22 @@ def _validar_ventana(desde, hasta):
         raise ValueError("La ventana de recepción debe ser consciente de zona y creciente.")
 
 
+def _validar_destino_privado(destino):
+    prohibidos = [settings.BASE_DIR, getattr(settings, "STATIC_ROOT", None)]
+    prohibidos.append(getattr(settings, "MEDIA_ROOT", None))
+    for directorio in getattr(settings, "STATICFILES_DIRS", ()):
+        # Django admite tanto rutas simples como tuplas (prefijo, ruta).
+        prohibidos.append(directorio[1] if isinstance(directorio, (tuple, list)) else directorio)
+    for base in prohibidos:
+        if base and destino.is_relative_to(Path(base).resolve(strict=False)):
+            raise ValueError("El destino debe estar fuera del release y de directorios públicos.")
+    if os.name == "posix":
+        # El ZIP 0600 no compensa un directorio público o controlado por otro usuario.
+        directorio = destino.parent.stat()
+        if directorio.st_uid != os.geteuid() or stat.S_IMODE(directorio.st_mode) & 0o077:
+            raise ValueError("El directorio de exportación debe ser propio y privado (0700).")
+
+
 def generar_exportacion(*, desde, hasta, destino, limite=500, id_desde=0, id_hasta=None):
     """Crea ZIP 0600 y ticket GENERADA; no confirma descarga ni habilita purga."""
 
@@ -161,6 +178,7 @@ def _generar_exportacion_transaccional(
         raise ValueError("La ruta del archivo es demasiado larga.")
     if destino.exists() or not destino.parent.is_dir():
         raise ValueError("El destino debe ser un archivo nuevo en un directorio existente.")
+    _validar_destino_privado(destino)
 
     with transaction.atomic():
         consulta = (
@@ -505,6 +523,8 @@ def aplicar_purga(*, ahora=None):
                     PedidoPurgado(
                         codigo_publico=pedido.codigo_publico,
                         pedido_id_origen=pedido.pk,
+                        sucursal_cliente_id=pedido.sucursal_cliente_id,
+                        fecha_confirmacion=pedido.fecha_confirmacion,
                         motivo=("antiguedad" if pedido.pk in plan.pedidos_por_edad else "exportacion"),
                         exportacion=exportaciones_validas.get(pedido.pk),
                         registro=registro,

@@ -15,7 +15,7 @@ from django.core.exceptions import ValidationError
 from django.core.paginator import Paginator
 from django.db import IntegrityError, transaction
 from django.db.models import Prefetch, Q, Sum
-from django.http import JsonResponse
+from django.http import HttpResponseForbidden, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
 from django.utils import timezone
@@ -36,6 +36,16 @@ from .models import (
     Producto,
     SucursalCliente,
     SesionActiva,
+)
+from .mfa import (
+    ERROR_GENERICO,
+    mfa_activo,
+    mfa_requerido,
+    mfa_reciente,
+    sesion_mfa_valida,
+    huella_credenciales,
+    iniciar_desafio,
+    marcar_sesion_verificada,
 )
 from .sesiones import (
     DEVICE_COOKIE_NAME,
@@ -122,6 +132,10 @@ def admin_required(view_func):
         if not is_admin_user(request.user):
             messages.error(request, "No tienes permiso para entrar al panel admin.")
             return redirect("pedidos")
+        if mfa_activo() and not sesion_mfa_valida(request):
+            return HttpResponseForbidden("Verificación adicional requerida.")
+        if mfa_activo() and request.method not in ("GET", "HEAD", "OPTIONS", "TRACE") and not mfa_reciente(request):
+            return HttpResponseForbidden("Reautenticación reciente requerida.")
         return view_func(request, *args, **kwargs)
 
     return wrapped
@@ -134,6 +148,8 @@ def dashboard_required(view_func):
         if not can_view_admin_dashboard(request.user):
             messages.error(request, "No tienes permiso para entrar al panel admin.")
             return redirect("pedidos")
+        if mfa_activo() and not sesion_mfa_valida(request):
+            return HttpResponseForbidden("Verificación adicional requerida.")
         return view_func(request, *args, **kwargs)
 
     return wrapped
@@ -172,13 +188,29 @@ def login_view(request):
         creado_en = pendiente.get("creado_en", 0)
         vigente = timezone.now().timestamp() - creado_en <= 300
         user = User.objects.filter(pk=pendiente.get("user_id")).first() if vigente else None
+        if user is not None and mfa_activo() and mfa_requerido(user):
+            huella = pendiente.get("huella", "")
+            device_id = pendiente.get("mfa_device_id")
+            if not huella or huella != huella_credenciales(user):
+                user = None
+            else:
+                from django_otp.plugins.otp_totp.models import TOTPDevice
+
+                dispositivo = TOTPDevice.objects.filter(
+                    pk=device_id, user=user, confirmed=True
+                ).first()
+                if dispositivo is None:
+                    user = None
         if user is not None:
             iniciada, _ = intentar_iniciar_sesion(request, user, forzar=True)
             request.session.pop("pedidos_takeover", None)
             if iniciada:
+                if mfa_activo() and mfa_requerido(user):
+                    marcar_sesion_verificada(request, user, dispositivo)
                 messages.info(request, "Se cerró la sesión del otro dispositivo.")
                 return redirect("admin_dashboard" if can_view_admin_dashboard(user) else "pedidos")
-        messages.error(request, "La autorización para reemplazar la sesión expiró. Ingresa de nuevo.")
+        request.session.pop("pedidos_takeover", None)
+        messages.error(request, ERROR_GENERICO)
 
     elif request.method == "POST":
         identificador = request.POST.get("username", "").strip()
@@ -199,6 +231,9 @@ def login_view(request):
 
         user = authenticate(request, username=username, password=password)
         if user is not None:
+            if mfa_activo() and mfa_requerido(user):
+                iniciar_desafio(request, user)
+                return redirect("mfa_login")
             iniciada, sesion_conflictiva = intentar_iniciar_sesion(request, user)
             if iniciada:
                 request.session.pop("pedidos_takeover", None)
@@ -218,13 +253,13 @@ def login_view(request):
             messages.error(request, "Esta cuenta ya tiene una sesión iniciada en otro dispositivo.")
         else:
             request.session.pop("pedidos_takeover", None)
-            messages.error(request, "Usuario o contraseña incorrectos.")
+            messages.error(request, ERROR_GENERICO)
 
     return render(request, "pedidos/login.html", context)
 
 
 @never_cache
-@require_http_methods(["GET", "POST"])
+@require_POST
 def logout_view(request):
     liberar_sesion(request)
     logout(request)
@@ -775,7 +810,7 @@ def registrar_evento_persistente(request, evento, detalle=None, payload=None):
         return registro
     except Exception:
         # La auditoría nunca debe impedir capturar o confirmar un pedido.
-        logger.exception("No se pudo persistir el evento de auditoría %s", evento)
+        logger.error("No se pudo persistir un evento de auditoría")
         return None
 
 
@@ -880,10 +915,7 @@ def confirmar_pedido_sucursal(sucursal, validar_horario=True, validar_espera=Tru
         es_valido, mensaje_horario = validar_horario_pedidos()
         if not es_valido:
             logger.warning(
-                "Confirmacion rechazada sucursal=%s motivo=fuera_horario hora=%s mensaje=%s",
-                sucursal.nombre,
-                timezone.localtime().strftime("%H:%M:%S"),
-                mensaje_horario,
+                "Confirmacion rechazada motivo=fuera_horario",
             )
             return JsonResponse(
                 {
@@ -909,8 +941,7 @@ def confirmar_pedido_sucursal(sucursal, validar_horario=True, validar_espera=Tru
                 eliminado=False,
             ).exists():
                 logger.warning(
-                    "Confirmacion rechazada sucursal=%s motivo=espera_minima",
-                    sucursal_bloqueada.nombre,
+                    "Confirmacion rechazada motivo=espera_minima",
                 )
                 return JsonResponse(
                     {
@@ -933,8 +964,7 @@ def confirmar_pedido_sucursal(sucursal, validar_horario=True, validar_espera=Tru
         )
         if pedido is None or not pedido.items.exists():
             logger.warning(
-                "Confirmacion rechazada sucursal=%s motivo=pedido_vacio",
-                sucursal_bloqueada.nombre,
+                "Confirmacion rechazada motivo=pedido_vacio",
             )
             return JsonResponse(
                 {"success": False, "mensaje": "No hay productos en el pedido."},
@@ -952,8 +982,7 @@ def confirmar_pedido_sucursal(sucursal, validar_horario=True, validar_espera=Tru
         pedidos_confirmados = macropedido.cantidad_pedidos if macropedido else 0
         if pedidos_confirmados >= MAX_PEDIDOS_POR_DIA:
             logger.warning(
-                "Confirmacion rechazada sucursal=%s motivo=limite_diario pedidos=%s",
-                sucursal_bloqueada.nombre,
+                "Confirmacion rechazada motivo=limite_diario pedidos=%s",
                 pedidos_confirmados,
             )
             progreso = {
@@ -1001,7 +1030,7 @@ def confirmar_pedido_sucursal(sucursal, validar_horario=True, validar_espera=Tru
         macropedido.recalcular_resumen()
         pedidos_confirmados += 1
 
-    logger.info("Pedido confirmado #%s por %s", pedido.id, sucursal.nombre)
+    logger.info("Pedido confirmado")
     return JsonResponse(
         {
             "success": True,
@@ -1246,13 +1275,12 @@ def log_cliente(request):
             guardados += 1
         else:
             fallidos += 1
-        logger.info(
-            "cliente-evento usuario=%s evento=%s intento=%s dispositivo=%s",
-            request.user.username,
-            evento,
-            str(entrada.get("intento_id") or "")[:64],
-            str(entrada.get("dispositivo_id") or "")[:64],
-        )
+        evento_log = evento if evento in {
+            "confirmar_click", "confirmar_click_captura", "confirmar_aceptar_captura",
+            "confirmar_cancelar_captura", "confirmar_respuesta", "confirmar_error",
+            "confirmar_bloqueado_horario", "limpiar_click",
+        } else "otro"
+        logger.info("cliente-evento tipo=%s", evento_log)
     if fallidos:
         return JsonResponse(
             {
@@ -2060,6 +2088,10 @@ def preparar_pedidos_en_curso_para_interfaz():
 @never_cache
 @admin_required
 def admin_diagnostico(request):
+    # La bitácora incluye identificadores de sesión y datos técnicos de red;
+    # no se necesita para la operación cotidiana de una cuenta staff.
+    if not request.user.is_superuser:
+        return HttpResponseForbidden("Acceso no autorizado.")
     sucursal_id = request.GET.get("sucursal", "").strip()
     evento_nombre = request.GET.get("evento", "").strip()
     eventos = EventoCliente.objects.select_related("usuario", "sucursal_cliente")
@@ -2172,7 +2204,7 @@ def admin_dashboard(request):
 @never_cache
 @dashboard_required
 def imprimir_aguas(request):
-    logger.info("Admin %s abrio impresion de aguas", request.user.username)
+    logger.info("Impresion de aguas abierta")
     context = aguas_print_context()
     context["auto_print"] = request.GET.get("embedded") != "1"
     return render(request, "pedidos/aguas_print.html", context)
@@ -2181,7 +2213,7 @@ def imprimir_aguas(request):
 @never_cache
 @dashboard_required
 def imprimir_sucursales(request):
-    logger.info("Admin %s abrio impresion de reporte sucursales", request.user.username)
+    logger.info("Impresion de reporte sucursales abierta")
     context = sucursales_print_context()
     context["auto_print"] = request.GET.get("embedded") != "1"
     return render(request, "pedidos/sucursales_print.html", context)
@@ -2201,7 +2233,7 @@ def imprimir_pedido(request, pedido_id):
         pk=pedido_id,
         eliminado=False,
     )
-    logger.info("Admin %s abrio impresion de pedido #%s", request.user.username, pedido.id)
+    logger.info("Impresion de pedido abierta")
     context = ticket_context(pedido)
     context["auto_print"] = request.GET.get("embedded") != "1"
     return render(request, "pedidos/ticket_print.html", context)
@@ -2223,11 +2255,7 @@ def imprimir_macropedido(request, macropedido_id):
         pk=macropedido_id,
     )
     macropedidos, _ = preparar_macropedidos_para_interfaz([macropedido])
-    logger.info(
-        "Admin %s abrio impresion de macropedido #%s",
-        request.user.username,
-        macropedido.id,
-    )
+    logger.info("Impresion de macropedido abierta")
     context = macropedidos[0].print_context
     context["auto_print"] = request.GET.get("embedded") != "1"
     return render(request, "pedidos/ticket_print.html", context)
@@ -2259,11 +2287,7 @@ def marcar_macropedido_enviado(request, macropedido_id):
         MacroPedido.Estado.ENVIADO,
     )
     if actualizado:
-        logger.info(
-            "Macropedido #%s marcado enviado por %s",
-            macropedido.id,
-            request.user.username,
-        )
+        logger.info("Macropedido marcado enviado")
         messages.success(request, f"Macropedido {macropedido.folio_fecha} marcado como enviado.")
     else:
         messages.error(request, "Sólo se pueden enviar macropedidos confirmados.")
@@ -2279,11 +2303,7 @@ def revertir_macropedido_enviado(request, macropedido_id):
         MacroPedido.Estado.CONFIRMADO,
     )
     if actualizado:
-        logger.info(
-            "Macropedido #%s devuelto a confirmado por %s",
-            macropedido.id,
-            request.user.username,
-        )
+        logger.info("Macropedido devuelto a confirmado")
         messages.success(request, f"Macropedido {macropedido.folio_fecha} devuelto a confirmado.")
     else:
         messages.error(request, "Sólo se pueden revertir macropedidos enviados.")
@@ -2302,7 +2322,7 @@ def eliminar_macropedido(request, macropedido_id):
         macropedido.eliminado = True
         macropedido.save(update_fields=["eliminado", "fecha_actualizacion"])
         macropedido.pedidos.filter(eliminado=False).update(eliminado=True)
-    logger.info("Macropedido #%s eliminado suavemente por %s", macropedido.id, request.user.username)
+    logger.info("Macropedido eliminado suavemente")
     messages.success(request, f"Macropedido {macropedido.folio_fecha} eliminado.")
     return redirect("admin_dashboard")
 
@@ -2328,7 +2348,7 @@ def marcar_enviado(request, pedido_id):
     if pedido.estado == Pedido.Estado.CONFIRMADO:
         pedido.estado = Pedido.Estado.ENVIADO
         pedido.save(update_fields=["estado"])
-        logger.info("Pedido #%s marcado enviado por %s", pedido.id, request.user.username)
+        logger.info("Pedido marcado enviado")
         messages.success(request, f"Pedido {pedido.folio_fecha} marcado como enviado.")
     else:
         messages.error(request, "Sólo se pueden marcar como enviados los pedidos confirmados.")
@@ -2353,7 +2373,7 @@ def revertir_enviado(request, pedido_id):
     if pedido.estado == Pedido.Estado.ENVIADO:
         pedido.estado = Pedido.Estado.CONFIRMADO
         pedido.save(update_fields=["estado"])
-        logger.info("Pedido #%s devuelto a confirmado por %s", pedido.id, request.user.username)
+        logger.info("Pedido devuelto a confirmado")
         messages.success(request, f"Pedido {pedido.folio_fecha} devuelto a confirmado.")
     else:
         messages.error(request, "Sólo se pueden revertir pedidos que estén enviados.")
@@ -2379,6 +2399,6 @@ def eliminar_pedido(request, pedido_id):
             macropedido.save(
                 update_fields=["eliminado", "total", "fecha_actualizacion"]
             )
-    logger.info("Pedido #%s eliminado suavemente por %s", pedido.id, request.user.username)
+    logger.info("Pedido eliminado suavemente")
     messages.success(request, f"Pedido {pedido.folio_fecha} eliminado.")
     return redirect("admin_dashboard")

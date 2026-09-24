@@ -1,5 +1,6 @@
 from django.contrib import admin
 from django.core.cache import cache
+from django_otp.plugins.otp_totp.models import TOTPDevice
 
 from .models import (
     CONFIGURACION_CACHE_KEY,
@@ -14,6 +15,26 @@ from .models import (
     SucursalCliente,
     SesionActiva,
 )
+
+
+# El admin del plugin permite crear/cambiar semillas y marcar dispositivos como
+# confirmados. La recuperación/enrolamiento debe pasar por las vistas MFA.
+if admin.site.is_registered(TOTPDevice):
+    admin.site.unregister(TOTPDevice)
+
+
+class AuditoriaSuperusuarioAdmin(admin.ModelAdmin):
+    """Datos técnicos de seguridad: sólo un superusuario puede verlos."""
+
+    def has_module_permission(self, request):
+        return bool(request.user.is_active and request.user.is_superuser)
+
+    def has_view_permission(self, request, obj=None):
+        return bool(
+            request.user.is_active
+            and request.user.is_superuser
+            and super().has_view_permission(request, obj)
+        )
 
 
 @admin.register(SucursalCliente)
@@ -144,11 +165,11 @@ class ConfiguracionAdmin(admin.ModelAdmin):
 
 
 @admin.register(LogRecordatorio)
-class LogRecordatorioAdmin(admin.ModelAdmin):
-    list_display = ("sucursal_cliente", "fecha_envio", "estado", "mensaje_error")
-    list_filter = ("estado", "sucursal_cliente")
-    search_fields = ("sucursal_cliente__nombre",)
-    readonly_fields = ("sucursal_cliente", "fecha_envio", "estado", "mensaje_error")
+class LogRecordatorioAdmin(AuditoriaSuperusuarioAdmin):
+    list_display = ("sucursal_cliente_id", "fecha_envio", "estado")
+    list_filter = ("estado",)
+    fields = ("sucursal_cliente", "fecha_envio", "estado")
+    readonly_fields = fields
 
     def has_add_permission(self, request):
         return False
@@ -161,18 +182,10 @@ class LogRecordatorioAdmin(admin.ModelAdmin):
 
 
 @admin.register(SesionActiva)
-class SesionActivaAdmin(admin.ModelAdmin):
-    list_display = ("usuario", "dispositivo", "direccion_ip", "iniciada_en", "ultima_actividad")
-    search_fields = ("usuario__username", "dispositivo", "direccion_ip")
-    readonly_fields = (
-        "usuario",
-        "token",
-        "dispositivo_id",
-        "dispositivo",
-        "direccion_ip",
-        "iniciada_en",
-        "ultima_actividad",
-    )
+class SesionActivaAdmin(AuditoriaSuperusuarioAdmin):
+    list_display = ("usuario", "iniciada_en", "ultima_actividad")
+    fields = ("usuario", "iniciada_en", "ultima_actividad")
+    readonly_fields = fields
 
     def has_add_permission(self, request):
         return False
@@ -180,39 +193,25 @@ class SesionActivaAdmin(admin.ModelAdmin):
     def has_change_permission(self, request, obj=None):
         return False
 
+    def has_delete_permission(self, request, obj=None):
+        return False
+
 
 @admin.register(EventoCliente)
-class EventoClienteAdmin(admin.ModelAdmin):
+class EventoClienteAdmin(AuditoriaSuperusuarioAdmin):
     list_display = (
         "recibido_en",
+        "evento",
         "sucursal_cliente",
-        "usuario",
-        "evento",
-        "intento_id",
-        "dispositivo_id",
     )
-    list_filter = ("evento", "sucursal_cliente")
-    search_fields = (
-        "usuario__username",
-        "sucursal_cliente__nombre",
-        "evento",
-        "intento_id",
-        "dispositivo_id",
-    )
-    readonly_fields = (
+    list_filter = ("evento",)
+    fields = (
         "evento_id",
-        "usuario",
         "sucursal_cliente",
         "evento",
-        "intento_id",
-        "dispositivo_id",
-        "sesion_hash",
-        "ocurrido_en",
         "recibido_en",
-        "detalle",
-        "user_agent",
-        "direccion_ip",
     )
+    readonly_fields = fields
 
     def has_add_permission(self, request):
         return False

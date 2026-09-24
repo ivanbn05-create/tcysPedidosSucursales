@@ -1,12 +1,15 @@
 from datetime import timedelta
 from decimal import Decimal
+import uuid
 
+from django.core import signing
 from django.core.cache import cache
 from django.test import TestCase, override_settings
 from django.urls import reverse
 from django.utils import timezone
 
-from .models import ItemPedido, Pedido, Producto, RegistroPurga, SucursalCliente
+from .api_pos import CURSOR_SALT_V2
+from .models import ItemPedido, Pedido, PedidoPurgado, Producto, RegistroPurga, SucursalCliente
 
 
 TOKEN = "token-pos-pruebas-abcdefghijklmnopqrstuvwxyz-0123456789"
@@ -122,6 +125,12 @@ class PosApiV1Tests(TestCase):
         self.assertEqual(
             set(response.json()["error"]), {"code", "message", "request_id"}
         )
+
+    def test_token_no_ascii_no_provoca_error_500(self):
+        response = self._get(token="credencial-invalida-ñ")
+
+        self.assertEqual(response.status_code, 401)
+        self.assertEqual(response.json()["error"]["code"], "unauthorized")
 
     def test_autenticacion_correcta(self):
         response = self._get()
@@ -372,9 +381,9 @@ class PosApiV2Tests(TestCase):
             HTTP_AUTHORIZATION=f"Bearer {TOKEN}",
         )
 
-    def _pedido(self, *, fecha=None):
+    def _pedido(self, *, fecha=None, sucursal=None):
         pedido = Pedido.objects.create(
-            sucursal_cliente=self.sucursal,
+            sucursal_cliente=sucursal or self.sucursal,
             usuario_nombre="usuario-sintetico",
             estado=Pedido.Estado.CONFIRMADO,
             fecha_confirmacion=fecha or self.base_time,
@@ -388,15 +397,25 @@ class PosApiV2Tests(TestCase):
         )
         return pedido
 
-    def _purga(self, minimum, maximum):
-        return RegistroPurga.objects.create(
+    def _purga(self, minimum, maximum, *, sucursal_id=101):
+        registro = RegistroPurga.objects.create(
             motivo="antiguedad",
-            numero_pedidos=1,
+            numero_pedidos=1 if minimum == maximum else 2,
             numero_items=1,
             numero_macropedidos=1,
             fecha_confirmacion_min=minimum,
             fecha_confirmacion_max=maximum,
         )
+        for fecha in {minimum, maximum}:
+            PedidoPurgado.objects.create(
+                codigo_publico=uuid.uuid4(),
+                pedido_id_origen=100000 + PedidoPurgado.objects.count(),
+                sucursal_cliente_id=sucursal_id,
+                fecha_confirmacion=fecha,
+                motivo="antiguedad",
+                registro=registro,
+            )
+        return registro
 
     def test_v2_expone_uuid_publico_y_preserva_v1(self):
         pedido = self._pedido()
@@ -461,6 +480,66 @@ class PosApiV2Tests(TestCase):
         self.assertEqual(response.json()["error"]["code"], "retention_gap")
         self.assertEqual(response["Cache-Control"], "no-store")
 
+    def test_410_no_revela_ids_ni_fechas_y_requiere_autenticacion(self):
+        self._purga(self.base_time, self.base_time)
+
+        sin_token = self.client.get(self.url, data=self._params())
+        autorizado = self._get()
+
+        self.assertEqual(sin_token.status_code, 401)
+        self.assertEqual(sin_token.json()["error"]["code"], "unauthorized")
+        self.assertEqual(autorizado.status_code, 410)
+        self.assertEqual(
+            set(autorizado.json()["error"]),
+            {"code", "message", "request_id"},
+        )
+        self.assertNotIn(str(self.sucursal.pk), autorizado.content.decode())
+        self.assertNotIn(self.base_time.isoformat(), autorizado.content.decode())
+
+    def test_purga_de_otra_sucursal_no_revela_brecha_ni_invalida_cursor(self):
+        self._pedido()
+        segundo = self._pedido()
+        cursor = self._get(limite="1").json()["page"]["next_cursor"]
+        self._purga(self.base_time, self.base_time, sucursal_id=102)
+
+        primera = self._get(limite="1")
+        siguiente = self._get(limite="1", cursor=cursor)
+
+        self.assertEqual(primera.status_code, 200)
+        self.assertEqual(siguiente.status_code, 200)
+        self.assertEqual(siguiente.json()["data"][0]["id"], segundo.pk)
+
+    @override_settings(POS_API_ALLOWED_SUCURSAL_IDS=(101, 103))
+    def test_purga_de_mayorista_en_allowlist_no_revela_brecha(self):
+        SucursalCliente.objects.create(
+            id=103, nombre="Mayorista no retornable", tipo=SucursalCliente.Tipo.CLIENTE_MAYORISTA
+        )
+        pedido = self._pedido()
+        self._purga(self.base_time, self.base_time, sucursal_id=103)
+
+        general = self._get()
+        mayorista = self._get(sucursal_id="103")
+
+        self.assertEqual(general.status_code, 200)
+        self.assertEqual(general.json()["data"][0]["id"], pedido.pk)
+        self.assertEqual(mayorista.status_code, 200)
+        self.assertEqual(mayorista.json()["data"], [])
+
+    def test_hueco_entre_fechas_purgadas_no_genera_410(self):
+        self._purga(
+            self.base_time - timedelta(minutes=30),
+            self.base_time + timedelta(minutes=30),
+        )
+        pedido = self._pedido()
+
+        response = self._get(
+            desde=(self.base_time - timedelta(minutes=1)).isoformat(),
+            hasta=(self.base_time + timedelta(minutes=1)).isoformat(),
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["data"][0]["id"], pedido.pk)
+
     def test_cursor_anterior_a_purga_fuera_de_ventana_es_obsoleto(self):
         self._pedido()
         self._pedido()
@@ -477,6 +556,33 @@ class PosApiV2Tests(TestCase):
         self.assertEqual(stale.json()["error"]["code"], "retention_gap")
         self.assertEqual(fresh.status_code, 200)
         self.assertEqual(len(fresh.json()["data"]), 1)
+
+    def test_cursor_no_expone_id_global_de_purga(self):
+        self._pedido()
+        self._pedido()
+        registro = self._purga(
+            self.base_time - timedelta(days=2),
+            self.base_time - timedelta(days=2),
+        )
+
+        cursor = self._get(limite="1").json()["page"]["next_cursor"]
+        carga = signing.loads(cursor, salt=CURSOR_SALT_V2)
+
+        self.assertRegex(carga["purge_epoch"], r"^[0-9a-f]{64}$")
+        self.assertNotEqual(carga["purge_epoch"], str(registro.pk))
+
+    def test_cursor_v2_previo_con_epoch_numerico_solicita_conciliacion(self):
+        self._pedido()
+        self._pedido()
+        cursor = self._get(limite="1").json()["page"]["next_cursor"]
+        carga = signing.loads(cursor, salt=CURSOR_SALT_V2)
+        carga["purge_epoch"] = 0
+        cursor_anterior = signing.dumps(carga, salt=CURSOR_SALT_V2, compress=True)
+
+        response = self._get(limite="1", cursor=cursor_anterior)
+
+        self.assertEqual(response.status_code, 410)
+        self.assertEqual(response.json()["error"]["code"], "retention_gap")
 
     def test_datos_posteriores_a_purga_y_limite_exclusivo(self):
         self._purga(
@@ -503,3 +609,36 @@ class PosApiV2Tests(TestCase):
 
         self.assertEqual(unauthorized.status_code, 401)
         self.assertEqual(forbidden.status_code, 400)
+
+    def test_id_y_uuid_de_otra_sucursal_no_amplian_el_alcance(self):
+        permitido = self._pedido()
+        otra_sucursal = SucursalCliente.objects.create(
+            id=102, nombre="Sucursal fuera del POS", tipo=SucursalCliente.Tipo.SUCURSAL
+        )
+        ajeno = self._pedido(sucursal=otra_sucursal)
+
+        general = self._get()
+        por_id = self._get(sucursal_id="102")
+        por_uuid = self._get(codigo_publico=str(ajeno.codigo_publico))
+
+        self.assertEqual(general.status_code, 200)
+        self.assertEqual([fila["codigo_publico"] for fila in general.json()["data"]],
+                         [str(permitido.codigo_publico)])
+        self.assertEqual(por_id.status_code, 400)
+        self.assertEqual(por_uuid.status_code, 400)
+        self.assertNotIn(str(ajeno.codigo_publico), por_id.content.decode())
+        self.assertNotIn(str(ajeno.codigo_publico), por_uuid.content.decode())
+
+    def test_get_y_post_no_borran_ni_confirman(self):
+        pedido = self._pedido()
+        respuesta = self._get()
+        escritura = self.client.post(
+            self.url, data=self._params(),
+            HTTP_AUTHORIZATION=f"Bearer {TOKEN}",
+        )
+
+        self.assertEqual(respuesta.status_code, 200)
+        self.assertEqual(escritura.status_code, 405)
+        self.assertTrue(Pedido.objects.filter(pk=pedido.pk).exists())
+        self.assertEqual(RegistroPurga.objects.count(), 0)
+        self.assertEqual(PedidoPurgado.objects.count(), 0)

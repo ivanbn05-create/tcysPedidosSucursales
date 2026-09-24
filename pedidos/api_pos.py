@@ -1,6 +1,7 @@
 """API de solo lectura para sincronizar pedidos confirmados hacia el POS."""
 
 import hashlib
+import hmac
 import json
 import logging
 import re
@@ -12,11 +13,11 @@ from datetime import timezone as datetime_timezone
 from django.conf import settings
 from django.core import signing
 from django.core.cache import cache
-from django.db.models import Prefetch, Q
+from django.db.models import Max, Prefetch, Q
 from django.http import JsonResponse
 from django.utils.dateparse import parse_datetime
 
-from .models import ItemPedido, Pedido, RegistroPurga, SucursalCliente
+from .models import ItemPedido, Pedido, PedidoPurgado, SucursalCliente
 
 
 logger = logging.getLogger(__name__)
@@ -81,12 +82,17 @@ def _authenticate(request):
     if not separator or scheme.lower() != "bearer" or not candidate:
         return None, "unauthorized"
 
+    # compare_digest con str rechaza caracteres no ASCII. Comparar hashes de
+    # longitud fija también evita filtrar la longitud del token configurado.
+    candidate_bytes = candidate.encode("utf-8")
+    candidate_digest = hashlib.sha256(candidate_bytes).digest()
     matched = False
     for configured in tokens:
-        matched |= secrets.compare_digest(candidate, configured)
+        configured_digest = hashlib.sha256(configured.encode("utf-8")).digest()
+        matched |= secrets.compare_digest(candidate_digest, configured_digest)
     if not matched:
         return None, "unauthorized"
-    return hashlib.sha256(candidate.encode("utf-8")).hexdigest()[:24], None
+    return candidate_digest.hex()[:24], None
 
 
 def _rate_limit(token_fingerprint, *, version=1):
@@ -223,7 +229,10 @@ def _decode_cursor(
         raise ValueError("cursor invalido para los filtros solicitados.")
     if version == 2:
         cursor_epoch = payload.get("purge_epoch")
-        if type(cursor_epoch) is not int or cursor_epoch < 0:
+        if type(cursor_epoch) is int and cursor_epoch >= 0:
+            # Cursores v2 previos al epoch opaco: requieren volver a conciliar.
+            raise RetentionGap
+        if not isinstance(cursor_epoch, str) or not re.fullmatch(r"[0-9a-f]{64}", cursor_epoch):
             raise ValueError("cursor invalido.")
         if cursor_epoch != purge_epoch:
             raise RetentionGap
@@ -266,19 +275,29 @@ def _serialize_pedido(pedido, *, version=1):
     return serialized
 
 
-def _latest_purge_epoch():
-    return (
-        RegistroPurga.objects.order_by("-id").values_list("id", flat=True).first()
+def _latest_purge_epoch(sucursal_ids):
+    # El cursor sólo depende de purgas del alcance solicitado, no de otras sedes.
+    ultimo_id = (
+        PedidoPurgado.objects.filter(
+            sucursal_cliente_id__in=sucursal_ids,
+            fecha_confirmacion__isnull=False,
+        ).aggregate(epoch=Max("registro_id"))["epoch"]
         or 0
     )
+    # signing.dumps firma, pero NO cifra la carga del cursor. No exponer el ID
+    # global de RegistroPurga, cuyos saltos revelarían actividad de otras sedes.
+    alcance = ",".join(str(sucursal_id) for sucursal_id in sorted(sucursal_ids))
+    mensaje = f"pedidos-pos-v2:{alcance}:{ultimo_id}".encode("ascii")
+    return hmac.new(settings.SECRET_KEY.encode("utf-8"), mensaje, hashlib.sha256).hexdigest()
 
 
-def _purge_range_intersects(desde, hasta):
-    # Los extremos son las fechas reales mínima y máxima de pedidos purgados.
-    # Un rango sin ambos extremos no representa pedidos confirmados consultables.
-    return RegistroPurga.objects.filter(
-        fecha_confirmacion_min__lt=hasta,
-        fecha_confirmacion_max__gte=desde,
+def _purge_range_intersects(desde, hasta, sucursal_ids):
+    # Los tombstones permiten consultar la fecha exacta y evitar que un 410
+    # revele una purga de otra sucursal o de un hueco entre min/max del lote.
+    return PedidoPurgado.objects.filter(
+        sucursal_cliente_id__in=sucursal_ids,
+        fecha_confirmacion__gte=desde,
+        fecha_confirmacion__lt=hasta,
     ).exists()
 
 
@@ -364,9 +383,16 @@ def _pedidos_pos(request, *, version):
             desde, hasta, sucursal_ids, version=version
         )
         purge_epoch = None
+        purge_scope_ids = ()
         if version == 2:
-            purge_epoch = _latest_purge_epoch()
-            if _purge_range_intersects(desde, hasta):
+            # La API sólo entrega sucursales, aunque la allowlist incluya por
+            # error el ID de un cliente mayorista.
+            purge_scope_ids = tuple(SucursalCliente.objects.filter(
+                pk__in=sucursal_ids,
+                tipo=SucursalCliente.Tipo.SUCURSAL,
+            ).values_list("pk", flat=True))
+            purge_epoch = _latest_purge_epoch(purge_scope_ids)
+            if _purge_range_intersects(desde, hasta, purge_scope_ids):
                 raise RetentionGap
         cursor = _decode_cursor(
             request.GET.get("cursor"),
@@ -425,7 +451,8 @@ def _pedidos_pos(request, *, version):
 
     page = list(pedidos[: limit + 1])
     if version == 2 and (
-        _latest_purge_epoch() != purge_epoch or _purge_range_intersects(desde, hasta)
+        _latest_purge_epoch(purge_scope_ids) != purge_epoch
+        or _purge_range_intersects(desde, hasta, purge_scope_ids)
     ):
         return _error(
             "retention_gap",

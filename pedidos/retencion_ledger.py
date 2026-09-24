@@ -25,7 +25,7 @@ from .models import ExportacionRetencion, Pedido, PedidoPurgado, RegistroPurga
 
 
 FORMATO = "tcys-retencion-ledger"
-VERSION = 1
+VERSION = 2
 MAX_LINEA_BYTES = 8192
 HASH_RE = re.compile(r"[0-9a-f]{64}\Z")
 
@@ -118,6 +118,8 @@ def _filas_ledger():
                 "kind": "tombstone",
                 "codigo_publico": str(fila.codigo_publico),
                 "pedido_id_origen": fila.pedido_id_origen,
+                "sucursal_cliente_id": fila.sucursal_cliente_id,
+                "fecha_confirmacion": _instante(fila.fecha_confirmacion),
                 "motivo": fila.motivo,
                 "exportacion_id": str(fila.exportacion_id) if fila.exportacion_id else None,
                 "registro_id": fila.registro_id,
@@ -317,8 +319,8 @@ def _leer_ledger(ruta, esperado):
             recibos[clave] = fila
         elif tipo == "tombstone":
             _claves(fila, {
-                "kind", "codigo_publico", "pedido_id_origen", "motivo",
-                "exportacion_id", "registro_id",
+                "kind", "codigo_publico", "pedido_id_origen", "sucursal_cliente_id",
+                "fecha_confirmacion", "motivo", "exportacion_id", "registro_id",
             })
             clave = _uuid(fila["codigo_publico"])
             if clave in tombstones:
@@ -327,6 +329,8 @@ def _leer_ledger(ruta, esperado):
             if id_origen in ids_origen:
                 raise LedgerError("ID original duplicado en ledger.")
             ids_origen.add(id_origen)
+            _entero(fila["sucursal_cliente_id"], minimo=1)
+            _fecha(fila["fecha_confirmacion"], opcional=True)
             _motivo(fila["motivo"])
             _uuid_opcional(fila["exportacion_id"])
             _entero(fila["registro_id"], minimo=1)
@@ -406,6 +410,8 @@ def _comparable_tombstone(fila):
     return {
         "kind": "tombstone", "codigo_publico": str(fila.codigo_publico),
         "pedido_id_origen": fila.pedido_id_origen,
+        "sucursal_cliente_id": fila.sucursal_cliente_id,
+        "fecha_confirmacion": _instante(fila.fecha_confirmacion),
         "motivo": fila.motivo,
         "exportacion_id": str(fila.exportacion_id) if fila.exportacion_id else None,
         "registro_id": fila.registro_id,
@@ -495,6 +501,8 @@ def importar_ledger(origen, *, expected_sha256, aplicar=False):
             PedidoPurgado.objects.create(
                 codigo_publico=clave,
                 pedido_id_origen=fila["pedido_id_origen"],
+                sucursal_cliente_id=fila["sucursal_cliente_id"],
+                fecha_confirmacion=_fecha(fila["fecha_confirmacion"], opcional=True),
                 motivo=fila["motivo"],
                 exportacion_id=_uuid_opcional(fila["exportacion_id"]),
                 registro_id=fila["registro_id"],

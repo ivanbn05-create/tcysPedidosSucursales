@@ -393,6 +393,8 @@ class PedidoPurgado(models.Model):
 
     codigo_publico = models.UUIDField(primary_key=True, editable=False)
     pedido_id_origen = models.PositiveBigIntegerField(unique=True)
+    sucursal_cliente_id = models.PositiveBigIntegerField(db_index=True)
+    fecha_confirmacion = models.DateTimeField(null=True, blank=True, db_index=True)
     motivo = models.CharField(max_length=24)
     exportacion = models.ForeignKey(
         ExportacionRetencion, null=True, blank=True,
@@ -567,3 +569,25 @@ class LogRecordatorio(models.Model):
 
     def __str__(self):
         return f"{self.sucursal_cliente} - {self.fecha_envio:%Y-%m-%d %H:%M} ({self.estado})"
+
+
+class MFAEstado(models.Model):
+    """Version de credenciales y bloqueo OTP compartidos entre workers."""
+
+    usuario = models.OneToOneField(
+        User, on_delete=models.CASCADE, related_name="estado_mfa_pedidos"
+    )
+    version = models.PositiveBigIntegerField(default=1)
+    fallos = models.PositiveSmallIntegerField(default=0)
+    bloqueado_hasta = models.DateTimeField(null=True, blank=True)
+
+
+class MFACodigoRecuperacion(models.Model):
+    """Solo el SHA-256 de un codigo aleatorio de alta entropia, nunca el codigo."""
+
+    usuario = models.ForeignKey(
+        User, on_delete=models.CASCADE, related_name="codigos_recuperacion_mfa_pedidos"
+    )
+    digest = models.CharField(max_length=64, unique=True, editable=False)
+    creado_en = models.DateTimeField(auto_now_add=True)
+    usado_en = models.DateTimeField(null=True, blank=True)

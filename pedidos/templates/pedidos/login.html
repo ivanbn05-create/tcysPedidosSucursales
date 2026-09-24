@@ -14,7 +14,55 @@
             <span>{{ horario_pedidos.mensaje }}</span>
         </div>
         {% endif %}
-        {% if sesion_conflictiva %}
+        {% if mfa_codigos_nuevos %}
+        <div class="login-session-conflict" role="status">
+            <strong>MFA restablecido</strong>
+            <p>Guarda estos códigos de recuperación en un lugar privado. Se muestran una sola vez.</p>
+            {% for codigo in mfa_codigos_nuevos %}<div><code>{{ codigo }}</code></div>{% endfor %}
+            <a href="{% url 'home' %}">Continuar</a>
+        </div>
+        {% elif mfa_recuperacion %}
+        <div class="login-session-conflict" role="status">
+            <strong>Restablecer autenticador</strong>
+            <p>El código de recuperación utilizado ya no puede volver a usarse. Este proceso no concede acceso hasta verificar el nuevo autenticador.</p>
+            {% if mfa_clave %}
+            <p>Agrega una cuenta en Google Authenticator con esta clave temporal (tipo: basada en tiempo, 6 dígitos):</p>
+            <p><code>{{ mfa_clave }}</code></p>
+            <form method="post" action="{% url 'mfa_recuperacion' %}">
+                {% csrf_token %}
+                <input type="hidden" name="action" value="confirmar">
+                <label for="mfa-recovery-token">Código del nuevo autenticador</label>
+                <input id="mfa-recovery-token" name="codigo" type="text" inputmode="numeric" autocomplete="one-time-code" required maxlength="6">
+                <button class="primary-button" type="submit">Confirmar nuevo autenticador</button>
+            </form>
+            {% else %}
+            <form method="post" action="{% url 'mfa_recuperacion' %}">
+                {% csrf_token %}
+                <input type="hidden" name="action" value="iniciar">
+                <button class="primary-button" type="submit">Configurar nuevo autenticador</button>
+            </form>
+            {% endif %}
+        </div>
+        {% elif mfa_revalidar %}
+        <form method="post" action="{% url 'mfa_revalidar' %}" class="login-form" novalidate>
+            {% csrf_token %}
+            <input type="hidden" name="next" value="{{ mfa_next }}">
+            <p>Confirma tu contraseña y un código nuevo del autenticador para continuar con la operación administrativa.</p>
+            <label for="mfa-password">Contraseña</label>
+            <input id="mfa-password" name="password" type="password" autocomplete="current-password" required>
+            <label for="mfa-token">Código del autenticador</label>
+            <input id="mfa-token" name="codigo" type="text" inputmode="numeric" autocomplete="one-time-code" required maxlength="6">
+            <button class="primary-button" type="submit">Verificar</button>
+        </form>
+        {% elif mfa_desafio %}
+        <form method="post" action="{% url 'mfa_login' %}" class="login-form" novalidate>
+            {% csrf_token %}
+            <p>Introduce el código de tu autenticador o un código de recuperación.</p>
+            <label for="mfa-login-token">Código de verificación</label>
+            <input id="mfa-login-token" name="codigo" type="text" autocomplete="one-time-code" required maxlength="80" autofocus>
+            <button class="primary-button" type="submit">Verificar</button>
+        </form>
+        {% elif sesion_conflictiva %}
         <div class="login-session-conflict" role="alert">
             <strong>Sesión iniciada en otro dispositivo</strong>
             <span>La última actividad fue {{ ultima_actividad_conflictiva|date:"d/m/Y H:i:s" }}.</span>

@@ -3,6 +3,8 @@ from datetime import timedelta
 from decimal import Decimal
 from pathlib import Path
 
+from django.conf import settings
+from django.contrib import admin
 from django.test import TestCase, override_settings
 from django.utils import timezone
 
@@ -139,6 +141,57 @@ class RetencionTests(TestCase):
         self.assertEqual(lote.estado, ExportacionRetencion.Estado.GENERADA)
         self.assertTrue(archivo.exists())
 
+    def test_zip_manipulado_no_confirma_ni_habilita_purga(self):
+        pedido = self.pedido()
+        lote, archivo = self._exportar(pedido)
+        with archivo.open("ab") as salida:
+            salida.write(b"contenido-inyectado")
+
+        with self.assertRaisesRegex(ValueError, "SHA-256"):
+            confirmar_exportacion(
+                lote_id=lote.pk, archivo_local=archivo,
+                sha256_destino=lote.sha256_archivo, referencia="equipo-prueba",
+            )
+
+        lote.refresh_from_db()
+        self.assertEqual(lote.estado, ExportacionRetencion.Estado.GENERADA)
+        self.assertNotIn(pedido.pk, planificar_purga(ahora=self.ahora).pedidos_por_exportacion)
+
+    def test_destino_en_release_o_directorio_publico_se_rechaza(self):
+        pedido = self.pedido()
+        desde = pedido.first_received_at - timedelta(minutes=1)
+        hasta = pedido.first_received_at + timedelta(minutes=1)
+        with self.assertRaisesRegex(ValueError, "fuera del release"):
+            generar_exportacion(
+                desde=desde, hasta=hasta,
+                destino=Path(settings.BASE_DIR) / "export-no-publicar.zip",
+            )
+        with tempfile.TemporaryDirectory() as publico:
+            with override_settings(STATIC_ROOT=Path(publico)):
+                with self.assertRaisesRegex(ValueError, "directorios públicos"):
+                    generar_exportacion(
+                        desde=desde, hasta=hasta,
+                        destino=Path(publico) / "export-no-publicar.zip",
+                    )
+        self.assertEqual(ExportacionRetencion.objects.count(), 0)
+
+    def test_export_y_ticket_no_tienen_ruta_web(self):
+        pedido = self.pedido()
+        lote, archivo = self._exportar(pedido)
+
+        for ruta in (
+            f"/api/retencion/exportaciones/{lote.pk}/",
+            f"/admin/retencion/exportaciones/{lote.pk}/confirmar/",
+            f"/admin/retencion/purgar/?apply=1&lote={lote.pk}",
+            f"/static/{archivo.name}",
+        ):
+            with self.subTest(ruta=ruta):
+                self.assertEqual(self.client.get(ruta).status_code, 404)
+        self.assertEqual(ExportacionRetencion.objects.get(pk=lote.pk).estado,
+                         ExportacionRetencion.Estado.GENERADA)
+        self.assertNotIn(ExportacionRetencion, admin.site._registry)
+        self.assertTrue(Pedido.objects.filter(pk=pedido.pk).exists())
+
     def test_cambio_despues_del_export_impide_confirmacion(self):
         pedido = self.pedido()
         lote, archivo = self._exportar(pedido)
@@ -185,6 +238,28 @@ class RetencionTests(TestCase):
         self.assertFalse(archivo.exists())
         self.assertIn(pedido.pk, planificar_purga(ahora=self.ahora).pedidos_por_exportacion)
 
+    def test_confirmacion_doble_no_cambia_ticket_ni_purga(self):
+        pedido = self.pedido()
+        lote, archivo = self._exportar(pedido)
+        contenido = archivo.read_bytes()
+        confirmado = confirmar_exportacion(
+            lote_id=lote.pk, archivo_local=archivo,
+            sha256_destino=lote.sha256_archivo, referencia="primera-verificacion",
+        )
+        archivo.write_bytes(contenido)
+
+        with self.assertRaisesRegex(ValueError, "GENERADA"):
+            confirmar_exportacion(
+                lote_id=lote.pk, archivo_local=archivo,
+                sha256_destino=lote.sha256_archivo, referencia="segunda-verificacion",
+            )
+
+        lote.refresh_from_db()
+        self.assertEqual(lote.referencia_confirmacion, "primera-verificacion")
+        self.assertEqual(lote.confirmada_en, confirmado.confirmada_en)
+        self.assertTrue(Pedido.objects.filter(pk=pedido.pk).exists())
+        self.assertEqual(RegistroPurga.objects.count(), 0)
+
     def test_descarga_operativa_o_estado_enviado_no_confirma_export(self):
         pedido = self.pedido(estado=Pedido.Estado.ENVIADO)
 
@@ -215,7 +290,10 @@ class RetencionTests(TestCase):
         self.assertEqual(ItemPedido.objects.count(), 0)
         self.assertEqual(RegistroPurga.objects.count(), 1)
         self.assertTrue(PedidoPurgado.objects.filter(codigo_publico=pedido.codigo_publico).exists())
-        self.assertEqual(PedidoPurgado.objects.get(codigo_publico=pedido.codigo_publico).motivo, "antiguedad")
+        tombstone = PedidoPurgado.objects.get(codigo_publico=pedido.codigo_publico)
+        self.assertEqual(tombstone.motivo, "antiguedad")
+        self.assertEqual(tombstone.sucursal_cliente_id, self.sucursal.pk)
+        self.assertEqual(tombstone.fecha_confirmacion, pedido.fecha_confirmacion)
         self.assertEqual(SucursalCliente.objects.count(), 1)
         self.assertEqual(Producto.objects.count(), 1)
         self.assertEqual(Precio.objects.count(), 1)

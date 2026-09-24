@@ -112,6 +112,10 @@ class RuntimeSecuritySettingsTests(SimpleTestCase):
         self.assertNotIn("scheduler", inspect.getsource(PedidosConfig.ready).lower())
 
 
+@override_settings(
+    MFA_ENFORCE=False,
+    AUTHENTICATION_BACKENDS=["django.contrib.auth.backends.ModelBackend"],
+)
 class PedidoFlowTests(TestCase):
     def setUp(self):
         seed_demo_data()
@@ -1464,7 +1468,11 @@ class PedidoFlowTests(TestCase):
         )
 
 
-@override_settings(ACTIVE_SESSION_TTL_SECONDS=600)
+@override_settings(
+    ACTIVE_SESSION_TTL_SECONDS=600,
+    MFA_ENFORCE=False,
+    AUTHENTICATION_BACKENDS=["django.contrib.auth.backends.ModelBackend"],
+)
 class SesionUnicaYAuditoriaTests(TestCase):
     def setUp(self):
         seed_demo_data()
@@ -1613,6 +1621,10 @@ class SesionUnicaYAuditoriaTests(TestCase):
             Pedido.objects.create(sucursal_cliente=sucursal, usuario_nombre=sucursal.nombre)
 
 
+@override_settings(
+    MFA_ENFORCE=False,
+    AUTHENTICATION_BACKENDS=["django.contrib.auth.backends.ModelBackend"],
+)
 class RestriccionHorariaTests(TestCase):
     def setUp(self):
         seed_demo_data()

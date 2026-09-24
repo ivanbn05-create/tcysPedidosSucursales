@@ -1,6 +1,7 @@
 """Ledger externo mínimo para impedir reintroducción tras un restore antiguo."""
 
 import io
+import json
 import os
 import stat
 import tempfile
@@ -54,9 +55,12 @@ class LedgerRetencionTests(TestCase):
             exportacion=self.exportacion,
         )
         self.codigo = uuid.uuid4()
+        self.fecha_confirmacion = ahora - timedelta(days=2)
         PedidoPurgado.objects.create(
             codigo_publico=self.codigo,
             pedido_id_origen=42,
+            sucursal_cliente_id=7,
+            fecha_confirmacion=self.fecha_confirmacion,
             motivo="exportacion",
             exportacion=self.exportacion,
             registro=self.registro,
@@ -68,6 +72,16 @@ class LedgerRetencionTests(TestCase):
         self.assertEqual(resultado["recibos"], 1)
         self.assertEqual(resultado["tombstones"], 1)
         self.assertEqual(resultado["exportaciones"], 1)
+        filas = [json.loads(linea) for linea in texto.splitlines()]
+        self.assertEqual(filas[0]["version"], 2)
+        tombstone = next(fila for fila in filas if fila["kind"] == "tombstone")
+        self.assertEqual(tombstone["sucursal_cliente_id"], 7)
+        self.assertEqual(
+            tombstone["fecha_confirmacion"],
+            self.fecha_confirmacion.isoformat(timespec="microseconds").replace(
+                "+00:00", "Z"
+            ),
+        )
         self.assertEqual(Path(f"{self.ruta}.sha256").read_text().strip(), resultado["sha256"])
         self.assertNotIn("Referencia privada", texto)
         self.assertNotIn("no-exportar.zip", texto)
@@ -103,6 +117,11 @@ class LedgerRetencionTests(TestCase):
         self.assertEqual(RegistroPurga.objects.get().pk, self.registro.pk)
         self.assertEqual(PedidoPurgado.objects.get().codigo_publico, self.codigo)
         self.assertEqual(PedidoPurgado.objects.get().exportacion_id, self.exportacion.pk)
+        self.assertEqual(PedidoPurgado.objects.get().sucursal_cliente_id, 7)
+        self.assertEqual(
+            PedidoPurgado.objects.get().fecha_confirmacion,
+            self.fecha_confirmacion,
+        )
         self.assertEqual(ExportacionRetencion.objects.get().archivo_local, "")
         self.assertEqual(ExportacionRetencion.objects.get().referencia_confirmacion, "")
         self.assertEqual(conciliar_restauracion(aplicar=False)["pedidos_reintroducidos"], 1)
@@ -138,6 +157,32 @@ class LedgerRetencionTests(TestCase):
             )
         self.assertEqual(PedidoPurgado.objects.count(), 0)
         self.assertEqual(RegistroPurga.objects.get().motivo, "otro")
+
+    @override_settings(RETENTION_RESTORE_ISOLATED=True)
+    def test_conflicto_en_sucursal_o_fecha_del_tombstone_se_rechaza(self):
+        resultado = exportar_ledger(self.ruta)
+        PedidoPurgado.objects.filter(pk=self.codigo).update(sucursal_cliente_id=8)
+        with self.assertRaisesRegex(LedgerError, "Conflicto con tombstone"):
+            importar_ledger(
+                self.ruta, expected_sha256=resultado["sha256"], aplicar=True
+            )
+        PedidoPurgado.objects.filter(pk=self.codigo).update(
+            sucursal_cliente_id=7,
+            fecha_confirmacion=self.fecha_confirmacion + timedelta(minutes=1),
+        )
+        with self.assertRaisesRegex(LedgerError, "Conflicto con tombstone"):
+            importar_ledger(
+                self.ruta, expected_sha256=resultado["sha256"], aplicar=True
+            )
+
+    @override_settings(RETENTION_RESTORE_ISOLATED=True)
+    def test_fecha_confirmacion_nula_se_preserva(self):
+        PedidoPurgado.objects.filter(pk=self.codigo).update(fecha_confirmacion=None)
+        resultado = exportar_ledger(self.ruta)
+        PedidoPurgado.objects.all().delete()
+        RegistroPurga.objects.all().delete()
+        importar_ledger(self.ruta, expected_sha256=resultado["sha256"], aplicar=True)
+        self.assertIsNone(PedidoPurgado.objects.get().fecha_confirmacion)
 
     @override_settings(RETENTION_RESTORE_ISOLATED=True)
     def test_snapshot_con_lote_generado_avanza_a_confirmado(self):
