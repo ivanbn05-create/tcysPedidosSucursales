@@ -15,9 +15,10 @@ from django.core import signing
 from django.core.cache import cache
 from django.db.models import Max, Prefetch, Q
 from django.http import JsonResponse
+from django.utils import timezone
 from django.utils.dateparse import parse_datetime
 
-from .models import ItemPedido, Pedido, PedidoPurgado, SucursalCliente
+from .models import ItemPedido, Pedido, PedidoPurgado, PosApiCredential, SucursalCliente
 
 
 logger = logging.getLogger(__name__)
@@ -95,6 +96,41 @@ def _authenticate(request):
     return candidate_digest.hex()[:24], None
 
 
+def _authenticate_v2(request):
+    """Resuelve un bearer v2 a un Edge y una sucursal, sin usar la allowlist v1."""
+    if not PosApiCredential.objects.exists():
+        return None, (), "service_not_configured"
+
+    authorization = request.headers.get("Authorization", "")
+    if len(authorization) > 1024:
+        return None, (), "unauthorized"
+    scheme, separator, candidate = authorization.partition(" ")
+    if not separator or scheme.lower() != "bearer" or not candidate:
+        return None, (), "unauthorized"
+    digest = hashlib.sha256(candidate.encode("utf-8")).hexdigest()
+    credential = (
+        PosApiCredential.objects.select_related("sucursal_cliente")
+        .filter(token_sha256=digest)
+        .first()
+    )
+    if credential is None:
+        return None, (), "unauthorized"
+    now = timezone.now()
+    if not credential.active or credential.revoked_at or (
+        credential.expires_at and credential.expires_at <= now
+    ):
+        return None, (), "unauthorized"
+    if (
+        not isinstance(credential.scopes, list)
+        or "orders:v2:read" not in credential.scopes
+        or credential.sucursal_cliente.tipo != SucursalCliente.Tipo.SUCURSAL
+        or not credential.sucursal_cliente.activa
+    ):
+        return None, (), "forbidden"
+    PosApiCredential.objects.filter(pk=credential.pk).update(last_used_at=now)
+    return digest[:24], (credential.sucursal_cliente_id,), None
+
+
 def _rate_limit(token_fingerprint, *, version=1):
     limit = settings.POS_API_RATE_LIMIT_PER_MINUTE
     if limit <= 0:
@@ -156,19 +192,27 @@ def _parse_limit(raw_value):
     return limit
 
 
-def _parse_sucursal_ids(raw_value):
-    allowed = set(settings.POS_API_ALLOWED_SUCURSAL_IDS)
+def _parse_sucursal_ids(raw_value, *, allowed_ids=None, version=1):
+    allowed = set(settings.POS_API_ALLOWED_SUCURSAL_IDS if allowed_ids is None else allowed_ids)
     if not allowed:
         raise RuntimeError("service_not_configured")
+    if version == 2 and raw_value in (None, ""):
+        raise ValueError("sucursal_id es obligatorio.")
     if raw_value in (None, ""):
         return tuple(sorted(allowed))
+    if version == 2 and not re.fullmatch(r"[1-9][0-9]*(,[1-9][0-9]*)*", raw_value):
+        raise ValueError("sucursal_id debe contener IDs enteros positivos separados por coma.")
     try:
         requested = {int(part.strip()) for part in raw_value.split(",") if part.strip()}
     except ValueError as exc:
         raise ValueError("sucursal_id debe contener IDs enteros separados por coma.") from exc
     if not requested:
         raise ValueError("sucursal_id no puede estar vacio.")
-    if any(value <= 0 for value in requested) or not requested.issubset(allowed):
+    if any(value <= 0 for value in requested):
+        raise ValueError("sucursal_id contiene un identificador no permitido.")
+    if not requested.issubset(allowed):
+        if version == 2:
+            raise PermissionError("forbidden")
         raise ValueError("sucursal_id contiene un identificador no permitido.")
     return tuple(sorted(requested))
 
@@ -208,6 +252,10 @@ def _decode_cursor(
 ):
     if not raw_cursor:
         return None
+    if version == 2 and re.fullmatch(r"[0-9]{1,20}", raw_cursor):
+        # El consumidor POS identifica este cursor legado como una brecha que
+        # exige conciliación, no como una solicitud malformada ordinaria.
+        raise RetentionGap
     if len(raw_cursor) > 2048:
         raise ValueError("cursor invalido.")
     try:
@@ -321,7 +369,11 @@ def _pedidos_pos(request, *, version):
             request_id=request_id,
         )
 
-    token_fingerprint, auth_error = _authenticate(request)
+    if version == 2:
+        token_fingerprint, allowed_sucursal_ids, auth_error = _authenticate_v2(request)
+    else:
+        token_fingerprint, auth_error = _authenticate(request)
+        allowed_sucursal_ids = None
     if auth_error == "service_not_configured":
         logger.error("pos_api request_id=%s resultado=no_configurada", request_id)
         return _error(
@@ -333,11 +385,12 @@ def _pedidos_pos(request, *, version):
     if auth_error:
         logger.warning("pos_api request_id=%s resultado=no_autorizado", request_id)
         return _error(
-            "unauthorized",
-            "Credencial de servicio ausente o invalida.",
-            status=401,
+            "forbidden" if auth_error == "forbidden" else "unauthorized",
+            "El acceso solicitado no esta autorizado." if auth_error == "forbidden"
+            else "Credencial de servicio ausente o invalida.",
+            status=403 if auth_error == "forbidden" else 401,
             request_id=request_id,
-            headers={"WWW-Authenticate": "Bearer"},
+            headers={} if auth_error == "forbidden" else {"WWW-Authenticate": "Bearer"},
         )
 
     rate_error, rate_headers = _rate_limit(token_fingerprint, version=version)
@@ -378,7 +431,11 @@ def _pedidos_pos(request, *, version):
                 f"{settings.POS_API_MAX_WINDOW.days} dias."
             )
         limit = _parse_limit(request.GET.get("limite"))
-        sucursal_ids = _parse_sucursal_ids(request.GET.get("sucursal_id"))
+        sucursal_ids = _parse_sucursal_ids(
+            request.GET.get("sucursal_id"),
+            allowed_ids=allowed_sucursal_ids,
+            version=version,
+        )
         fingerprint = _filter_fingerprint(
             desde, hasta, sucursal_ids, version=version
         )
@@ -415,6 +472,14 @@ def _pedidos_pos(request, *, version):
             "service_unavailable",
             "La API POS no esta configurada.",
             status=503,
+            request_id=request_id,
+            headers=rate_headers,
+        )
+    except PermissionError:
+        return _error(
+            "forbidden",
+            "El acceso solicitado no esta autorizado.",
+            status=403,
             request_id=request_id,
             headers=rate_headers,
         )

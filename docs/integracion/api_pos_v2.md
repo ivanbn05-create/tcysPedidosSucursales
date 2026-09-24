@@ -1,6 +1,6 @@
 # API POS v2: identidad pública y señal de retención
 
-Estado: contrato propuesto para coordinación con el agente POS. La ruta v1 permanece disponible y sin cambios; el consumidor debe adoptar v2 y pasar las pruebas de contrato antes de depender de ella. La existencia de esta ruta en Git no significa que esté desplegada ni que la purga esté activada.
+Estado: candidato de integración privado sobre `8fad568`; la ruta v1 permanece disponible y sin cambios. El consumidor debe adoptar v2 y pasar las pruebas de contrato antes de depender de ella. La existencia de esta ruta en Git no significa que esté desplegada ni que la purga esté activada.
 
 ## Endpoint
 
@@ -9,7 +9,7 @@ GET /api/v2/pos/pedidos/
 Authorization: Bearer <TOKEN_POS>
 ```
 
-La autenticación, HTTPS obligatorio cuando `POS_API_REQUIRE_HTTPS=True`, allowlist de `SucursalCliente.id`, rate limit y filtros son los mismos de [v1](../api_pos_v1.md). `desde` es inclusivo y `hasta` exclusivo; ambos son timestamps ISO 8601 con zona. La ventana solicitada tiene máximo configurable de 31 días por defecto. `sucursal_id` admite sólo IDs autorizados y sólo se entregan pedidos de entidades de tipo `sucursal`, en estado exacto `confirmado`, sin borrado lógico.
+HTTPS es obligatorio cuando `POS_API_REQUIRE_HTTPS=True`. V2 usa credenciales propias, guardadas sólo por SHA-256 y ligadas a un UUID de instalación Edge, una `SucursalCliente.id` de tipo sucursal y el scope `orders:v2:read`. Un bearer v1 no concede acceso v2. El parámetro `sucursal_id` es obligatorio: una sucursal ajena a la credencial devuelve 403 `forbidden`; un bearer inválido, vencido o revocado devuelve 401. La allowlist global de [v1](../api_pos_v1.md) permanece sólo para v1. `desde` es inclusivo y `hasta` exclusivo; ambos son timestamps ISO 8601 con zona. La ventana solicitada tiene máximo configurable de 31 días por defecto. Sólo se entregan pedidos `confirmado`, sin borrado lógico.
 
 La respuesta conserva los campos v1 y añade `codigo_publico` (UUID único del modelo `Pedido`) a cada pedido. El POS debe acordar y persistir este UUID como identidad remota estable tras migrar su consumidor; `id` entero se conserva por compatibilidad de la forma de respuesta, y el folio derivado de fecha no es una clave de identidad. Los ítems conservan `id` entero en esta versión. Es necesaria una correspondencia verificada entre `SucursalCliente.id` entero de Pedidos y el UUID/clave de sucursal del POS; no inferirla por nombre.
 
@@ -40,7 +40,7 @@ El orden sigue siendo `(fecha_confirmacion, Pedido.id)` ascendente, de modo que 
 La v2 responde HTTP **410 Gone** con código estable `retention_gap` si:
 
 1. la ventana `[desde, hasta)` incluye la `fecha_confirmacion` exacta de un `PedidoPurgado` de una sucursal consultada y retornable por la API; o
-2. la época del cursor v2 difiere de la época vigente para esas sucursales, aunque la purga haya ocurrido fuera de la ventana solicitada. Un cursor v2 anterior, todavía firmado pero con época numérica, también recibe 410 y requiere conciliación.
+2. la época del cursor v2 difiere de la época vigente para esa sucursal, aunque la purga haya ocurrido fuera de la ventana solicitada. Un cursor v2 anterior, todavía firmado pero con época numérica, y el cursor legado numérico usado por el contrato POS también reciben 410 y requieren conciliación.
 
 La comprobación usa tombstones por pedido, sucursal y fecha; una purga de otra sucursal, de un cliente mayorista o en un hueco entre dos fechas purgadas **no** produce 410 para esta consulta. Una purga sólo de eventos, sin pedido con `fecha_confirmacion`, tampoco altera la época POS. La época se comprueba de nuevo antes de responder para detectar purgas que terminen durante la consulta. La API no entrega una página vacía como sustituto de un 410 conocido. Sin tombstones que cubran la ventana, una página vacía significa que no hay pedidos *actualmente consultables* bajo esos filtros; no certifica historial completo anterior a la introducción del registro de purgas.
 
@@ -56,7 +56,7 @@ Los recibos `RegistroPurga` y tombstones `PedidoPurgado` son parte del estado ne
 }
 ```
 
-La API mantiene `Cache-Control: no-store` y `X-Request-ID` también en errores. Un cursor malformado o manipulado continúa dando 400 `invalid_parameter`; uno firmado pero obsoleto por purga o por el cambio a época opaca da 410. La v1 conserva su semántica histórica y **no detecta** estas brechas.
+La API mantiene `Cache-Control: no-store` y `X-Request-ID` también en errores. Un cursor malformado o manipulado que no sea el legado numérico continúa dando 400 `invalid_parameter`; uno firmado pero obsoleto por purga o por el cambio a época opaca da 410. La v1 conserva su semántica histórica y **no detecta** estas brechas.
 
 ## Reanudación y conciliación del POS
 

@@ -46,6 +46,39 @@ class SucursalCliente(models.Model):
         return self.nombre
 
 
+class PosApiCredential(models.Model):
+    """Credencial v2 de un Edge, limitada a una sucursal de Pedidos.
+
+    Sólo se conserva el SHA-256 del bearer aleatorio; la credencial v1 global
+    permanece separada para los consumidores existentes.
+    """
+
+    credential_id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    edge_id = models.UUIDField(db_index=True)
+    sucursal_cliente = models.ForeignKey(
+        SucursalCliente, on_delete=models.PROTECT, related_name="credenciales_pos_v2"
+    )
+    token_sha256 = models.CharField(max_length=64, unique=True, editable=False)
+    scopes = models.JSONField(default=list)
+    active = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    issued_reference = models.CharField(max_length=120, blank=True)
+    expires_at = models.DateTimeField(null=True, blank=True)
+    revoked_at = models.DateTimeField(null=True, blank=True)
+    revocation_reference = models.CharField(max_length=120, blank=True)
+    last_used_at = models.DateTimeField(null=True, blank=True)
+    rotated_from = models.ForeignKey(
+        "self", null=True, blank=True, on_delete=models.SET_NULL,
+        related_name="rotations",
+    )
+
+    class Meta:
+        indexes = [models.Index(fields=["edge_id", "sucursal_cliente"])]
+
+    def __str__(self):
+        return str(self.credential_id)
+
+
 class Producto(models.Model):
     """Producto disponible para pedido."""
 

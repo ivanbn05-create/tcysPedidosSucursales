@@ -1,5 +1,6 @@
 from datetime import timedelta
 from decimal import Decimal
+import hashlib
 import uuid
 
 from django.core import signing
@@ -9,7 +10,7 @@ from django.urls import reverse
 from django.utils import timezone
 
 from .api_pos import CURSOR_SALT_V2
-from .models import ItemPedido, Pedido, PedidoPurgado, Producto, RegistroPurga, SucursalCliente
+from .models import ItemPedido, Pedido, PedidoPurgado, PosApiCredential, Producto, RegistroPurga, SucursalCliente
 
 
 TOKEN = "token-pos-pruebas-abcdefghijklmnopqrstuvwxyz-0123456789"
@@ -362,6 +363,13 @@ class PosApiV2Tests(TestCase):
         self.sucursal = SucursalCliente.objects.create(
             id=101, nombre="Sucursal POS v2", tipo=SucursalCliente.Tipo.SUCURSAL
         )
+        self.edge_id = uuid.uuid4()
+        self.credential = PosApiCredential.objects.create(
+            edge_id=self.edge_id,
+            sucursal_cliente=self.sucursal,
+            token_sha256=hashlib.sha256(TOKEN.encode("utf-8")).hexdigest(),
+            scopes=["orders:v2:read"],
+        )
         self.producto = Producto.objects.create(
             nombre="Producto POS v2", cantidad_por_precio=Decimal("1.000")
         )
@@ -370,6 +378,7 @@ class PosApiV2Tests(TestCase):
         params = {
             "desde": (self.base_time - timedelta(hours=1)).isoformat(),
             "hasta": (self.base_time + timedelta(hours=1)).isoformat(),
+            "sucursal_id": "101",
         }
         params.update(overrides)
         return params
@@ -509,21 +518,28 @@ class PosApiV2Tests(TestCase):
         self.assertEqual(siguiente.status_code, 200)
         self.assertEqual(siguiente.json()["data"][0]["id"], segundo.pk)
 
-    @override_settings(POS_API_ALLOWED_SUCURSAL_IDS=(101, 103))
-    def test_purga_de_mayorista_en_allowlist_no_revela_brecha(self):
-        SucursalCliente.objects.create(
+    def test_credencial_de_mayorista_no_revela_brecha(self):
+        mayorista = SucursalCliente.objects.create(
             id=103, nombre="Mayorista no retornable", tipo=SucursalCliente.Tipo.CLIENTE_MAYORISTA
         )
         pedido = self._pedido()
         self._purga(self.base_time, self.base_time, sucursal_id=103)
+        token_mayorista = "token-mayorista-abcdefghijklmnopqrstuvwxyz-0123456789"
+        PosApiCredential.objects.create(
+            edge_id=uuid.uuid4(), sucursal_cliente=mayorista,
+            token_sha256=hashlib.sha256(token_mayorista.encode("utf-8")).hexdigest(),
+            scopes=["orders:v2:read"],
+        )
 
         general = self._get()
-        mayorista = self._get(sucursal_id="103")
+        respuesta_mayorista = self.client.get(
+            self.url, data=self._params(sucursal_id="103"),
+            HTTP_AUTHORIZATION=f"Bearer {token_mayorista}",
+        )
 
         self.assertEqual(general.status_code, 200)
         self.assertEqual(general.json()["data"][0]["id"], pedido.pk)
-        self.assertEqual(mayorista.status_code, 200)
-        self.assertEqual(mayorista.json()["data"], [])
+        self.assertEqual(respuesta_mayorista.status_code, 403)
 
     def test_hueco_entre_fechas_purgadas_no_genera_410(self):
         self._purga(
@@ -584,6 +600,12 @@ class PosApiV2Tests(TestCase):
         self.assertEqual(response.status_code, 410)
         self.assertEqual(response.json()["error"]["code"], "retention_gap")
 
+    def test_cursor_legado_numerico_del_contrato_pos_solicita_conciliacion(self):
+        response = self._get(cursor="1727034600123456")
+
+        self.assertEqual(response.status_code, 410)
+        self.assertEqual(response.json()["error"]["code"], "retention_gap")
+
     def test_datos_posteriores_a_purga_y_limite_exclusivo(self):
         self._purga(
             self.base_time - timedelta(hours=2),
@@ -608,7 +630,65 @@ class PosApiV2Tests(TestCase):
         forbidden = self._get(sucursal_id="999")
 
         self.assertEqual(unauthorized.status_code, 401)
-        self.assertEqual(forbidden.status_code, 400)
+        self.assertEqual(forbidden.status_code, 403)
+
+    def test_scope_por_credencial_y_revocacion(self):
+        self.credential.scopes = []
+        self.credential.save(update_fields=["scopes"])
+        self.assertEqual(self._get().status_code, 403)
+
+        self.credential.scopes = ["orders:v2:read"]
+        self.credential.save(update_fields=["scopes"])
+        self.sucursal.activa = False
+        self.sucursal.save(update_fields=["activa"])
+        self.assertEqual(self._get().status_code, 403)
+        self.sucursal.activa = True
+        self.sucursal.save(update_fields=["activa"])
+        self.credential.revoked_at = timezone.now()
+        self.credential.active = False
+        self.credential.save(update_fields=["scopes", "revoked_at", "active"])
+        self.assertEqual(self._get().status_code, 401)
+
+    def test_credencial_expirada_y_rotacion_independiente_de_v1(self):
+        self.credential.expires_at = timezone.now() - timedelta(seconds=1)
+        self.credential.save(update_fields=["expires_at"])
+        self.assertEqual(self._get().status_code, 401)
+        token_nuevo = "token-rotado-abcdefghijklmnopqrstuvwxyz-0123456789"
+        PosApiCredential.objects.create(
+            edge_id=self.edge_id, sucursal_cliente=self.sucursal,
+            token_sha256=hashlib.sha256(token_nuevo.encode("utf-8")).hexdigest(),
+            scopes=["orders:v2:read"], rotated_from=self.credential,
+        )
+        nuevo = self.client.get(
+            self.url, data=self._params(), HTTP_AUTHORIZATION=f"Bearer {token_nuevo}",
+        )
+        anterior_v1 = self.client.get(
+            reverse("api_pos_pedidos_v1"), data=self._params(),
+            HTTP_AUTHORIZATION=f"Bearer {TOKEN}",
+        )
+        self.assertEqual(nuevo.status_code, 200)
+        self.assertEqual(anterior_v1.status_code, 200)
+
+    def test_otra_credencial_no_puede_leer_sucursal_ajena(self):
+        otra = SucursalCliente.objects.create(
+            id=102, nombre="Otra sucursal de otro Edge", tipo=SucursalCliente.Tipo.SUCURSAL
+        )
+        token_otro = "token-otro-edge-abcdefghijklmnopqrstuvwxyz-0123456789"
+        PosApiCredential.objects.create(
+            edge_id=uuid.uuid4(), sucursal_cliente=otra,
+            token_sha256=hashlib.sha256(token_otro.encode("utf-8")).hexdigest(),
+            scopes=["orders:v2:read"],
+        )
+        ajena = self.client.get(
+            self.url, data=self._params(sucursal_id="101"),
+            HTTP_AUTHORIZATION=f"Bearer {token_otro}",
+        )
+        propia = self.client.get(
+            self.url, data=self._params(sucursal_id="102"),
+            HTTP_AUTHORIZATION=f"Bearer {token_otro}",
+        )
+        self.assertEqual(ajena.status_code, 403)
+        self.assertEqual(propia.status_code, 200)
 
     def test_id_y_uuid_de_otra_sucursal_no_amplian_el_alcance(self):
         permitido = self._pedido()
@@ -624,7 +704,7 @@ class PosApiV2Tests(TestCase):
         self.assertEqual(general.status_code, 200)
         self.assertEqual([fila["codigo_publico"] for fila in general.json()["data"]],
                          [str(permitido.codigo_publico)])
-        self.assertEqual(por_id.status_code, 400)
+        self.assertEqual(por_id.status_code, 403)
         self.assertEqual(por_uuid.status_code, 400)
         self.assertNotIn(str(ajeno.codigo_publico), por_id.content.decode())
         self.assertNotIn(str(ajeno.codigo_publico), por_uuid.content.decode())

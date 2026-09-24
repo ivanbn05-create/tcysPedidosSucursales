@@ -16,7 +16,8 @@ paths:
       operationId: listarPedidosPosV2
       summary: Leer pedidos confirmados para el POS
       description: >-
-        Devuelve pedidos confirmados, no eliminados, de sucursales autorizadas.
+        Devuelve pedidos confirmados, no eliminados, de la sucursal autorizada
+        para el Edge autenticado con el scope orders:v2:read.
         Orden ascendente por (fecha_confirmacion, id). Un cursor v2 esta firmado,
         ligado a los filtros y a una epoca HMAC opaca de las purgas de las
         sucursales solicitadas; no expone el ID secuencial de RegistroPurga.
@@ -51,7 +52,7 @@ paths:
         - name: sucursal_id
           in: query
           required: false
-          description: IDs enteros de SucursalCliente separados por coma; todos deben estar en la allowlist.
+          description: ID entero de SucursalCliente aprobado para el Edge; otro ID devuelve 403.
           schema:
             type: string
           example: '3,4'
@@ -108,6 +109,12 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorRespuesta'
+        '403':
+          description: Scope ausente o sucursal ajena a la credencial Edge.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorRespuesta'
         '405':
           description: Metodo distinto de GET; la respuesta incluye Allow GET.
           headers:
@@ -125,7 +132,8 @@ paths:
             purgado de una sucursal autorizada y retornable, o la epoca opaca
             del cursor difiere de la vigente para esas sucursales. No revela
             purgas de otras sucursales, mayoristas ni huecos entre fechas.
-            Un cursor v2 anterior con epoca numerica tambien recibe 410.
+            Un cursor v2 anterior con epoca numerica o el cursor legado
+            numerico del contrato POS tambien reciben 410.
             Detener y conciliar.
           headers:
             Cache-Control:
@@ -168,7 +176,7 @@ components:
     posBearer:
       type: http
       scheme: bearer
-      description: Token de servicio configurado fuera de Git y enviado solo por HTTPS.
+      description: Bearer opaco emitido por Edge/sucursal con scope orders:v2:read; sólo via HTTPS.
   headers:
     CacheControl:
       description: Las respuestas no deben almacenarse en cache.
