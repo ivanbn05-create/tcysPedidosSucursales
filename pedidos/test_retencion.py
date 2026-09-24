@@ -6,7 +6,7 @@ from pathlib import Path
 from django.conf import settings
 from django.contrib import admin
 from django.db import connection
-from django.test import TestCase, override_settings
+from django.test import TransactionTestCase, override_settings
 from django.utils import timezone
 
 from .models import (
@@ -33,7 +33,7 @@ from .retencion import (
 from .views import ocultar_referencia_pedido_purgado
 
 
-class RetencionTests(TestCase):
+class RetencionTests(TransactionTestCase):
     def setUp(self):
         self.ahora = timezone.now().replace(microsecond=0)
         self.sucursal = SucursalCliente.objects.create(
