@@ -37,4 +37,23 @@ El POS dev.10 sí recibe `410 retention_gap`: `ventas/integracion_sucursales.py`
 
 Antes del corte productivo se necesita un procedimiento ejecutable y probado para: custodiar el export fuera del VPS, cotejar UUID/ID de pedidos locales contra manifiesto y recibos, importar de forma idempotente cualquier faltante verificado, registrar aprobación y evidencia, y sólo entonces avanzar o reinicializar de forma controlada el checkpoint. Un Edge desconectado más de 30 días o una exportación temprana puede necesitar este procedimiento incluso con conectividad y credencial válidas.
 
-El ensayo del timeout de respuesta tras commit y reinicio del POS se documentará aparte cuando termine el harness aislado del agente POS; esta prueba de purga no alteró el checkpoint compartido del POS LAB01.
+## Timeout tras commit y reinicio del POS
+
+El agente POS ejecutó un harness aislado con una base SQLite clonada, sin tocar el checkpoint compartido de LAB01 ni hacer solicitudes de red. En el primer proceso aplicó una página sintética con origen 910001, confirmó el cursor en la misma transacción y simuló pérdida de la respuesta con `ErrorTransportePedidos`: quedó un importado, cursor persistido y estado `error_transitorio`. Un segundo proceso independiente reanudó desde el cursor confirmado, recibió de nuevo el mismo UUID y cerró la ventana en estado `listo`, con **cero importados adicionales y cero duplicados**. Harness: `scripts/e2e/e2e_pos_lab01_orders_restart.py` del checkout POS dev.10; base aislada `runtime/e2e/checkpoint_crash.sqlite3`. Esto acredita la recuperación local ante timeout/reinicio en la lógica POS; la ruta HTTP real de 8003 no participó en ese caso. La prueba de purga no alteró el checkpoint compartido del POS LAB01.
+
+## Rotación y revocación de credencial v2 en 8003
+
+Se ejecutó una prueba adicional con un Edge sintético distinto del que ya usa LAB01: `90366a5c-da82-4519-ab0c-6462786b7bab`, ligado sólo a `SucursalCliente.id=17` y `orders:v2:read`. El harness privado `.release/e2e_pedidos_credential_rotation.py` tenía SHA-256 `d2fcd9d94ff2935da38df020077f580b883f646d54c684b475ec961cc2e99e72`, se verificó tras transferirlo y se retiró de `/tmp` después. Usó los comandos reales `issue_pos_v2_credential` y `revoke_pos_v2_credential`; bearer sólo en archivos privados `0600`, jamás en stdout ni en la evidencia.
+
+| Secuencia | Resultado HTTP real |
+| --- | --- |
+| Primera emisión, página 1 LAB01 | 200, pedido ID 1 y cursor firmado |
+| Rotación de la primera, bearer anterior | 401 `unauthorized` |
+| Bearer rotado con cursor firmado previo | 200, pedido ID 2 |
+| Revocación del rotado, ese bearer | 401 `unauthorized` |
+| Reemisión final activa con el mismo Edge y cursor previo | 200, pedido ID 2 |
+| Credencial final intentando LAB02 | 403 `forbidden` |
+
+Credenciales públicas: primera `1277df00-faad-4b1c-861b-6c7315df80ca`, rotada y luego revocada `26f75f07-d539-4f57-8295-0be3fce3919c`, final activa `be6e68e2-092e-47a9-8c33-eb4e078cb576`. El bearer final vigente hasta su vencimiento está exclusivamente en `/srv/tcysPedidosSucursales-e2e/shared/credentials/lab01-rotation-e2e-current.token`, dueño `tcyswebe2e`, modo `0600`; su contenido no se incluye aquí. Los pedidos 1–4 quedaron idénticos y el bearer LAB01 original no se modificó. El cursor firmado siguió válido tras rotación porque mantiene filtros y época de purga, sin ampliar el alcance.
+
+La sincronización de un POS aislado con esta credencial final quedó pendiente: la revisión automática de permisos rechazó **antes de conectar por SSH** la transferencia del bearer activo del VPS al archivo local del harness, porque esa salida de credencial y destino no tenían autorización explícita del usuario. La revisión indicó no eludir el rechazo por otra vía. No se leyó ni copió el bearer para este paso. La lectura GET de API demuestra autorización y paginación tras la rotación; el harness POS con transporte simulado demuestra checkpoint e idempotencia locales, pero la combinación POS→API con bearer rotado todavía requiere un método de entrega aprobado. La credencial final activa permanece en staging para esa prueba futura.
