@@ -4,8 +4,9 @@ import os
 import stat
 import tempfile
 import uuid
+import zipfile
 from datetime import timedelta
-from io import StringIO
+from io import BytesIO, StringIO
 from pathlib import Path
 from unittest import skipUnless
 
@@ -18,7 +19,7 @@ from .models import (
     Pedido, PedidoPurgado, PosApiCredential, PosRetentionRecovery,
     RegistroPurga, SucursalCliente,
 )
-from .pos_recovery import _snapshot, _uuid_set, complete, prepare
+from .pos_recovery import _read_zip_entry, _snapshot, _uuid_set, complete, prepare
 
 
 class RecoveryValidationTests(TestCase):
@@ -32,6 +33,16 @@ class RecoveryValidationTests(TestCase):
     def test_purga_real_no_acepta_un_flag_simple(self):
         with self.assertRaises(CommandError):
             call_command("purgar_retencion", apply=True, stdout=StringIO())
+
+    def test_zip_manipulado_no_descomprime_mas_del_limite(self):
+        buffer = BytesIO()
+        with zipfile.ZipFile(buffer, "w", compression=zipfile.ZIP_DEFLATED) as archive:
+            archive.writestr("orders.jsonl", b"x" * 1024)
+        buffer.seek(0)
+        with zipfile.ZipFile(buffer) as archive:
+            with self.assertRaises(CommandError):
+                _read_zip_entry(archive, "orders.jsonl", 100)
+            self.assertEqual(_read_zip_entry(archive, "orders.jsonl", 1024), b"x" * 1024)
 
     def test_baseline_no_mezcla_sucursales_y_incluye_purga_fuera_de_ventana(self):
         one = SucursalCliente.objects.create(nombre="Arboledas sintética", tipo="sucursal")

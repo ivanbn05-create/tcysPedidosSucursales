@@ -154,6 +154,14 @@ def _zip_snapshot(path, manifest, rows, tombstones):
     return digest(path.read_bytes())
 
 
+def _read_zip_entry(archive, name, limit):
+    with archive.open(name) as entry:
+        data = entry.read(limit + 1)
+    if len(data) > limit:
+        raise CommandError("Snapshot descomprimido excede el límite permitido.")
+    return data
+
+
 def prepare(*, recovery_id, edge_id, pos_branch_id, branch_id, desde, hasta,
             old_cursor_file, output, reference):
     if not 3 <= len(reference) <= 120:
@@ -215,6 +223,8 @@ def prepare(*, recovery_id, edge_id, pos_branch_id, branch_id, desde, hasta,
         rows, tombstones = _snapshot(branch_id, desde, hasta)
         order_lines = b"".join(canonical(row) + b"\n" for row in rows)
         tombstone_bytes = canonical(tombstones) + b"\n"
+        if len(order_lines) > 95_000_000 or len(tombstone_bytes) > 2_000_000:
+            raise CommandError("Contenido de baseline demasiado grande; requiere revisión manual.")
         manifest = {
             "version": "pedidos-recovery-v1", "recovery_id": str(recovery_id),
             "edge_id": str(edge_id), "pos_branch_id": str(pos_branch_id),
@@ -277,9 +287,9 @@ def complete(*, recovery_id, snapshot_file, snapshot_sha256, edge_ack_file,
                 sum(entry.file_size for entry in archive.infolist()) > 100_000_000
             ):
                 raise CommandError("Snapshot descomprimido excede el límite permitido.")
-            manifest = json.loads(archive.read("manifest.json"))
-            lines = archive.read("orders.jsonl")
-            tombstone_bytes = archive.read("tombstones.json")
+            manifest = json.loads(_read_zip_entry(archive, "manifest.json", 1_000_000))
+            lines = _read_zip_entry(archive, "orders.jsonl", 95_000_000)
+            tombstone_bytes = _read_zip_entry(archive, "tombstones.json", 2_000_000)
             rows = [json.loads(line) for line in lines.splitlines()]
             tombstones = _uuid_set(json.loads(tombstone_bytes))
             if not isinstance(manifest, dict) or any(not isinstance(row, dict) for row in rows):

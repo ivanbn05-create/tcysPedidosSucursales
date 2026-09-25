@@ -74,8 +74,8 @@ y `2c7c2ac` (rotación LAB01 y cruce POS real). La rama nueva parte **de
 
 ## Pruebas y límites de esta ronda
 
-- Windows, Python **3.13.12** exacto: `manage.py test pedidos` detectó 185:
-  180 pasaron, 5 omitidas por POSIX; dirigidas de API/credencial/recovery sin fallos.
+- Windows, Python **3.13.12** exacto: `manage.py test pedidos` detectó 186:
+  181 pasaron, 5 omitidas por POSIX; dirigidas de API/credencial/recovery sin fallos.
 - `manage.py check`, `makemigrations --check --dry-run`, `pip check` y
   `verify_lock.py` pasan; lock con 13 paquetes en Windows.
 - `check --deploy` con valores productivos **ficticios**: sólo `security.W004`
