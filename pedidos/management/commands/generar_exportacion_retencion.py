@@ -1,7 +1,13 @@
+import logging
+
 from django.core.management.base import BaseCommand, CommandError
 from django.utils.dateparse import parse_datetime
 
 from pedidos.retencion import generar_exportacion
+from pedidos.pos_recovery import operator_name
+
+
+logger = logging.getLogger(__name__)
 
 
 def _fecha(valor, nombre):
@@ -21,8 +27,13 @@ class Command(BaseCommand):
         parser.add_argument("--limite", type=int, default=500)
         parser.add_argument("--id-desde", type=int, default=0)
         parser.add_argument("--id-hasta", type=int)
+        parser.add_argument("--referencia-operacion", required=True)
+        parser.add_argument("--confirm", action="store_true")
 
     def handle(self, *args, **opciones):
+        reference = opciones["referencia_operacion"].strip()
+        if not opciones["confirm"] or not 3 <= len(reference) <= 120:
+            raise CommandError("Se requiere --confirm y referencia operativa de 3–120 caracteres.")
         try:
             lote = generar_exportacion(
                 desde=_fecha(opciones["desde_recepcion"], "desde-recepcion"),
@@ -38,3 +49,5 @@ class Command(BaseCommand):
             f"lote={lote.pk} estado={lote.estado} pedidos={lote.numero_pedidos} "
             f"items={lote.numero_items} sha256_archivo={lote.sha256_archivo}"
         )
+        logger.info("retencion_export operacion=%s operador_os=%s lote=%s pedidos=%s estado=%s",
+                    reference, operator_name(), lote.pk, lote.numero_pedidos, lote.estado)

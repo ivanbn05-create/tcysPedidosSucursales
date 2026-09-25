@@ -58,6 +58,20 @@ y los secretos ya instalados fuera de Git. No ejecutes `source` ni `.` sobre un
 `.env` real. El ejemplo usa la unidad transitoria para delegar su lectura a
 systemd; ajusta la unidad a staging y al entorno aislado durante el ensayo:
 
+**Gate OS previo a producción:** estas operaciones no deben quedar disponibles
+al usuario del worker web ni a cualquier usuario con `sudo systemd-run`
+genérico. El administrador del VPS debe separar usuario web, usuario operador
+y rol de base, restringir lectura del EnvironmentFile/exports por propietario
+y permisos, y conceder mediante sudoers sólo un wrapper root-owned con
+subcomandos específicos (exportar, confirmar, purga dry-run/real, recuperación).
+Auditar `sudo`/journal con identidad OS, referencia no sensible, hora, lote,
+conteos y resultado; jamás bearer, URL de base, pedido, ZIP ni contenido de
+actas. La plantilla actual aún ejecuta Gunicorn como `deploy` y los archivos
+de entorno actuales también pertenecen a `deploy`: **no afirmar aislamiento OS
+logrado ni activar purga productiva** hasta migrar y probar esa separación.
+Los flags `--confirm` y `--confirm-irreversible` registran intención; no son
+un segundo factor.
+
 ```bash
 APP_ROOT=/home/deploy/apps/tcysPedidosSucursales
 RELEASE=$(readlink -f "$APP_ROOT/current")
@@ -109,7 +123,8 @@ sudo systemd-run --unit=tcys-retencion-export --wait --pipe --collect \
   --property="EnvironmentFile=$RETENTION_ENV" \
   "$RELEASE/.venv/bin/python" manage.py generar_exportacion_retencion \
   --desde-recepcion='<UTC_INICIO_ISO8601>' \
-  --hasta-recepcion='<UTC_FIN_ISO8601>' --archivo="$ARCHIVO"
+  --hasta-recepcion='<UTC_FIN_ISO8601>' --archivo="$ARCHIVO" \
+  --referencia-operacion='<TICKET_NO_SENSIBLE>' --confirm
 ```
 
 Generar el ZIP **no** confirma la descarga y no habilita purga. No subas
@@ -175,7 +190,10 @@ operativa documentada. Revisa FK y los backups antes de pasar a `--apply`.
 
 **Sólo tras autorización final específica**, en ventana controlada, se puede
 ejecutar el mismo comando con `--apply` y el override de esa ejecución
-`RETENTION_PURGE_ENABLED=True`. No cambies el `.env` persistente a `True` ni
+`RETENTION_PURGE_ENABLED=True`. La ejecución real exige además
+`--referencia-operacion='<ACTA_NO_SENSIBLE>' --confirm-irreversible`; el
+journal registra usuario OS y conteos sin payload. No cambies el `.env`
+persistente a `True` ni
 instales un timer hasta que la matriz, staging, restauración y alertas pasen
 las pruebas. La purga crea `RegistroPurga` y un `PedidoPurgado` mínimo por
 UUID; no deja cuerpos de pedidos en los recibos. La segunda ejecución no debe
@@ -187,6 +205,7 @@ errores, dato más antiguo y próxima revisión sin nombres ni payloads.
 No mantengas dumps completos por largo plazo. Un backup permanente selectivo
 puede contener esquema y datos de maestros, usuarios, configuración y los
 recibos mínimos (`ExportacionRetencion`, `RegistroPurga`, `PedidoPurgado`),
+las actas técnicas `PosRetentionRecovery` sin cuerpos de pedidos,
 excluyendo datos de `Pedido`, `ItemPedido`, `MacroPedido`, `EventoCliente`,
 `SesionActiva`, `LogRecordatorio`, `PedidoEnExportacion`, `django_session` y
 `django_admin_log`. Verifica el inventario real de tablas antes de fijar los

@@ -6,6 +6,15 @@ en el VPS. La base del backend central POS es otra base, con rol, secretos,
 backups y ciclo de cambios separados. El staging PostgreSQL local existente no
 demuestra que se haya cortado la base productiva.
 
+Production 1.0 añade `pedidos.0017` (UUID de sucursal POS en credenciales) y
+`pedidos.0018` (acta técnica `retention_gap`). Ambas deben probarse en restore
+local aislado y quedar en el manifiesto de migraciones. Las credenciales E2E
+anteriores con `pos_branch_id=NULL` son sólo transición; no emitir ni usar
+una credencial productiva antes de aprobar Arboledas por ID/UUID exactos.
+El ZIP temporal de recuperación contiene pedidos y se incluye en la misma
+política de custodia/retención que los demás artefactos transitorios; el acta
+`PosRetentionRecovery` sólo guarda hashes, identidades y conteos técnicos.
+
 Este runbook complementa `deploy.md`, `rollback.md` y `api_pos.md`. No se debe
 usar la fase 6 de `deploy.md` como sustituto del corte de base: su rollback sólo
 revierte código/unidad y perdería pedidos nuevos si se devolviera
@@ -153,7 +162,8 @@ libre, tiempo de cada etapa y destino de artefactos. No ejecutes `seed_demo`,
    permitir sólo su DML necesario; el rol de migración se usa separadamente.
    El SQL versionado `deploy/vps/scripts/manifesto_postgresql.sql` sólo
    muestra metadatos técnicos: tablas, IDs mínimos/máximos, conteos,
-   agregados, FK y secuencias. Ejecútalo en **ambos** servicios y compara sus
+   agregados, constraints, índices (incluida validez) y secuencias. Ejecútalo
+   en **ambos** servicios y compara sus
    salidas durante el corte con el origen congelado. En ensayo con origen
    activo su salida posterior al dump sirve de diagnóstico, no de igualdad
    exacta:
@@ -188,6 +198,16 @@ una prueba exacta origen→destino. Para una comparación exacta usa el mismo
 snapshot exportado para dump y manifiesto, o una pausa de escritores aprobada;
 en el corte final la pausa es obligatoria. Anota cualquier diferencia, no la
 atribuyas automáticamente a «actividad normal».
+
+Ensaya también una carrera de **datos nuevos durante el dump sólo en una
+copia aislada del origen**, jamás insertando pedidos de prueba en la base
+externa productiva: un escritor sintético agrega/confirma un pedido mientras
+`pg_dump` corre. Verifica que el restore representa un snapshot consistente,
+que el pedido tardío se detecta como delta y que la comparación ingenua con
+conteos posteriores falla. Repite con el mecanismo de freeze efectivo y un
+intento de escritura que debe ser rechazado/bloqueado; sólo entonces compara
+manifiestos iguales. Registra tiempos, IDs sintéticos y resultado de la
+prueba de bloqueo en acta privada, sin payload ni secretos.
 
 ## 2. Preflight del corte productivo
 

@@ -4,11 +4,16 @@ Esta revisión es candidata y privada. La migración `pedidos.0016` crea `PosApi
 
 Antes de emitir una credencial, aprobar la matriz `Sucursal POS UUID/clave` ↔ `Edge UUID` ↔ `SucursalCliente.id` ↔ `Branch central`. No asociar por nombre. Una sucursal sin correspondencia permanece pendiente; el comando no deriva ninguna identidad del nombre.
 
+Desde `pedidos.0017`, toda credencial **nueva** exige `--pos-branch-id` (UUID de sucursal POS). El Edge envía `X-POS-Edge-ID` y `X-POS-Branch-ID` en cada GET; el servidor los coteja con la credencial y devuelve 403 si faltan o difieren. Son declaraciones ligadas al bearer, no autenticación de dispositivo independiente: un bearer robado sigue siendo un secreto crítico. Las credenciales E2E emitidas antes de `0017` conservan `pos_branch_id=NULL` para transición; no se aprueban para Production 1.0 ni se reemiten sin matriz verificada. Sólo Arboledas se habilita inicialmente.
+
+`POS_V2_REQUIRE_BRANCH_BINDING=True` es obligatorio en `DJANGO_ENV=production` y rechaza por 403 las credenciales v2 antiguas sin UUID POS. El laboratorio previo debe rotar sus credenciales y adaptar headers antes de ejecutar este candidato con perfil productivo; v1 continúa separado para rollback.
+
 En Linux, con el entorno de laboratorio y una carpeta fuera del release/repo, privada `0700` y propiedad del operador:
 
 ```bash
 python manage.py issue_pos_v2_credential \
-  --edge-id '<EDGE_UUID_APROBADO>' --sucursal-id '<ID_PEDIDOS_APROBADO>' \
+  --edge-id '<EDGE_UUID_APROBADO>' --pos-branch-id '<POS_BRANCH_UUID_ARBOLEDAS>' \
+  --sucursal-id '<ID_PEDIDOS_APROBADO>' \
   --output '/home/deploy/secrets-lab/pedidos-edge-01.token' \
   --reference 'LAB-CAMBIO-001' --expires-days 30 --confirm
 ```
@@ -19,7 +24,8 @@ Rotación inmediata, con el mismo Edge y sucursal:
 
 ```bash
 python manage.py issue_pos_v2_credential \
-  --edge-id '<EDGE_UUID_APROBADO>' --sucursal-id '<ID_PEDIDOS_APROBADO>' \
+  --edge-id '<EDGE_UUID_APROBADO>' --pos-branch-id '<POS_BRANCH_UUID_ARBOLEDAS>' \
+  --sucursal-id '<ID_PEDIDOS_APROBADO>' \
   --rotate-from '<CREDENTIAL_ID_ANTERIOR>' \
   --output '/home/deploy/secrets-lab/pedidos-edge-01-nuevo.token' \
   --reference 'LAB-CAMBIO-002' --confirm

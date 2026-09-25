@@ -7,9 +7,15 @@ Estado: candidato de integración privado sobre `8fad568`; la ruta v1 permanece 
 ```text
 GET /api/v2/pos/pedidos/
 Authorization: Bearer <TOKEN_POS>
+X-POS-Edge-ID: <EDGE_UUID_APROBADO>
+X-POS-Branch-ID: <POS_BRANCH_UUID_APROBADO>
 ```
 
 HTTPS es obligatorio cuando `POS_API_REQUIRE_HTTPS=True`. V2 usa credenciales propias, guardadas sólo por SHA-256 y ligadas a un UUID de instalación Edge, una `SucursalCliente.id` de tipo sucursal y el scope `orders:v2:read`. Un bearer v1 no concede acceso v2. El parámetro `sucursal_id` es obligatorio: una sucursal ajena a la credencial devuelve 403 `forbidden`; un bearer inválido, vencido o revocado devuelve 401. La allowlist global de [v1](../api_pos_v1.md) permanece sólo para v1. `desde` es inclusivo y `hasta` exclusivo; ambos son timestamps ISO 8601 con zona. La ventana solicitada tiene máximo configurable de 31 días por defecto. Sólo se entregan pedidos `confirmado`, sin borrado lógico.
+
+Las credenciales nuevas desde `pedidos.0017` fijan además el UUID exacto de sucursal POS. Ambos headers de identidad deben coincidir con la credencial o se devuelve 403. No son un segundo factor: la posesión del bearer sigue siendo la autorización real. Las credenciales antiguas de laboratorio con `pos_branch_id=NULL` se conservan sólo para transición; no habilitar Production 1.0 con ellas. Arboledas es la única sucursal inicial aprobable y el mapeo no se deduce de nombres.
+
+En perfil productivo `POS_V2_REQUIRE_BRANCH_BINDING=True` es obligatorio; un bearer v2 anterior sin ese vínculo recibe 403 hasta rotarse con la identidad aprobada. La ruta v1 conserva su comportamiento para transición/rollback.
 
 La respuesta conserva los campos v1 y añade `codigo_publico` (UUID único del modelo `Pedido`) a cada pedido. El POS debe acordar y persistir este UUID como identidad remota estable tras migrar su consumidor; `id` entero se conserva por compatibilidad de la forma de respuesta, y el folio derivado de fecha no es una clave de identidad. Los ítems conservan `id` entero en esta versión. Es necesaria una correspondencia verificada entre `SucursalCliente.id` entero de Pedidos y el UUID/clave de sucursal del POS; no inferirla por nombre.
 
@@ -63,6 +69,8 @@ La API mantiene `Cache-Control: no-store` y `X-Request-ID` también en errores. 
 El POS debe guardar cada página completa como operaciones locales idempotentes y confirmar su transacción local antes de persistir `next_cursor`. Debe tener restricción única para la identidad remota acordada. Repetir una página antes de avanzar el cursor no debe crear duplicados.
 
 Ante 410, el Edge debe detener la sincronización de esa ventana, conservar su cursor y último punto local confirmado, registrar sólo metadatos no sensibles y solicitar conciliación supervisada. No debe saltar automáticamente al presente, convertir 410 en «sin pedidos» ni borrar datos locales. El operador compara identificadores de pedidos locales con el manifiesto/export verificado fuera del VPS o con el registro autorizado de recepción, resuelve la brecha y sólo entonces fija una nueva ventana/cursor. La API no puede reconstruir pedidos purgados.
+
+El procedimiento ejecutable candidato de baseline, acuse, custodia y cierre auditado está en [retention_gap_recovery_v1.md](retention_gap_recovery_v1.md). No existe endpoint web que confirme por URL. Hasta que agente3 pruebe la importación y checkpoint transaccional, la recuperación queda como gate abierto de producción.
 
 La política de retención permite que un pedido salga del VPS tras descarga manual confirmada **antes** de cumplir 30 días, o al llegar a 30 días desde su primera recepción. Por eso 31 días es sólo el máximo de tamaño de una consulta, **no** una promesa de disponibilidad histórica durante 31 días ni de 30 días completos. Un Edge sin conexión más de 30 días necesita el procedimiento de conciliación aun cuando vuelva a autenticarse correctamente. La idempotencia local no debe depender de que el servidor conserve pedidos indefinidamente.
 

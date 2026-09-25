@@ -33,6 +33,25 @@ paths:
           schema:
             type: string
             pattern: '^[A-Za-z0-9._-]{1,64}$'
+        - name: X-POS-Edge-ID
+          in: header
+          required: false
+          description: >-
+            Obligatorio para credenciales nuevas con pos_branch_id. UUID de
+            instalación Edge que debe coincidir con la credencial. No es un
+            segundo factor ni impide el uso de un bearer robado.
+          schema:
+            type: string
+            format: uuid
+        - name: X-POS-Branch-ID
+          in: header
+          required: false
+          description: >-
+            Obligatorio para credenciales nuevas con pos_branch_id. UUID de
+            sucursal POS aprobado; nunca se deriva del nombre.
+          schema:
+            type: string
+            format: uuid
         - name: desde
           in: query
           required: true
@@ -111,7 +130,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorRespuesta'
         '403':
-          description: Scope ausente o sucursal ajena a la credencial Edge.
+          description: Scope ausente, sucursal ajena o identidad Edge/POS distinta de la credencial.
           content:
             application/json:
               schema:

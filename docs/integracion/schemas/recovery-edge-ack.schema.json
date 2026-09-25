@@ -1,0 +1,19 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Pedidos POS v2 recovery Edge acknowledgement",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["recovery_id", "edge_id", "pos_branch_id", "sucursal_cliente_id", "snapshot_sha256", "orders_sha256", "old_cursor_sha256", "received_order_ids", "unresolved_order_ids"],
+  "properties": {
+    "recovery_id": {"type": "string", "format": "uuid"},
+    "edge_id": {"type": "string", "format": "uuid"},
+    "pos_branch_id": {"type": "string", "format": "uuid"},
+    "sucursal_cliente_id": {"type": "integer", "minimum": 1},
+    "snapshot_sha256": {"$ref": "#/$defs/sha256"},
+    "orders_sha256": {"$ref": "#/$defs/sha256"},
+    "old_cursor_sha256": {"$ref": "#/$defs/sha256"},
+    "received_order_ids": {"type": "array", "uniqueItems": true, "items": {"type": "string", "format": "uuid"}},
+    "unresolved_order_ids": {"type": "array", "uniqueItems": true, "items": {"type": "string", "format": "uuid"}}
+  },
+  "$defs": {"sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"}}
+}

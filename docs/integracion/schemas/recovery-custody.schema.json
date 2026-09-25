@@ -1,0 +1,12 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Pedidos POS v2 recovery custody evidence",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["recovery_id", "restored_from_archive_ids", "already_on_edge_ids"],
+  "properties": {
+    "recovery_id": {"type": "string", "format": "uuid"},
+    "restored_from_archive_ids": {"type": "array", "uniqueItems": true, "items": {"type": "string", "format": "uuid"}},
+    "already_on_edge_ids": {"type": "array", "uniqueItems": true, "items": {"type": "string", "format": "uuid"}}
+  }
+}

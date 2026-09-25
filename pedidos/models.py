@@ -55,6 +55,8 @@ class PosApiCredential(models.Model):
 
     credential_id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     edge_id = models.UUIDField(db_index=True)
+    # Identidad de sucursal del POS; NULL sólo para credenciales E2E anteriores.
+    pos_branch_id = models.UUIDField(null=True, blank=True, db_index=True)
     sucursal_cliente = models.ForeignKey(
         SucursalCliente, on_delete=models.PROTECT, related_name="credenciales_pos_v2"
     )
@@ -77,6 +79,41 @@ class PosApiCredential(models.Model):
 
     def __str__(self):
         return str(self.credential_id)
+
+
+class PosRetentionRecovery(models.Model):
+    """Acta técnica de una conciliación; nunca contiene cuerpos de pedidos."""
+
+    class Estado(models.TextChoices):
+        PENDIENTE = "pendiente", "Pendiente de conciliación Edge"
+        MANUAL = "intervencion_manual", "Pérdida o discrepancia por resolver"
+        COMPLETADA = "completada", "Conciliación verificada"
+
+    recovery_id = models.UUIDField(primary_key=True, editable=False)
+    edge_id = models.UUIDField(db_index=True)
+    pos_branch_id = models.UUIDField()
+    sucursal_cliente = models.ForeignKey(
+        SucursalCliente, on_delete=models.PROTECT, related_name="recuperaciones_pos_v2"
+    )
+    desde = models.DateTimeField()
+    hasta = models.DateTimeField()
+    old_cursor_sha256 = models.CharField(max_length=64)
+    purge_epoch = models.CharField(max_length=64)
+    snapshot_sha256 = models.CharField(max_length=64)
+    orders_sha256 = models.CharField(max_length=64)
+    orders_count = models.PositiveIntegerField()
+    tombstones_sha256 = models.CharField(max_length=64)
+    tombstones_count = models.PositiveIntegerField()
+    estado = models.CharField(max_length=24, choices=Estado.choices, default=Estado.PENDIENTE)
+    referencia_apertura = models.CharField(max_length=120)
+    operador_apertura = models.CharField(max_length=64)
+    referencia_cierre = models.CharField(max_length=120, blank=True)
+    operador_cierre = models.CharField(max_length=64, blank=True)
+    edge_ack_sha256 = models.CharField(max_length=64, blank=True)
+    custody_sha256 = models.CharField(max_length=64, blank=True)
+    freeze_evidence_sha256 = models.CharField(max_length=64, blank=True)
+    creada_en = models.DateTimeField(auto_now_add=True)
+    cerrada_en = models.DateTimeField(null=True, blank=True)
 
 
 class Producto(models.Model):

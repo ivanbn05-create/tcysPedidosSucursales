@@ -1,0 +1,25 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Pedidos POS v2 recovery manifest",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["version", "recovery_id", "edge_id", "pos_branch_id", "sucursal_cliente_id", "desde", "hasta", "old_cursor_sha256", "purge_epoch", "orders_sha256", "orders_count", "tombstones_sha256", "tombstones_count", "next_desde", "next_cursor"],
+  "properties": {
+    "version": {"const": "pedidos-recovery-v1"},
+    "recovery_id": {"type": "string", "format": "uuid"},
+    "edge_id": {"type": "string", "format": "uuid"},
+    "pos_branch_id": {"type": "string", "format": "uuid"},
+    "sucursal_cliente_id": {"type": "integer", "minimum": 1},
+    "desde": {"type": "string", "format": "date-time"},
+    "hasta": {"type": "string", "format": "date-time"},
+    "old_cursor_sha256": {"$ref": "#/$defs/sha256"},
+    "purge_epoch": {"$ref": "#/$defs/sha256"},
+    "orders_sha256": {"$ref": "#/$defs/sha256"},
+    "orders_count": {"type": "integer", "minimum": 0, "maximum": 5000},
+    "tombstones_sha256": {"$ref": "#/$defs/sha256"},
+    "tombstones_count": {"type": "integer", "minimum": 0},
+    "next_desde": {"type": "string", "format": "date-time"},
+    "next_cursor": {"type": "null"}
+  },
+  "$defs": {"sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"}}
+}

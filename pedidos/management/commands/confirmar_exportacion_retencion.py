@@ -1,7 +1,13 @@
+import logging
+
 from django.core.management.base import BaseCommand, CommandError
 
 from pedidos.models import ExportacionRetencion
 from pedidos.retencion import confirmar_exportacion
+from pedidos.pos_recovery import operator_name
+
+
+logger = logging.getLogger(__name__)
 
 
 class Command(BaseCommand):
@@ -27,3 +33,5 @@ class Command(BaseCommand):
         except (ExportacionRetencion.DoesNotExist, OSError, ValueError) as exc:
             raise CommandError(str(exc)) from exc
         self.stdout.write(f"lote={lote.pk} estado={lote.estado} archivo_local_eliminado=si")
+        logger.info("retencion_confirm operacion=%s operador_os=%s lote=%s estado=%s",
+                    opciones["referencia"], operator_name(), lote.pk, lote.estado)

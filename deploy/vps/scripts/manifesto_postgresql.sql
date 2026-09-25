@@ -66,16 +66,30 @@ WHERE estado = 'confirmado' AND NOT eliminado
 GROUP BY sucursal_cliente_id
 ORDER BY sucursal_cliente_id;
 
-SELECT n.nspname AS esquema, c.relname AS tabla, con.conname AS fk,
-       con.convalidated AS validada,
+SELECT n.nspname AS esquema, c.relname AS tabla, con.conname AS constraint_nombre,
+       con.contype AS tipo, con.convalidated AS validada,
        pg_get_constraintdef(con.oid) AS definicion
 FROM pg_constraint con
 JOIN pg_class c ON c.oid = con.conrelid
 JOIN pg_namespace n ON n.oid = c.relnamespace
-WHERE con.contype = 'f'
-  AND n.nspname NOT LIKE 'pg_%'
+WHERE n.nspname NOT LIKE 'pg_%'
   AND n.nspname <> 'information_schema'
 ORDER BY n.nspname, c.relname, con.conname;
+
+-- PK, unique, FK y check quedan cubiertos arriba; además comprobar índices
+-- concretos y su estado. No contiene filas de negocio ni expresiones de datos.
+SELECT n.nspname AS esquema, tabla.relname AS tabla,
+       indice.relname AS indice, pi.indisprimary AS primaria,
+       pi.indisunique AS unica, pi.indisvalid AS valida,
+       pi.indisready AS lista, pi.indislive AS viva,
+       pg_get_indexdef(indice.oid) AS definicion
+FROM pg_index pi
+JOIN pg_class tabla ON tabla.oid = pi.indrelid
+JOIN pg_class indice ON indice.oid = pi.indexrelid
+JOIN pg_namespace n ON n.oid = tabla.relnamespace
+WHERE n.nspname NOT LIKE 'pg_%'
+  AND n.nspname <> 'information_schema'
+ORDER BY n.nspname, tabla.relname, indice.relname;
 
 -- last_value puede ser NULL si el rol carece de permiso: eso deja incompleta
 -- la verificación y exige repetirla con un rol autorizado, sin usar nextval.

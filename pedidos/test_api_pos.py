@@ -649,6 +649,71 @@ class PosApiV2Tests(TestCase):
         self.credential.save(update_fields=["scopes", "revoked_at", "active"])
         self.assertEqual(self._get().status_code, 401)
 
+    def test_mapeo_explicito_edge_y_sucursal_pos(self):
+        pos_branch_id = uuid.uuid4()
+        self.credential.pos_branch_id = pos_branch_id
+        self.credential.save(update_fields=["pos_branch_id"])
+        self.assertEqual(self._get().status_code, 403)
+        headers = {
+            "HTTP_X_POS_EDGE_ID": str(self.edge_id),
+            "HTTP_X_POS_BRANCH_ID": str(pos_branch_id),
+        }
+        self.assertEqual(self.client.get(
+            self.url, data=self._params(), HTTP_AUTHORIZATION=f"Bearer {TOKEN}", **headers,
+        ).status_code, 200)
+        headers["HTTP_X_POS_EDGE_ID"] = str(uuid.uuid4())
+        self.assertEqual(self.client.get(
+            self.url, data=self._params(), HTTP_AUTHORIZATION=f"Bearer {TOKEN}", **headers,
+        ).status_code, 403)
+        headers["HTTP_X_POS_EDGE_ID"] = str(self.edge_id)
+        headers["HTTP_X_POS_BRANCH_ID"] = str(uuid.uuid4())
+        self.assertEqual(self.client.get(
+            self.url, data=self._params(), HTTP_AUTHORIZATION=f"Bearer {TOKEN}", **headers,
+        ).status_code, 403)
+
+    @override_settings(POS_V2_REQUIRE_BRANCH_BINDING=True)
+    def test_perfil_productivo_rechaza_credencial_legacy_sin_sucursal_pos(self):
+        self.assertIsNone(self.credential.pos_branch_id)
+        self.assertEqual(self._get().status_code, 403)
+
+    def test_rotacion_ligada_a_pos_conserva_cursor_previo(self):
+        pos_branch_id = uuid.uuid4()
+        self.credential.pos_branch_id = pos_branch_id
+        self.credential.save(update_fields=["pos_branch_id"])
+        self._pedido()
+        segundo = self._pedido()
+        headers = {
+            "HTTP_X_POS_EDGE_ID": str(self.edge_id),
+            "HTTP_X_POS_BRANCH_ID": str(pos_branch_id),
+        }
+        primera = self.client.get(
+            self.url, data=self._params(limite="1"),
+            HTTP_AUTHORIZATION=f"Bearer {TOKEN}", **headers,
+        )
+        cursor = primera.json()["page"]["next_cursor"]
+        self.assertEqual(primera.status_code, 200)
+        self.assertIsNotNone(cursor)
+        self.credential.active = False
+        self.credential.revoked_at = timezone.now()
+        self.credential.save(update_fields=["active", "revoked_at"])
+        nuevo_token = "token-rotacion-pos-abcdefghijklmnopqrstuvwxyz-0123456789"
+        PosApiCredential.objects.create(
+            edge_id=self.edge_id, pos_branch_id=pos_branch_id,
+            sucursal_cliente=self.sucursal,
+            token_sha256=hashlib.sha256(nuevo_token.encode()).hexdigest(),
+            scopes=["orders:v2:read"], rotated_from=self.credential,
+        )
+        self.assertEqual(self.client.get(
+            self.url, data=self._params(limite="1", cursor=cursor),
+            HTTP_AUTHORIZATION=f"Bearer {TOKEN}", **headers,
+        ).status_code, 401)
+        resumed = self.client.get(
+            self.url, data=self._params(limite="1", cursor=cursor),
+            HTTP_AUTHORIZATION=f"Bearer {nuevo_token}", **headers,
+        )
+        self.assertEqual(resumed.status_code, 200)
+        self.assertEqual(resumed.json()["data"][0]["codigo_publico"], str(segundo.codigo_publico))
+
     def test_credencial_expirada_y_rotacion_independiente_de_v1(self):
         self.credential.expires_at = timezone.now() - timedelta(seconds=1)
         self.credential.save(update_fields=["expires_at"])

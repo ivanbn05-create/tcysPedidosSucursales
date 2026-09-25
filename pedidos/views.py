@@ -409,7 +409,10 @@ def get_configuracion():
 
     config = cache.get(CONFIGURACION_CACHE_KEY)
     if config is None:
-        config = Configuracion.get_solo()
+        # Una lectura pública nunca debe crear el singleton. Si falta por un
+        # despliegue inicial, se muestran los valores por defecto en memoria;
+        # la creación corresponde a una operación administrativa explícita.
+        config = Configuracion.objects.first() or Configuracion()
         cache.set(CONFIGURACION_CACHE_KEY, config, CONFIGURACION_CACHE_TIMEOUT)
     return config
 

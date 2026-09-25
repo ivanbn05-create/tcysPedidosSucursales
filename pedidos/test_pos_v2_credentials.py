@@ -8,6 +8,7 @@ from pathlib import Path
 from unittest import skipUnless
 
 from django.core.management import call_command
+from django.core.management.base import CommandError
 from django.test import TestCase
 
 from .models import PosApiCredential, SucursalCliente
@@ -21,6 +22,7 @@ class PosV2CredentialCommandTests(TestCase):
             tipo=SucursalCliente.Tipo.SUCURSAL,
         )
         self.edge_id = uuid.uuid4()
+        self.pos_branch_id = uuid.uuid4()
 
     def test_emision_rotacion_y_revocacion_sin_imprimir_bearer(self):
         with tempfile.TemporaryDirectory(prefix="tcys-pos-v2-") as private_dir:
@@ -29,6 +31,7 @@ class PosV2CredentialCommandTests(TestCase):
             output = StringIO()
             call_command(
                 "issue_pos_v2_credential", edge_id=str(self.edge_id),
+                pos_branch_id=str(self.pos_branch_id),
                 sucursal_id=self.branch.pk, output=str(first_file),
                 reference="LAB-ISSUE-001", confirm=True, stdout=output,
             )
@@ -39,12 +42,23 @@ class PosV2CredentialCommandTests(TestCase):
                 first.token_sha256, hashlib.sha256(first_token.encode("utf-8")).hexdigest()
             )
             self.assertEqual(first.scopes, ["orders:v2:read"])
+            self.assertEqual(first.pos_branch_id, self.pos_branch_id)
             self.assertNotIn(first_token, output.getvalue())
+
+            with self.assertRaises(CommandError):
+                call_command(
+                    "issue_pos_v2_credential", edge_id=str(self.edge_id),
+                    pos_branch_id=str(uuid.uuid4()), sucursal_id=self.branch.pk,
+                    output=str(Path(private_dir) / "mapeo-ajeno.token"),
+                    reference="LAB-MISMATCH-002", rotate_from=str(first.pk),
+                    confirm=True, stdout=StringIO(),
+                )
 
             second_file = Path(private_dir) / "segunda.token"
             output = StringIO()
             call_command(
                 "issue_pos_v2_credential", edge_id=str(self.edge_id),
+                pos_branch_id=str(self.pos_branch_id),
                 sucursal_id=self.branch.pk, output=str(second_file),
                 reference="LAB-ROTATE-002", rotate_from=str(first.pk),
                 confirm=True, stdout=output,

@@ -21,6 +21,7 @@ class Command(BaseCommand):
 
     def add_arguments(self, parser):
         parser.add_argument("--edge-id", required=True)
+        parser.add_argument("--pos-branch-id", required=True)
         parser.add_argument("--sucursal-id", required=True, type=int)
         parser.add_argument("--output", required=True)
         parser.add_argument("--reference", required=True)
@@ -40,6 +41,7 @@ class Command(BaseCommand):
             raise CommandError("--expires-days debe estar entre 1 y 365.")
         try:
             edge_id = uuid.UUID(options["edge_id"])
+            pos_branch_id = uuid.UUID(options["pos_branch_id"])
             previous_id = uuid.UUID(options["rotate_from"]) if options["rotate_from"] else None
         except ValueError as exc:
             raise CommandError("Los UUID de Edge y credencial deben ser válidos.") from exc
@@ -83,6 +85,8 @@ class Command(BaseCommand):
                     ).first()
                     if previous is None:
                         raise CommandError("Credencial previa activa del mismo Edge/sucursal no encontrada.")
+                    if previous.pos_branch_id not in (None, pos_branch_id):
+                        raise CommandError("La rotación no puede cambiar la sucursal POS; requiere revisión del mapeo.")
                 elif PosApiCredential.objects.filter(
                     edge_id=edge_id, sucursal_cliente=branch,
                     active=True, revoked_at__isnull=True,
@@ -92,6 +96,7 @@ class Command(BaseCommand):
                 bearer = secrets.token_urlsafe(48)
                 credential = PosApiCredential.objects.create(
                     edge_id=edge_id,
+                    pos_branch_id=pos_branch_id,
                     sucursal_cliente=branch,
                     token_sha256=hashlib.sha256(bearer.encode("utf-8")).hexdigest(),
                     scopes=["orders:v2:read"],

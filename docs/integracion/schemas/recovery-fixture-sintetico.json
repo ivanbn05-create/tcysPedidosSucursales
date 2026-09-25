@@ -1,0 +1,35 @@
+{
+  "manifest": {
+    "version": "pedidos-recovery-v1",
+    "recovery_id": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+    "edge_id": "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+    "pos_branch_id": "cccccccc-cccc-4ccc-8ccc-cccccccccccc",
+    "sucursal_cliente_id": 17,
+    "desde": "2026-09-24T00:00:00.000000Z",
+    "hasta": "2026-09-25T00:00:00.000000Z",
+    "old_cursor_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+    "purge_epoch": "1111111111111111111111111111111111111111111111111111111111111111",
+    "orders_sha256": "2222222222222222222222222222222222222222222222222222222222222222",
+    "orders_count": 1,
+    "tombstones_sha256": "3333333333333333333333333333333333333333333333333333333333333333",
+    "tombstones_count": 1,
+    "next_desde": "2026-09-25T00:00:00.000000Z",
+    "next_cursor": null
+  },
+  "edge_ack": {
+    "recovery_id": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+    "edge_id": "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+    "pos_branch_id": "cccccccc-cccc-4ccc-8ccc-cccccccccccc",
+    "sucursal_cliente_id": 17,
+    "snapshot_sha256": "4444444444444444444444444444444444444444444444444444444444444444",
+    "orders_sha256": "2222222222222222222222222222222222222222222222222222222222222222",
+    "old_cursor_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+    "received_order_ids": ["dddddddd-dddd-4ddd-8ddd-dddddddddddd", "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee"],
+    "unresolved_order_ids": []
+  },
+  "custody": {
+    "recovery_id": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+    "restored_from_archive_ids": ["eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee"],
+    "already_on_edge_ids": []
+  }
+}

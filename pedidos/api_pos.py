@@ -127,6 +127,15 @@ def _authenticate_v2(request):
         or not credential.sucursal_cliente.activa
     ):
         return None, (), "forbidden"
+    if getattr(settings, "POS_V2_REQUIRE_BRANCH_BINDING", False) and credential.pos_branch_id is None:
+        return None, (), "forbidden"
+    # Los headers son una declaración de identidad, no una prueba adicional
+    # de posesión. La autorización real sigue siendo el bearer acotado.
+    if credential.pos_branch_id is not None:
+        if request.headers.get("X-POS-Edge-ID") != str(credential.edge_id) or (
+            request.headers.get("X-POS-Branch-ID") != str(credential.pos_branch_id)
+        ):
+            return None, (), "forbidden"
     PosApiCredential.objects.filter(pk=credential.pk).update(last_used_at=now)
     return digest[:24], (credential.sucursal_cliente_id,), None
 

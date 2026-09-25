@@ -251,6 +251,13 @@ POS_API_RATE_LIMIT_PER_MINUTE = config(
 POS_API_REQUIRE_HTTPS = config(
     "POS_API_REQUIRE_HTTPS", default=IS_PRODUCTION, cast=bool
 )
+POS_V2_REQUIRE_BRANCH_BINDING = config(
+    "POS_V2_REQUIRE_BRANCH_BINDING", default=IS_PRODUCTION, cast=bool
+)
+if IS_PRODUCTION and not POS_V2_REQUIRE_BRANCH_BINDING:
+    raise ImproperlyConfigured(
+        "POS_V2_REQUIRE_BRANCH_BINDING es obligatorio en produccion."
+    )
 if not 1 <= POS_API_DEFAULT_PAGE_SIZE <= POS_API_MAX_PAGE_SIZE <= 1000:
     raise ImproperlyConfigured(
         "Los limites de pagina de la API POS deben cumplir 1 <= default <= max <= 1000."

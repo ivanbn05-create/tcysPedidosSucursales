@@ -1707,6 +1707,13 @@ class RestriccionHorariaTests(TestCase):
         for key in ("hora_inicio", "hora_fin", "hora_actual", "dentro_horario", "mensaje"):
             self.assertIn(key, data)
 
+    def test_get_publico_horarios_no_crea_configuracion(self):
+        Configuracion.objects.all().delete()
+        cache.delete(CONFIGURACION_CACHE_KEY)
+        response = self.client.get("/api/horarios/")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(Configuracion.objects.count(), 0)
+
     def test_admin_actualiza_horarios_desde_panel_configuracion(self):
         self.assertTrue(self.client.login(username="juancarlos", password="TocayosMO2026"))
         response = self.client.post(
