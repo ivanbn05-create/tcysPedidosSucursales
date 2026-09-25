@@ -70,6 +70,30 @@ acuse privado después de confirmar la transacción local. El acuse enumera los
 UUID finales presentes y los irresueltos; la especificación de archivos y
 fixtures sintéticos está en `docs/integracion/schemas/`.
 
+Antes del primer ensayo, el operador registra la **clave pública Ed25519** del
+Edge con `registrar_clave_firma_edge_v2 --key-id ... --edge-id ...
+--pos-branch-id ... --sucursal-id ... --public-key-file ... --referencia ...
+--confirm`. El archivo de clave pública sigue siendo privado `0600` para el
+procedimiento; la clave **privada** se genera y permanece en el Edge, nunca en
+Pedidos, Git ni el acta. El registro exige una credencial v2 vigente del mismo
+alcance; la clave se vincula a los tres IDs exactos y se audita con operador OS
+y referencia. La rotación del bearer no rota la clave de firma ni el cursor.
+Una clave comprometida se revoca con `revocar_clave_firma_edge_v2 --key-id ...
+--referencia ... --confirm`; ningún acuse nuevo bajo ella se acepta.
+
+El archivo de acuse es `{ "payload": {...}, "signature_b64": "..." }` según
+`recovery-edge-ack.schema.json`. El Edge firma **sólo** los bytes UTF-8 de
+`json.dumps(payload, ensure_ascii=False, sort_keys=True,
+separators=(",", ":"))`; `signature_b64` es Ed25519 en base64url **sin
+padding**. El payload lleva el dominio `pedidos.edge.recovery_ack.v1`,
+`key_id`, `nonce` UUID nuevo, `issued_at` con zona, IDs de recuperación,
+Edge/POS/Pedidos, hashes de baseline/órdenes/cursor previo y UUID recibidos/no
+resueltos. No se admiten campos extra, una clave ajena/revocada, firma
+inválida, fecha anterior a la apertura (tolerancia de 5 minutos), fecha futura
+superior a 5 minutos ni reutilización de nonce después de un intento manual.
+El Edge debe conservar el acuse firmado en su propia custodia; el servidor
+guarda `key_id`, nonce y SHA-256, no el payload de pedidos ni la clave privada.
+
 ## Cerrar sin pérdida silenciosa
 
 ```bash
@@ -86,7 +110,8 @@ python manage.py cerrar_recuperacion_pos_v2 \
   --writers-frozen --confirm
 ```
 
-El comando compara SHA de los tres archivos, identidad Edge/sucursal,
+El comando verifica firma y vínculo exacto de clave/Edge/sucursal, luego
+compara SHA de los tres archivos, identidad Edge/sucursal,
 ventana, cursor previo, todos los UUID aún válidos y purgados, acuse Edge,
 custodia y estado actual de pedidos/purga. Si falta/sobra un UUID en el Edge,
 hay irresueltos, un tombstone sin archivo o prueba de presencia previa, o
@@ -98,11 +123,11 @@ registrar en el Edge `next_cursor=null`, `desde=hasta` anterior, con el
 escribe el checkpoint del POS. El cierre repetido con idénticas evidencias es
 idempotente; con otras se rechaza.
 
-La prueba de cobertura por UUID y SHA **no autentica criptográficamente** al
-firmante de las actas ni prueba por sí sola que una importación externa sea
-completa. El canal de entrega, hashes leídos en destino, custodia y aprobación
-humana son gates operativos obligatorios. No se permite afirmar recuperación
-exitosa con sólo flags o con el ledger de tombstones. Tras el cierre se
+La firma autentica al Edge registrado, pero **no prueba por sí sola** que una
+importación externa sea completa o que la clave privada no esté comprometida.
+El canal de entrega, hashes leídos en destino, custodia y aprobación humana
+son gates operativos obligatorios. No se permite afirmar recuperación exitosa
+con sólo flags o con el ledger de tombstones. Tras el cierre se
 retira el ZIP transitorio del VPS y se aplica la política de retención a todas
 sus copias; se conserva el acta técnica y el hash en custodia.
 Si el caso queda en `intervencion_manual`, el ZIP tampoco puede quedar

@@ -81,6 +81,29 @@ class PosApiCredential(models.Model):
         return str(self.credential_id)
 
 
+class PosEdgeSigningKey(models.Model):
+    """Public key for an Edge's signed recovery acknowledgements.
+
+    The private key never enters Pedidos.  This identity is independent of
+    bearer rotation and is bound to one exact Edge/POS/Pedidos mapping.
+    """
+
+    key_id = models.UUIDField(primary_key=True, editable=False)
+    edge_id = models.UUIDField(db_index=True)
+    pos_branch_id = models.UUIDField()
+    sucursal_cliente = models.ForeignKey(
+        SucursalCliente, on_delete=models.PROTECT, related_name="claves_firma_pos_v2"
+    )
+    public_key_b64 = models.CharField(max_length=43, unique=True)
+    active = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    issued_reference = models.CharField(max_length=120)
+    issued_operator = models.CharField(max_length=64)
+    revoked_at = models.DateTimeField(null=True, blank=True)
+    revocation_reference = models.CharField(max_length=120, blank=True)
+    revoked_operator = models.CharField(max_length=64, blank=True)
+
+
 class PosRetentionRecovery(models.Model):
     """Acta técnica de una conciliación; nunca contiene cuerpos de pedidos."""
 
@@ -110,6 +133,11 @@ class PosRetentionRecovery(models.Model):
     referencia_cierre = models.CharField(max_length=120, blank=True)
     operador_cierre = models.CharField(max_length=64, blank=True)
     edge_ack_sha256 = models.CharField(max_length=64, blank=True)
+    edge_ack_nonce = models.UUIDField(null=True, blank=True)
+    edge_ack_key = models.ForeignKey(
+        PosEdgeSigningKey, null=True, blank=True, on_delete=models.PROTECT,
+        related_name="recuperaciones_firmadas",
+    )
     custody_sha256 = models.CharField(max_length=64, blank=True)
     freeze_evidence_sha256 = models.CharField(max_length=64, blank=True)
     creada_en = models.DateTimeField(auto_now_add=True)

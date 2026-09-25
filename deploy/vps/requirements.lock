@@ -2,11 +2,14 @@
 # Regeneracion documentada en deploy/vps/README.md.
 Django==6.0.8
 asgiref==3.12.1
+cffi==2.1.1
+cryptography==50.0.1
 dj-database-url==2.3.0
 django-axes==8.3.1
 django-otp==1.7.3
 gunicorn==23.0.0
 packaging==26.3
+pycparser==3.0
 psycopg2-binary==2.9.13
 python-decouple==3.8
 sqlparse==0.6.0

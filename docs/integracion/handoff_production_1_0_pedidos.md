@@ -34,23 +34,26 @@ y `2c7c2ac` (rotación LAB01 y cruce POS real). La rama nueva parte **de
   sucursal POS ni sustituye el ID pendiente de Pedidos.
 - Recuperación: comandos `preparar_recuperacion_pos_v2` y
   `cerrar_recuperacion_pos_v2`, acta `PosRetentionRecovery`, ZIP privado,
-  schemas/fixture y [procedimiento](retention_gap_recovery_v1.md). No hay
+  acuse Ed25519 autenticado por clave pública vinculada a Edge/POS/Pedidos,
+  schemas/fixture firmado y [procedimiento](retention_gap_recovery_v1.md). No hay
   endpoint web de confirmación ni avance automático del cursor. Un tombstone
   sin contenido custodio o presencia previa verificable queda
   `intervencion_manual`.
 - Migraciones nuevas: `pedidos.0017_pos_branch_binding` (nullable para E2E
   anterior; exigido por credencial nueva/perfil productivo) y
-  `pedidos.0018_pos_retention_recovery` (metadatos/hashes, no cuerpos).
+  `pedidos.0018_pos_retention_recovery` (metadatos/hashes, no cuerpos),
+  `pedidos.0019_posretentionrecovery_edge_ack_nonce_and_more` (registro de
+  clave pública y nonce/key del acuse; no contiene secretos ni pedidos).
 
 ## Tareas para agente1
 
 1. Revisar y aprobar el protocolo de freeze, el canal privado del ZIP/actas,
-   la custodia de exportaciones y el mecanismo de autenticidad del acuse Edge.
-   SHA de archivo y UUID prueban integridad/cobertura, **no** identidad del
-   firmante ni existencia física de un pedido purgado.
+   la custodia de exportaciones y la ceremonia de clave pública Ed25519.
+   La firma autentica al Edge registrado; no demuestra por sí sola existencia
+   física de un pedido purgado ni sustituye la custodia y revisión humana.
 2. Aportar ID real `SucursalCliente.id` de Arboledas y completar matriz con
    UUID POS/Edge/Central, sin inferir por nombre. No emitir bearer real aún.
-3. Ejecutar ensayo Linux PostgreSQL aislado de `0017`/`0018`, tests POSIX
+3. Ejecutar ensayo Linux PostgreSQL aislado de `0017`/`0018`/`0019`, tests POSIX
    nuevos, restore/conteos/FK/índices/secuencias y prueba de cambio durante
    freeze. El ensayo E2E de `625ce98`/`2c7c2ac` **precede** estas migraciones
    y no sustituye su validación.
@@ -64,9 +67,9 @@ y `2c7c2ac` (rotación LAB01 y cruce POS real). La rama nueva parte **de
    desde nombres ni probar IDs alternos.
 2. Implementar importación idempotente del ZIP privado por
    `Pedido.codigo_publico`, validar hashes de ZIP y órdenes, incorporar desde
-   archivo custodio los purgados ausentes, y producir acuse de UUID presentes
-   e irresueltos. El fixture JSON es sintético/ilustrativo; sus hashes no
-   corresponden a un ZIP real.
+   archivo custodio los purgados ausentes, y producir acuse Ed25519 de UUID
+   presentes e irresueltos. El fixture JSON tiene firma sintética válida;
+   sus hashes no corresponden a un ZIP real.
 3. Sólo con acta `completada` y autorización humana, persistir en **una**
    transacción local el nuevo `desde=hasta` anterior, `cursor=null`, ID de
    recuperación y SHA del snapshot. Si no, mantener `RECONCILIACION` y el
@@ -74,17 +77,19 @@ y `2c7c2ac` (rotación LAB01 y cruce POS real). La rama nueva parte **de
 
 ## Pruebas y límites de esta ronda
 
-- Windows, Python **3.13.12** exacto: `manage.py test pedidos` detectó 186:
-  181 pasaron, 5 omitidas por POSIX; dirigidas de API/credencial/recovery sin fallos.
+- Windows, Python **3.13.12** exacto: `manage.py test pedidos` detectó 189:
+  183 pasaron, 6 omitidas por POSIX; dirigidas de API/credencial/recovery sin fallos.
 - `manage.py check`, `makemigrations --check --dry-run`, `pip check` y
-  `verify_lock.py` pasan; lock con 13 paquetes en Windows.
+  `verify_lock.py` pasan; lock con 16 paquetes en Windows.
 - `check --deploy` con valores productivos **ficticios**: sólo `security.W004`
   por HSTS=0. Bandit de código nuevo sin hallazgos; `pip-audit` del lock sin
-  vulnerabilidades conocidas. No se usaron secretos productivos.
+  vulnerabilidades conocidas. Schema Draft 2020-12 y firma del fixture
+  sintético validados. No se usaron secretos productivos.
 - **No ejecutado en esta rama:** tests POSIX de recuperación, migraciones
-  `0017`/`0018` en PostgreSQL real del VPS, E2E nuevo con POS dev.10,
+  `0017`/`0018`/`0019` en PostgreSQL real del VPS, E2E nuevo con POS vigente,
   inventario/dump/restore de la base externa real ni corte. La evidencia
-  Linux previa `625ce98` sólo cubre hasta `0016`.
+  Linux previa `625ce98` sólo cubre hasta `0016`. La clave privada Edge y el
+  ID real de `SucursalCliente` Arboledas aún no tienen aprobación/verificación.
 
 Validación Linux pendiente, **sólo** sobre copia aislada y rol PostgreSQL de
 ensayo con permiso temporal de crear la base de test (revocarlo después):

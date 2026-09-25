@@ -6,14 +6,20 @@ en el VPS. La base del backend central POS es otra base, con rol, secretos,
 backups y ciclo de cambios separados. El staging PostgreSQL local existente no
 demuestra que se haya cortado la base productiva.
 
-Production 1.0 añade `pedidos.0017` (UUID de sucursal POS en credenciales) y
-`pedidos.0018` (acta técnica `retention_gap`). Ambas deben probarse en restore
+Production 1.0 añade `pedidos.0017` (UUID de sucursal POS en credenciales),
+`pedidos.0018` (acta técnica `retention_gap`) y `pedidos.0019` (clave pública
+Ed25519 por Edge/sucursal y metadatos del acuse firmado). Deben probarse en restore
 local aislado y quedar en el manifiesto de migraciones. Las credenciales E2E
 anteriores con `pos_branch_id=NULL` son sólo transición; no emitir ni usar
 una credencial productiva antes de aprobar Arboledas por ID/UUID exactos.
 El ZIP temporal de recuperación contiene pedidos y se incluye en la misma
 política de custodia/retención que los demás artefactos transitorios; el acta
 `PosRetentionRecovery` sólo guarda hashes, identidades y conteos técnicos.
+La clave privada de firma reside exclusivamente en el Edge; no se incluye en
+el dump de Pedidos ni se traslada entre Edge y VPS. La tabla nueva contiene
+sólo la clave pública y su vínculo exacto. En el ensayo comprueba que
+`pedidos.0019` no deja claves activas precreadas y que registrar/revocar
+requiere una referencia/operador, sin imprimir la clave ni un bearer.
 
 Este runbook complementa `deploy.md`, `rollback.md` y `api_pos.md`. No se debe
 usar la fase 6 de `deploy.md` como sustituto del corte de base: su rollback sólo

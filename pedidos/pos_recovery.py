@@ -5,6 +5,8 @@ duradera sólo guarda hashes/conteos. Ningún 410 se convierte automáticamente
 en un checkpoint nuevo.
 """
 
+import base64
+import binascii
 import hashlib
 import io
 import json
@@ -13,8 +15,11 @@ import re
 import stat
 import uuid
 import zipfile
+from datetime import timedelta
 from pathlib import Path
 
+from cryptography.exceptions import InvalidSignature
+from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
 from django.conf import settings
 from django.core.management.base import CommandError
 from django.db import transaction
@@ -27,12 +32,18 @@ from .api_pos import (
     _serialize_pedido,
 )
 from .models import (
-    ItemPedido, Pedido, PedidoPurgado, PosApiCredential, PosRetentionRecovery,
+    ItemPedido, Pedido, PedidoPurgado, PosApiCredential, PosEdgeSigningKey, PosRetentionRecovery,
     SucursalCliente,
 )
 
 SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
+BASE64URL_RE = re.compile(r"^[A-Za-z0-9_-]+$")
 MAX_ORDERS = 5000
+ACK_FIELDS = frozenset({
+    "type", "key_id", "nonce", "issued_at", "recovery_id", "edge_id",
+    "pos_branch_id", "sucursal_cliente_id", "snapshot_sha256", "orders_sha256",
+    "old_cursor_sha256", "received_order_ids", "unresolved_order_ids",
+})
 
 
 def canonical(value):
@@ -194,14 +205,16 @@ def prepare(*, recovery_id, edge_id, pos_branch_id, branch_id, desde, hasta,
         raise CommandError("ID de recuperación reutilizado con datos distintos o archivo ausente.")
     output = _private_file(output, must_exist=False)
     with transaction.atomic():
-        credential = PosApiCredential.objects.filter(
+        credentials = PosApiCredential.objects.filter(
             edge_id=edge_id, pos_branch_id=pos_branch_id,
             sucursal_cliente_id=branch_id, active=True, revoked_at__isnull=True,
         ).filter(
             Q(expires_at__isnull=True) | Q(expires_at__gt=timezone.now())
-        ).first()
-        if (credential is None or not isinstance(credential.scopes, list)
-                or "orders:v2:read" not in credential.scopes):
+        )
+        if not any(
+            isinstance(credential.scopes, list) and "orders:v2:read" in credential.scopes
+            for credential in credentials
+        ):
             raise CommandError("No existe una credencial activa con el mapeo Edge/POS/Pedidos aprobado.")
         branch = SucursalCliente.objects.filter(
             pk=branch_id, tipo=SucursalCliente.Tipo.SUCURSAL, activa=True
@@ -263,6 +276,60 @@ def _uuid_set(value):
     return set(normalized)
 
 
+def _decode_base64url(value, length):
+    if not isinstance(value, str) or not BASE64URL_RE.fullmatch(value):
+        raise CommandError("Codificación del acuse Edge inválida.")
+    try:
+        raw = base64.b64decode(value + "=" * (-len(value) % 4), altchars=b"-_", validate=True)
+    except (binascii.Error, ValueError) as exc:
+        raise CommandError("Codificación del acuse Edge inválida.") from exc
+    if len(raw) != length or base64.urlsafe_b64encode(raw).rstrip(b"=").decode("ascii") != value:
+        raise CommandError("Longitud o codificación del acuse Edge inválida.")
+    return raw
+
+
+def _verified_ack(envelope, record):
+    if not isinstance(envelope, dict) or set(envelope) != {"payload", "signature_b64"}:
+        raise CommandError("Envelope del acuse Edge inválido.")
+    ack = envelope["payload"]
+    if not isinstance(ack, dict) or set(ack) != ACK_FIELDS:
+        raise CommandError("Payload del acuse Edge inválido.")
+    try:
+        key_id = uuid.UUID(ack["key_id"])
+        nonce = uuid.UUID(ack["nonce"])
+        issued_at = _parse_aware_datetime(ack["issued_at"], "issued_at")
+        bound_ids = ("recovery_id", "edge_id", "pos_branch_id")
+        if any(str(uuid.UUID(ack[field])) != ack[field] for field in bound_ids):
+            raise ValueError("UUID no canónico")
+    except (TypeError, AttributeError, ValueError) as exc:
+        raise CommandError("Identidad o fecha del acuse Edge inválida.") from exc
+    if (type(ack["sucursal_cliente_id"]) is not int or ack["sucursal_cliente_id"] < 1
+            or any(not isinstance(ack[field], str) or not SHA256_RE.fullmatch(ack[field])
+                   for field in ("snapshot_sha256", "orders_sha256", "old_cursor_sha256"))
+            or str(key_id) != ack["key_id"] or str(nonce) != ack["nonce"]
+            or issued_at < record.creada_en - timedelta(minutes=5)
+            or issued_at > timezone.now() + timedelta(minutes=5)):
+        raise CommandError("Acuse Edge fuera de la recuperación o del tiempo permitido.")
+    if ack["type"] != "pedidos.edge.recovery_ack.v1":
+        raise CommandError("Tipo de acuse Edge no admitido.")
+    key = PosEdgeSigningKey.objects.filter(
+        pk=key_id, edge_id=record.edge_id, pos_branch_id=record.pos_branch_id,
+        sucursal_cliente_id=record.sucursal_cliente_id,
+        active=True, revoked_at__isnull=True,
+    ).first()
+    if key is None:
+        raise CommandError("Clave de firma Edge desconocida, revocada o de otro alcance.")
+    try:
+        Ed25519PublicKey.from_public_bytes(_decode_base64url(key.public_key_b64, 32)).verify(
+            _decode_base64url(envelope["signature_b64"], 64), canonical(ack)
+        )
+    except (InvalidSignature, ValueError) as exc:
+        raise CommandError("Firma del acuse Edge inválida.") from exc
+    if record.edge_ack_nonce == nonce and record.edge_ack_sha256:
+        raise CommandError("Nonce del acuse Edge ya usado; emite un acuse nuevo.")
+    return ack, key, nonce
+
+
 def complete(*, recovery_id, snapshot_file, snapshot_sha256, edge_ack_file,
              edge_ack_sha256, custody_file, custody_sha256, freeze_evidence_sha256,
              reference):
@@ -275,7 +342,7 @@ def complete(*, recovery_id, snapshot_file, snapshot_sha256, edge_ack_file,
     custody_raw = _read_private(custody_file, maximum=10_000_000)
     if digest(snapshot) != snapshot_sha256 or digest(ack_raw) != edge_ack_sha256 or digest(custody_raw) != custody_sha256:
         raise CommandError("Un archivo privado no coincide con su SHA-256 independiente.")
-    ack = _json_bytes(ack_raw)
+    ack_envelope = _json_bytes(ack_raw)
     custody = _json_bytes(custody_raw)
     try:
         with zipfile.ZipFile(io.BytesIO(snapshot)) as archive:
@@ -318,6 +385,7 @@ def complete(*, recovery_id, snapshot_file, snapshot_sha256, edge_ack_file,
                 or len(tombstones) != record.tombstones_count):
             raise CommandError("Manifest o contenido del snapshot no coincide con el acta.")
         order_ids = _uuid_set([row.get("codigo_publico") for row in rows])
+        ack, ack_key, ack_nonce = _verified_ack(ack_envelope, record)
         if (ack.get("recovery_id") != str(recovery_id)
                 or ack.get("edge_id") != str(record.edge_id)
                 or ack.get("pos_branch_id") != str(record.pos_branch_id)
@@ -334,13 +402,16 @@ def complete(*, recovery_id, snapshot_file, snapshot_sha256, edge_ack_file,
             raise CommandError("Acta de custodia no corresponde a la recuperación.")
         if (archive_ids | prior_ids) - tombstones:
             raise CommandError("Acta de custodia contiene UUID fuera de esta brecha.")
-        valid_credential = PosApiCredential.objects.filter(
+        credentials = PosApiCredential.objects.filter(
             edge_id=record.edge_id, pos_branch_id=record.pos_branch_id,
             sucursal_cliente_id=record.sucursal_cliente_id,
             active=True, revoked_at__isnull=True,
-        ).filter(Q(expires_at__isnull=True) | Q(expires_at__gt=timezone.now())).exists()
-        if not valid_credential:
-            raise CommandError("No hay credencial activa para reanudar este Edge.")
+        ).filter(Q(expires_at__isnull=True) | Q(expires_at__gt=timezone.now()))
+        if not any(
+            isinstance(credential.scopes, list) and "orders:v2:read" in credential.scopes
+            for credential in credentials
+        ):
+            raise CommandError("No hay credencial v2 con scope vigente para reanudar este Edge.")
         # Si el conjunto cambió durante el procedimiento, no hay baseline
         # estable y jamás se emite un nuevo punto de continuidad.
         current_rows, current_tombstones = _snapshot(record.sucursal_cliente_id, record.desde, record.hasta)
@@ -357,18 +428,24 @@ def complete(*, recovery_id, snapshot_file, snapshot_sha256, edge_ack_file,
             record.referencia_cierre = reference
             record.operador_cierre = operator_name()
             record.edge_ack_sha256 = edge_ack_sha256
+            record.edge_ack_key = ack_key
+            record.edge_ack_nonce = ack_nonce
             record.custody_sha256 = custody_sha256
             record.freeze_evidence_sha256 = freeze_evidence_sha256
             record.save(update_fields=["estado", "referencia_cierre", "operador_cierre", "edge_ack_sha256",
+                                       "edge_ack_key", "edge_ack_nonce",
                                        "custody_sha256", "freeze_evidence_sha256"])
             return record
         record.estado = PosRetentionRecovery.Estado.COMPLETADA
         record.referencia_cierre = reference
         record.operador_cierre = operator_name()
         record.edge_ack_sha256 = edge_ack_sha256
+        record.edge_ack_key = ack_key
+        record.edge_ack_nonce = ack_nonce
         record.custody_sha256 = custody_sha256
         record.freeze_evidence_sha256 = freeze_evidence_sha256
         record.cerrada_en = timezone.now()
         record.save(update_fields=["estado", "referencia_cierre", "operador_cierre", "edge_ack_sha256",
+                                   "edge_ack_key", "edge_ack_nonce",
                                    "custody_sha256", "freeze_evidence_sha256", "cerrada_en"])
         return record

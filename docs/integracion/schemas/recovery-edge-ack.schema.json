@@ -1,19 +1,30 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "title": "Pedidos POS v2 recovery Edge acknowledgement",
+  "title": "Pedidos POS v2 signed recovery Edge acknowledgement",
   "type": "object",
   "additionalProperties": false,
-  "required": ["recovery_id", "edge_id", "pos_branch_id", "sucursal_cliente_id", "snapshot_sha256", "orders_sha256", "old_cursor_sha256", "received_order_ids", "unresolved_order_ids"],
+  "required": ["payload", "signature_b64"],
   "properties": {
-    "recovery_id": {"type": "string", "format": "uuid"},
-    "edge_id": {"type": "string", "format": "uuid"},
-    "pos_branch_id": {"type": "string", "format": "uuid"},
-    "sucursal_cliente_id": {"type": "integer", "minimum": 1},
-    "snapshot_sha256": {"$ref": "#/$defs/sha256"},
-    "orders_sha256": {"$ref": "#/$defs/sha256"},
-    "old_cursor_sha256": {"$ref": "#/$defs/sha256"},
-    "received_order_ids": {"type": "array", "uniqueItems": true, "items": {"type": "string", "format": "uuid"}},
-    "unresolved_order_ids": {"type": "array", "uniqueItems": true, "items": {"type": "string", "format": "uuid"}}
+    "payload": {
+      "type": "object", "additionalProperties": false,
+      "required": ["type", "key_id", "nonce", "issued_at", "recovery_id", "edge_id", "pos_branch_id", "sucursal_cliente_id", "snapshot_sha256", "orders_sha256", "old_cursor_sha256", "received_order_ids", "unresolved_order_ids"],
+      "properties": {
+        "type": {"const": "pedidos.edge.recovery_ack.v1"},
+        "key_id": {"type": "string", "format": "uuid"},
+        "nonce": {"type": "string", "format": "uuid"},
+        "issued_at": {"type": "string", "format": "date-time"},
+        "recovery_id": {"type": "string", "format": "uuid"},
+        "edge_id": {"type": "string", "format": "uuid"},
+        "pos_branch_id": {"type": "string", "format": "uuid"},
+        "sucursal_cliente_id": {"type": "integer", "minimum": 1},
+        "snapshot_sha256": {"$ref": "#/$defs/sha256"},
+        "orders_sha256": {"$ref": "#/$defs/sha256"},
+        "old_cursor_sha256": {"$ref": "#/$defs/sha256"},
+        "received_order_ids": {"type": "array", "uniqueItems": true, "items": {"type": "string", "format": "uuid"}},
+        "unresolved_order_ids": {"type": "array", "uniqueItems": true, "items": {"type": "string", "format": "uuid"}}
+      }
+    },
+    "signature_b64": {"type": "string", "pattern": "^[A-Za-z0-9_-]{86}$"}
   },
   "$defs": {"sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"}}
 }
