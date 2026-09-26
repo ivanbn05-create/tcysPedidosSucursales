@@ -18,6 +18,7 @@ TARGET='service=tcys_pedidos_local'
 LOCAL_ENV=/home/deploy/secrets/tcysweb-prod-local-db.env
 FREEZE_WRITERS=/home/deploy/secrets/pedidos-freeze-writers.sh
 VERIFY_FROZEN=/home/deploy/secrets/pedidos-verify-writers-frozen.sh
+VERIFY_ORIGIN_FROZEN=/home/deploy/secrets/pedidos-verify-origin-frozen.sh
 RESUME_LOCAL=/home/deploy/secrets/pedidos-resume-local-writers.sh
 RESUME_ORIGIN=/home/deploy/secrets/pedidos-resume-origin-writers.sh
 POS_CHECK=/home/deploy/secrets/pedidos-pos-cutover-check.sh
@@ -41,7 +42,8 @@ for f in "$PGSERVICEFILE" "$PGPASSFILE" "$LOCAL_ENV"; do
   test -f "$f" && test ! -L "$f" && test -r "$f"
   test "$(stat -c '%a:%U' "$f")" = '600:deploy'
 done
-for f in "$FREEZE_WRITERS" "$VERIFY_FROZEN" "$RESUME_LOCAL" "$RESUME_ORIGIN" "$POS_CHECK"; do
+for f in "$FREEZE_WRITERS" "$VERIFY_FROZEN" "$VERIFY_ORIGIN_FROZEN" \
+  "$RESUME_LOCAL" "$RESUME_ORIGIN" "$POS_CHECK"; do
   test -f "$f" && test ! -L "$f" && test -x "$f"
   test "$(stat -c '%U' "$f")" = deploy
 done
@@ -81,7 +83,7 @@ TARGET_HOST=$(psql -X -At --no-password -d "$TARGET" -c \
 case "$TARGET_HOST" in 127.0.0.1|::1|socket) ;; *) exit 1 ;; esac
 ```
 
-La conexión `tcys_pedidos_origen` debe ser directa o de sesión y apta para `pg_dump`; `tcys_pedidos_local` debe señalar una base exclusiva y vacía de Pedidos en loopback/socket. El archivo privado `LOCAL_ENV` debe contener la URL local para systemd, no la externa; se prepara y verifica por canal de secretos del operador, nunca en Git. Los cinco scripts privados del operador son gates obligatorios: congelan **todos** los escritores (web, admin, Render, cron/timers, conexiones directas), prueban con una transacción revertida que no se acepta escritura, liberan sólo los escritores locales o externos en el camino correspondiente y verifican el POS real. Si falta uno o no fue ensayado, detener aquí.
+La conexión `tcys_pedidos_origen` debe ser directa o de sesión y apta para `pg_dump`; `tcys_pedidos_local` debe señalar una base exclusiva y vacía de Pedidos en loopback/socket. El archivo privado `LOCAL_ENV` debe contener la URL local para systemd, no la externa; se prepara y verifica por canal de secretos del operador, nunca en Git. Los seis scripts privados del operador son gates obligatorios: congelan **todos** los escritores (web, admin, Render, cron/timers, conexiones directas), comprueban con transacciones revertidas el bloqueo total y, después de reabrir local, el bloqueo del origen; liberan sólo los escritores locales o externos en el camino correspondiente y verifican el POS real. Si falta uno o no fue ensayado, detener aquí.
 
 ## 3. Freeze de escritores y prueba de barrera
 
@@ -235,6 +237,7 @@ run_local_manage check --deploy
 sudo systemctl start tcysweb-prod.service
 sudo systemctl is-active --quiet tcysweb-prod.service
 sudo ss -H -lnt 'sport = :8002' | grep -q '127.0.0.1:8002'
+"$VERIFY_FROZEN"
 ```
 
 ## 15. Health
@@ -301,7 +304,7 @@ if grep -Eq 'ERROR|CRITICAL|Traceback' "$CUT_DIR/journal-private.txt"; then
 fi
 psql -X -At --no-password -d "$TARGET" -c \
   "SELECT count(*), coalesce(max(id),0) FROM pedidos_pedido;"
-"$VERIFY_FROZEN"
+"$VERIFY_ORIGIN_FROZEN"
 ```
 
 No incluir payloads, tokens ni URLs de base en el acta compartida. Conservar dump, hashes, manifiestos y backups en custodia privada bajo la política de retención aprobada.
