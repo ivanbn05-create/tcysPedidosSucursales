@@ -203,6 +203,28 @@ archivos reales efímeros, y los negativos de precio histórico/mesa POS se
 resuelven en `unresolved`/manual; Pedidos jamás fuerza al POS a omitir esas
 validaciones.
 
+Para el parser/E2E Edge se versiona además el paquete público sintético
+`schemas/recovery-v2-e2e-fixture/`: ZIP custodio, ZIP baseline de cuatro
+entradas, ACK y recibo firmados, claves **públicas** y SHA exactos en
+`metadata.json`. No contiene privadas ni datos productivos. Verificarlo con
+Python 3.13.12, `cryptography==50.0.1` y `jsonschema==4.25.1` mediante
+`python docs/integracion/schemas/recovery_v2_fixture_tool.py`. El validador
+usa Draft 2020-12 y FormatChecker, rechaza raíces vacías, recibos con
+`next_desde` incompatible, prueba firmas/ZIP/cadena de exportación y coteja
+cobertura/hash de cada pedido ACK. `--generate` rota claves efímeras de
+prueba y reemplaza el vector; no se usa después de congelar sus SHA. El
+vector criptográfico anterior sigue siendo sólo una prueba de canonical JSON
+y Ed25519, no un ZIP ejecutable.
+
+Los negativos `nonce_reused`, `inflight_writer_before_freeze`, terminal
+histórico, cursor no vacío, firma/alcance incorrectos y ausencia de archivo
+están cubiertos por `pedidos/test_pos_recovery_v2.py` en PostgreSQL/POSIX;
+el POS debe ejecutar además su propio CAS, precio/mesa y restore. Un backup
+del acta DB **sin** los ZIP/ACK/recibos privados no basta: ante pérdida del
+recibo el replay es fail-closed y no autoriza checkpoint. La custodia y
+restauración coherente de estos archivos con sus SHA es gate explícito del
+E2E/corte; no se considera resuelto por este fixture público.
+
 Negativos obligatorios del E2E conjunto: firma Pedidos/Edge incorrecta,
 `key_id` revocado, nonce repetido en otra acta, Edge/Branch/remitente ajeno,
 orden repetida con hash diferente, orden y tombstone con la misma pareja,

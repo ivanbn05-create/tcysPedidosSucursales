@@ -432,6 +432,25 @@ class AggregateRecoveryPostgresTests(TransactionTestCase):
         terminal["estado"] = "enviado"
         self.assertIsNone(_archive_to_api_v2(terminal))
 
+    def test_terminal_archived_order_requires_manual_intervention(self):
+        terminal = {**self.archive_order, "estado": "recibido"}
+        lines = canonical(terminal) + b"\n"
+        archive_manifest = {
+            "lote_id": str(self.export_id), "sha256_pedidos_jsonl": digest(lines),
+        }
+        buffer = io.BytesIO()
+        with zipfile.ZipFile(buffer, "w", compression=zipfile.ZIP_DEFLATED) as archive:
+            archive.writestr("manifest.json", canonical(archive_manifest) + b"\n")
+            archive.writestr("pedidos.jsonl", lines)
+        self._file(f"{self.export_id}.zip", buffer.getvalue())
+        ExportacionRetencion.objects.filter(pk=self.export_id).update(
+            sha256_archivo=digest(buffer.getvalue()), sha256_contenido=digest(lines)
+        )
+        record = self._prepare()
+        self.assertEqual(record.recovered_orders_count, 0)
+        ack = self._ack(record, include_tombstone=False, unresolved=True)
+        self.assertEqual(self._complete(record, ack).estado, "intervencion_manual")
+
     def test_freeze_drains_an_inflight_writer_before_snapshot(self):
         PosRecoveryV2Freeze.objects.filter(pk=self.freeze_id).update(active=False)
         writer_entered = threading.Event()

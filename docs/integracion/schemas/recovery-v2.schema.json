@@ -2,6 +2,11 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://tcys.example.invalid/integracion/recovery-v2.schema.json",
   "title": "Pedidos recovery-v2 laboratory contract",
+  "oneOf": [
+    {"$ref": "#/$defs/signed_manifest"},
+    {"$ref": "#/$defs/signed_edge_ack"},
+    {"$ref": "#/$defs/signed_receipt"}
+  ],
   "$defs": {
     "uuid": {"type": "string", "format": "uuid"},
     "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
@@ -160,6 +165,9 @@
     },
     "receipt_payload": {
       "type": "object", "additionalProperties": false,
+      "if": {"properties": {"status": {"const": "completada"}}, "required": ["status"]},
+      "then": {"properties": {"next_desde": {"type": "string", "format": "date-time"}}},
+      "else": {"properties": {"next_desde": {"type": "null"}}},
       "required": ["type", "key_id", "recovery_id", "edge_id", "pos_branch_id", "sender_ids", "pos_prestate_sha256", "snapshot_sha256", "manifest_sha256", "edge_ack_sha256", "status", "next_desde", "next_cursor", "issued_at"],
       "properties": {
         "type": {"const": "pedidos.recovery_receipt.v2"},
@@ -185,6 +193,24 @@
         "payload": {"type": "object"},
         "signature_b64": {"type": "string", "pattern": "^[A-Za-z0-9_-]{86}$"}
       }
+    },
+    "signed_manifest": {
+      "allOf": [
+        {"$ref": "#/$defs/signed"},
+        {"properties": {"payload": {"$ref": "#/$defs/manifest_payload"}}}
+      ]
+    },
+    "signed_edge_ack": {
+      "allOf": [
+        {"$ref": "#/$defs/signed"},
+        {"properties": {"payload": {"$ref": "#/$defs/edge_ack_payload"}}}
+      ]
+    },
+    "signed_receipt": {
+      "allOf": [
+        {"$ref": "#/$defs/signed"},
+        {"properties": {"payload": {"$ref": "#/$defs/receipt_payload"}}}
+      ]
     }
   }
 }
