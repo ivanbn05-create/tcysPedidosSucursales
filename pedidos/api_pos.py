@@ -18,7 +18,10 @@ from django.http import JsonResponse
 from django.utils import timezone
 from django.utils.dateparse import parse_datetime
 
-from .models import ItemPedido, Pedido, PedidoPurgado, PosApiCredential, SucursalCliente
+from .models import (
+    ItemPedido, Pedido, PedidoPurgado, PosAggregatedCredential,
+    PosApiCredential, SucursalCliente,
+)
 
 
 logger = logging.getLogger(__name__)
@@ -98,7 +101,7 @@ def _authenticate(request):
 
 def _authenticate_v2(request):
     """Resuelve un bearer v2 a un Edge y una sucursal, sin usar la allowlist v1."""
-    if not PosApiCredential.objects.exists():
+    if not PosApiCredential.objects.exists() and not PosAggregatedCredential.objects.exists():
         return None, (), "service_not_configured"
 
     authorization = request.headers.get("Authorization", "")
@@ -114,7 +117,34 @@ def _authenticate_v2(request):
         .first()
     )
     if credential is None:
-        return None, (), "unauthorized"
+        aggregate = PosAggregatedCredential.objects.filter(token_sha256=digest).first()
+        if aggregate is None:
+            return None, (), "unauthorized"
+        now = timezone.now()
+        if not aggregate.active or aggregate.revoked_at or (
+            aggregate.expires_at and aggregate.expires_at <= now
+        ):
+            return None, (), "unauthorized"
+        sender_ids = aggregate.sender_ids
+        if (
+            not isinstance(aggregate.scopes, list)
+            or "orders:v2:read" not in aggregate.scopes
+            or not isinstance(sender_ids, list)
+            or not sender_ids
+            or any(type(sender_id) is not int or sender_id <= 0 for sender_id in sender_ids)
+            or sender_ids != sorted(set(sender_ids))
+        ):
+            return None, (), "forbidden"
+        if (
+            request.headers.get("X-POS-Edge-ID") != str(aggregate.edge_id)
+            or request.headers.get("X-POS-Branch-ID") != str(aggregate.pos_branch_id)
+            or SucursalCliente.objects.filter(
+                pk__in=sender_ids, tipo=SucursalCliente.Tipo.SUCURSAL, activa=True
+            ).count() != len(sender_ids)
+        ):
+            return None, (), "forbidden"
+        PosAggregatedCredential.objects.filter(pk=aggregate.pk).update(last_used_at=now)
+        return digest[:24], tuple(sender_ids), None
     now = timezone.now()
     if not credential.active or credential.revoked_at or (
         credential.expires_at and credential.expires_at <= now

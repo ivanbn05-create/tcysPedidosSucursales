@@ -1,0 +1,190 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://tcys.example.invalid/integracion/recovery-v2.schema.json",
+  "title": "Pedidos recovery-v2 laboratory contract",
+  "$defs": {
+    "uuid": {"type": "string", "format": "uuid"},
+    "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "sender_ids": {"type": "array", "minItems": 1, "maxItems": 32, "uniqueItems": true, "items": {"type": "integer", "minimum": 1}},
+    "prestate": {
+      "type": "object", "additionalProperties": false,
+      "required": ["cursor", "ultimo_cursor_confirmado", "ventana_desde", "ventana_hasta", "agua_alta_hasta", "sucursales_origen", "estado", "version_api"],
+      "properties": {
+        "cursor": {"type": ["string", "null"], "maxLength": 2048},
+        "ultimo_cursor_confirmado": {"type": ["string", "null"], "maxLength": 2048},
+        "ventana_desde": {"type": "string", "format": "date-time"},
+        "ventana_hasta": {"type": "string", "format": "date-time"},
+        "agua_alta_hasta": {"type": ["string", "null"], "format": "date-time"},
+        "sucursales_origen": {"$ref": "#/$defs/sender_ids"},
+        "estado": {"const": "reconciliacion"},
+        "version_api": {"const": "v2"}
+      }
+    },
+    "identity": {
+      "type": "object", "additionalProperties": false,
+      "required": ["sender_id", "codigo_publico"],
+      "properties": {
+        "sender_id": {"type": "integer", "minimum": 1},
+        "codigo_publico": {"$ref": "#/$defs/uuid"}
+      }
+    },
+    "received": {
+      "type": "object", "additionalProperties": false,
+      "required": ["sender_id", "codigo_publico", "order_sha256"],
+      "properties": {
+        "sender_id": {"type": "integer", "minimum": 1},
+        "codigo_publico": {"$ref": "#/$defs/uuid"},
+        "order_sha256": {"$ref": "#/$defs/sha256"}
+      }
+    },
+    "decimal_text": {"type": "string", "pattern": "^-?[0-9]+(\\.[0-9]+)?$"},
+    "order": {
+      "type": "object", "additionalProperties": false,
+      "required": ["id", "codigo_publico", "fecha_confirmacion", "total", "sucursal", "items"],
+      "properties": {
+        "id": {"type": "integer", "minimum": 1},
+        "codigo_publico": {"$ref": "#/$defs/uuid"},
+        "fecha_confirmacion": {"type": "string", "format": "date-time"},
+        "total": {"$ref": "#/$defs/decimal_text"},
+        "sucursal": {
+          "type": "object", "additionalProperties": false,
+          "required": ["id", "nombre", "tipo"],
+          "properties": {
+            "id": {"type": "integer", "minimum": 1},
+            "nombre": {"type": "string"},
+            "tipo": {"const": "sucursal"}
+          }
+        },
+        "items": {"type": "array", "items": {"$ref": "#/$defs/item"}}
+      }
+    },
+    "item": {
+      "type": "object", "additionalProperties": false,
+      "required": ["id", "pedido_id", "producto", "cantidad", "precio_unitario", "subtotal"],
+      "properties": {
+        "id": {"type": "integer", "minimum": 1},
+        "pedido_id": {"type": "integer", "minimum": 1},
+        "producto": {
+          "type": "object", "additionalProperties": false,
+          "required": ["id", "nombre", "nombre_ticket", "unidad_medida", "unidad_abreviatura", "cantidad_por_precio"],
+          "properties": {
+            "id": {"type": "integer", "minimum": 1},
+            "nombre": {"type": "string"},
+            "nombre_ticket": {"type": "string"},
+            "unidad_medida": {"type": "string"},
+            "unidad_abreviatura": {"type": "string"},
+            "cantidad_por_precio": {"$ref": "#/$defs/decimal_text"}
+          }
+        },
+        "cantidad": {"$ref": "#/$defs/decimal_text"},
+        "precio_unitario": {"$ref": "#/$defs/decimal_text"},
+        "subtotal": {"$ref": "#/$defs/decimal_text"}
+      }
+    },
+    "orders_row": {
+      "type": "object", "additionalProperties": false,
+      "required": ["sender_id", "order"],
+      "properties": {
+        "sender_id": {"type": "integer", "minimum": 1},
+        "order": {"$ref": "#/$defs/order"}
+      }
+    },
+    "recovered_order": {
+      "type": "object", "additionalProperties": false,
+      "required": ["sender_id", "order", "archive_row_sha256", "exportacion_id", "archive_sha256"],
+      "properties": {
+        "sender_id": {"type": "integer", "minimum": 1},
+        "order": {"$ref": "#/$defs/order"},
+        "archive_row_sha256": {"$ref": "#/$defs/sha256"},
+        "exportacion_id": {"$ref": "#/$defs/uuid"},
+        "archive_sha256": {"$ref": "#/$defs/sha256"}
+      }
+    },
+    "tombstone": {
+      "type": "object", "additionalProperties": false,
+      "required": ["sender_id", "codigo_publico", "pedido_id_origen", "exportacion_id", "archive_sha256"],
+      "properties": {
+        "sender_id": {"type": "integer", "minimum": 1},
+        "codigo_publico": {"$ref": "#/$defs/uuid"},
+        "pedido_id_origen": {"type": "integer", "minimum": 1},
+        "exportacion_id": {"oneOf": [{"$ref": "#/$defs/uuid"}, {"type": "null"}]},
+        "archive_sha256": {"oneOf": [{"$ref": "#/$defs/sha256"}, {"type": "null"}]}
+      }
+    },
+    "manifest_payload": {
+      "type": "object", "additionalProperties": false,
+      "required": ["type", "key_id", "recovery_id", "edge_id", "pos_branch_id", "sender_ids", "pos_prestate", "pos_prestate_sha256", "desde", "hasta", "purge_epoch", "freeze_id", "orders_sha256", "orders_count", "recovered_orders_sha256", "recovered_orders_count", "tombstones_sha256", "tombstones_count", "next_desde", "next_cursor"],
+      "properties": {
+        "type": {"const": "pedidos.recovery_manifest.v2"},
+        "key_id": {"$ref": "#/$defs/uuid"},
+        "recovery_id": {"$ref": "#/$defs/uuid"},
+        "edge_id": {"$ref": "#/$defs/uuid"},
+        "pos_branch_id": {"$ref": "#/$defs/uuid"},
+        "sender_ids": {"$ref": "#/$defs/sender_ids"},
+        "pos_prestate": {"$ref": "#/$defs/prestate"},
+        "pos_prestate_sha256": {"$ref": "#/$defs/sha256"},
+        "desde": {"type": "string", "format": "date-time"},
+        "hasta": {"type": "string", "format": "date-time"},
+        "purge_epoch": {"$ref": "#/$defs/sha256"},
+        "freeze_id": {"$ref": "#/$defs/uuid"},
+        "orders_sha256": {"$ref": "#/$defs/sha256"},
+        "orders_count": {"type": "integer", "minimum": 0, "maximum": 5000},
+        "recovered_orders_sha256": {"$ref": "#/$defs/sha256"},
+        "recovered_orders_count": {"type": "integer", "minimum": 0, "maximum": 5000},
+        "tombstones_sha256": {"$ref": "#/$defs/sha256"},
+        "tombstones_count": {"type": "integer", "minimum": 0, "maximum": 5000},
+        "next_desde": {"type": "string", "format": "date-time"},
+        "next_cursor": {"type": "null"}
+      }
+    },
+    "edge_ack_payload": {
+      "type": "object", "additionalProperties": false,
+      "required": ["type", "key_id", "nonce", "issued_at", "recovery_id", "edge_id", "pos_branch_id", "sender_ids", "pos_prestate_sha256", "snapshot_sha256", "manifest_sha256", "orders_sha256", "tombstones_sha256", "received", "unresolved"],
+      "properties": {
+        "type": {"const": "pedidos.edge.recovery_ack.v2"},
+        "key_id": {"$ref": "#/$defs/uuid"},
+        "nonce": {"$ref": "#/$defs/uuid"},
+        "issued_at": {"type": "string", "format": "date-time"},
+        "recovery_id": {"$ref": "#/$defs/uuid"},
+        "edge_id": {"$ref": "#/$defs/uuid"},
+        "pos_branch_id": {"$ref": "#/$defs/uuid"},
+        "sender_ids": {"$ref": "#/$defs/sender_ids"},
+        "pos_prestate_sha256": {"$ref": "#/$defs/sha256"},
+        "snapshot_sha256": {"$ref": "#/$defs/sha256"},
+        "manifest_sha256": {"$ref": "#/$defs/sha256"},
+        "orders_sha256": {"$ref": "#/$defs/sha256"},
+        "tombstones_sha256": {"$ref": "#/$defs/sha256"},
+        "received": {"type": "array", "maxItems": 10000, "items": {"$ref": "#/$defs/received"}},
+        "unresolved": {"type": "array", "maxItems": 10000, "items": {"$ref": "#/$defs/identity"}}
+      }
+    },
+    "receipt_payload": {
+      "type": "object", "additionalProperties": false,
+      "required": ["type", "key_id", "recovery_id", "edge_id", "pos_branch_id", "sender_ids", "pos_prestate_sha256", "snapshot_sha256", "manifest_sha256", "edge_ack_sha256", "status", "next_desde", "next_cursor", "issued_at"],
+      "properties": {
+        "type": {"const": "pedidos.recovery_receipt.v2"},
+        "key_id": {"$ref": "#/$defs/uuid"},
+        "recovery_id": {"$ref": "#/$defs/uuid"},
+        "edge_id": {"$ref": "#/$defs/uuid"},
+        "pos_branch_id": {"$ref": "#/$defs/uuid"},
+        "sender_ids": {"$ref": "#/$defs/sender_ids"},
+        "pos_prestate_sha256": {"$ref": "#/$defs/sha256"},
+        "snapshot_sha256": {"$ref": "#/$defs/sha256"},
+        "manifest_sha256": {"$ref": "#/$defs/sha256"},
+        "edge_ack_sha256": {"$ref": "#/$defs/sha256"},
+        "status": {"enum": ["completada", "intervencion_manual"]},
+        "next_desde": {"type": ["string", "null"], "format": "date-time"},
+        "next_cursor": {"type": "null"},
+        "issued_at": {"type": "string", "format": "date-time"}
+      }
+    },
+    "signed": {
+      "type": "object", "additionalProperties": false,
+      "required": ["payload", "signature_b64"],
+      "properties": {
+        "payload": {"type": "object"},
+        "signature_b64": {"type": "string", "pattern": "^[A-Za-z0-9_-]{86}$"}
+      }
+    }
+  }
+}

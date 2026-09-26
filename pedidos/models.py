@@ -144,6 +144,106 @@ class PosRetentionRecovery(models.Model):
     cerrada_en = models.DateTimeField(null=True, blank=True)
 
 
+class PosAggregatedCredential(models.Model):
+    """Bearer v2 for one Edge/POS branch and an exact sender tuple."""
+
+    credential_id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    edge_id = models.UUIDField(db_index=True)
+    pos_branch_id = models.UUIDField()
+    sender_ids = models.JSONField()
+    token_sha256 = models.CharField(max_length=64, unique=True)
+    scopes = models.JSONField(default=list)
+    active = models.BooleanField(default=True)
+    expires_at = models.DateTimeField(null=True, blank=True)
+    revoked_at = models.DateTimeField(null=True, blank=True)
+    revocation_reference = models.CharField(max_length=120, blank=True)
+    issued_reference = models.CharField(max_length=120)
+    created_at = models.DateTimeField(auto_now_add=True)
+    last_used_at = models.DateTimeField(null=True, blank=True)
+
+
+class PosRecoveryV2SigningKey(models.Model):
+    """Only public Ed25519 material is persisted; private keys stay off-repo."""
+
+    key_id = models.UUIDField(primary_key=True, editable=False)
+    kind = models.CharField(max_length=8)  # edge or pedidos
+    edge_id = models.UUIDField()
+    pos_branch_id = models.UUIDField()
+    sender_ids = models.JSONField()
+    public_key_b64 = models.CharField(max_length=43, unique=True)
+    active = models.BooleanField(default=True)
+    revoked_at = models.DateTimeField(null=True, blank=True)
+    revocation_reference = models.CharField(max_length=120, blank=True)
+    issued_reference = models.CharField(max_length=120)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+
+class PosRecoveryV2Freeze(models.Model):
+    """Database-enforced writer barrier for one aggregated reconciliation."""
+
+    freeze_id = models.UUIDField(primary_key=True, editable=False)
+    sender_ids = models.JSONField()
+    active = models.BooleanField(default=True)
+    started_at = models.DateTimeField(auto_now_add=True)
+    ended_at = models.DateTimeField(null=True, blank=True)
+    reference = models.CharField(max_length=120)
+    end_reference = models.CharField(max_length=120, blank=True)
+
+    class Meta:
+        constraints = [models.UniqueConstraint(
+            fields=["active"], condition=models.Q(active=True), name="one_active_pos_recovery_freeze"
+        )]
+
+
+class PosRecoveryV2(models.Model):
+    """Hashes and audit metadata only; order bodies stay in private ZIPs."""
+
+    recovery_id = models.UUIDField(primary_key=True, editable=False)
+    edge_id = models.UUIDField()
+    pos_branch_id = models.UUIDField()
+    sender_ids = models.JSONField()
+    desde = models.DateTimeField()
+    hasta = models.DateTimeField()
+    pos_prestate_sha256 = models.CharField(max_length=64)
+    purge_epoch = models.CharField(max_length=64)
+    snapshot_sha256 = models.CharField(max_length=64)
+    manifest_sha256 = models.CharField(max_length=64)
+    orders_sha256 = models.CharField(max_length=64)
+    recovered_orders_sha256 = models.CharField(max_length=64, default="")
+    tombstones_sha256 = models.CharField(max_length=64)
+    orders_count = models.PositiveIntegerField()
+    recovered_orders_count = models.PositiveIntegerField(default=0)
+    tombstones_count = models.PositiveIntegerField()
+    freeze = models.ForeignKey(PosRecoveryV2Freeze, on_delete=models.PROTECT)
+    pedidos_key = models.ForeignKey(PosRecoveryV2SigningKey, on_delete=models.PROTECT)
+    estado = models.CharField(max_length=24, default="pendiente")
+    edge_key = models.ForeignKey(
+        PosRecoveryV2SigningKey, null=True, blank=True, on_delete=models.PROTECT,
+        related_name="edge_recoveries",
+    )
+    edge_ack_sha256 = models.CharField(max_length=64, blank=True)
+    edge_ack_nonce = models.UUIDField(null=True, blank=True)
+    receipt_sha256 = models.CharField(max_length=64, blank=True)
+    opened_reference = models.CharField(max_length=120)
+    closed_reference = models.CharField(max_length=120, blank=True)
+    opened_at = models.DateTimeField(auto_now_add=True)
+    closed_at = models.DateTimeField(null=True, blank=True)
+
+
+class PosRecoveryV2Nonce(models.Model):
+    """Global replay ledger across every recovery under an Edge key."""
+
+    key = models.ForeignKey(PosRecoveryV2SigningKey, on_delete=models.PROTECT)
+    nonce = models.UUIDField()
+    recovery = models.ForeignKey(PosRecoveryV2, on_delete=models.PROTECT)
+    used_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        constraints = [models.UniqueConstraint(
+            fields=["key", "nonce"], name="unique_edge_recovery_v2_nonce"
+        )]
+
+
 class Producto(models.Model):
     """Producto disponible para pedido."""
 
