@@ -408,6 +408,38 @@ class AggregateRecoveryPostgresTests(TransactionTestCase):
             canonical(receipt["payload"]),
         )
 
+    def test_archived_majorista_tombstone_completes_signed_recovery(self):
+        SucursalCliente.objects.filter(pk=1).update(tipo="cliente_mayorista")
+        self.archive_order["sucursal"]["tipo"] = "cliente_mayorista"
+        lines = canonical(self.archive_order) + b"\n"
+        manifest = {
+            "lote_id": str(self.export_id), "sha256_pedidos_jsonl": digest(lines),
+        }
+        buffer = io.BytesIO()
+        with zipfile.ZipFile(buffer, "w", compression=zipfile.ZIP_DEFLATED) as archive:
+            archive.writestr("manifest.json", canonical(manifest) + b"\n")
+            archive.writestr("pedidos.jsonl", lines)
+        self._file(f"{self.export_id}.zip", buffer.getvalue())
+        ExportacionRetencion.objects.filter(pk=self.export_id).update(
+            sha256_archivo=digest(buffer.getvalue()), sha256_contenido=digest(lines)
+        )
+        record = self._prepare()
+        self.assertEqual(record.recovered_orders_count, 1)
+        with zipfile.ZipFile(self.root / "baseline.zip") as archive:
+            recovered = _strict_json(archive.read("recovered_orders.jsonl").strip())
+        self.assertEqual(recovered["order"]["sucursal"]["tipo"], "cliente_mayorista")
+        ack = self._ack(record)
+        closed = self._complete(record, ack)
+        self.assertEqual(closed.estado, "completada")
+        receipt = _strict_json((self.root / "receipt.json").read_bytes())
+        self.assertEqual(receipt["payload"]["status"], "completada")
+        Ed25519PublicKey.from_public_bytes(
+            self.server_private.public_key().public_bytes(Encoding.Raw, PublicFormat.Raw)
+        ).verify(
+            base64.urlsafe_b64decode(receipt["signature_b64"] + "=="),
+            canonical(receipt["payload"]),
+        )
+
     def test_nonempty_midwindow_cursor_is_preserved_in_signed_prestate(self):
         cursor = _encode_cursor(
             self.order,

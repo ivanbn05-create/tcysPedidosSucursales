@@ -485,7 +485,7 @@ def _archive_to_api_v2(row):
                 or not isinstance(row["sucursal"], dict)
                 or set(row["sucursal"]) != {"id", "nombre", "tipo"}
                 or type(row["sucursal"]["id"]) is not int
-                or row["sucursal"]["tipo"] != "sucursal"
+                or row["sucursal"]["tipo"] not in ("sucursal", "cliente_mayorista")
                 or not isinstance(row["sucursal"]["nombre"], str)
                 or not isinstance(row["total"], str)
                 or not DECIMAL_TEXT.fullmatch(row["total"])):

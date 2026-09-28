@@ -1,5 +1,7 @@
 # Handoff: Pedidos, POS y backend central
 
+**Histórico, supersedido para Production 1.0:** el alcance actual del Edge Arboledas es la tupla de remitentes activos `1,2,3,4,5,6,7,8,9,10`, incluidos `cliente_mayorista`. La identidad consumidora es `branch_uuid + edge_uuid`; no asignar `SucursalCliente.id` a Arboledas. La tabla antigua de abajo no debe usarse para configurar la credencial ni el directorio POS.
+
 Estado: **documento de coordinación, no contrato definitivo ni autorización de despliegue**. Los hechos del backend central proceden de `CONTRATO_EDGE_CENTRAL_BORRADOR_2026-09-23.md` y `ESTADO_STAGING_2026-09-23.md`, consultados el 2026-09-23. El primero identifica expresamente sus rutas y esquemas como propuestas. Hay que contrastarlos con el agente POS y con el estado posterior de ambos repositorios antes de fijar un contrato.
 
 ## Límites entre productos

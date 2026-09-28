@@ -57,7 +57,7 @@
           "properties": {
             "id": {"type": "integer", "minimum": 1},
             "nombre": {"type": "string"},
-            "tipo": {"const": "sucursal"}
+            "tipo": {"enum": ["sucursal", "cliente_mayorista"]}
           }
         },
         "items": {"type": "array", "items": {"$ref": "#/$defs/item"}}

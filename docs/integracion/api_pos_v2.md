@@ -1,6 +1,6 @@
 # API POS v2: identidad pública y señal de retención
 
-Estado: candidato de integración privado sobre `8fad568`; la ruta v1 permanece disponible y sin cambios. El consumidor debe adoptar v2 y pasar las pruebas de contrato antes de depender de ella. La existencia de esta ruta en Git no significa que esté desplegada ni que la purga esté activada.
+Estado: contrato de integración v2 con alcance agregado mixto para Production 1.0. La ruta v1 permanece disponible y sin cambios. El consumidor debe adoptar v2 y pasar las pruebas de contrato antes de depender de ella. La existencia de esta ruta en Git no significa que esté desplegada ni que la purga esté activada.
 
 ## Endpoint
 
@@ -11,13 +11,13 @@ X-POS-Edge-ID: <EDGE_UUID_APROBADO>
 X-POS-Branch-ID: <POS_BRANCH_UUID_APROBADO>
 ```
 
-HTTPS es obligatorio cuando `POS_API_REQUIRE_HTTPS=True`. V2 usa credenciales propias, guardadas sólo por SHA-256 y ligadas a un UUID de instalación Edge, una `SucursalCliente.id` de tipo sucursal y el scope `orders:v2:read`. Un bearer v1 no concede acceso v2. El parámetro `sucursal_id` es obligatorio: una sucursal ajena a la credencial devuelve 403 `forbidden`; un bearer inválido, vencido o revocado devuelve 401. La allowlist global de [v1](../api_pos_v1.md) permanece sólo para v1. `desde` es inclusivo y `hasta` exclusivo; ambos son timestamps ISO 8601 con zona. La ventana solicitada tiene máximo configurable de 31 días por defecto. Sólo se entregan pedidos `confirmado`, sin borrado lógico.
+HTTPS es obligatorio cuando `POS_API_REQUIRE_HTTPS=True`. V2 usa credenciales propias, guardadas sólo por SHA-256 y ligadas a un UUID de instalación Edge, un UUID de sucursal POS consumidora y el scope `orders:v2:read`. La credencial agregada delimita una tupla de `SucursalCliente.id` remitentes de tipo `sucursal` o `cliente_mayorista`; Arboledas no necesita ni recibe un `SucursalCliente.id` consumidor. Un bearer v1 no concede acceso v2. El parámetro `sucursal_id` selecciona IDs remitentes y es obligatorio: un ID ajeno a la credencial devuelve 403 `forbidden`; un bearer inválido, vencido o revocado devuelve 401. La allowlist global de [v1](../api_pos_v1.md) permanece sólo para v1. `desde` es inclusivo y `hasta` exclusivo; ambos son timestamps ISO 8601 con zona. La ventana solicitada tiene máximo configurable de 31 días por defecto. Sólo se entregan pedidos `confirmado`, sin borrado lógico.
 
-Las credenciales nuevas desde `pedidos.0017` fijan además el UUID exacto de sucursal POS. Ambos headers de identidad deben coincidir con la credencial o se devuelve 403. No son un segundo factor: la posesión del bearer sigue siendo la autorización real. Las credenciales antiguas de laboratorio con `pos_branch_id=NULL` se conservan sólo para transición; no habilitar Production 1.0 con ellas. Arboledas es la única sucursal inicial aprobable y el mapeo no se deduce de nombres.
+Las credenciales nuevas desde `pedidos.0017` fijan además el UUID exacto de sucursal POS. Ambos headers de identidad deben coincidir con la credencial o se devuelve 403. No son un segundo factor: la posesión del bearer sigue siendo la autorización real. Las credenciales antiguas de laboratorio con `pos_branch_id=NULL` se conservan sólo para transición; no habilitar Production 1.0 con ellas. Para Arboledas, el alcance agregado aprobado incluye los diez remitentes activos `1,2,3,4,5,6,7,8,9,10`, con sus tipos vigentes verificados por ID. El mapeo al directorio local se concilia por ID y tipo; no se deduce de nombres.
 
 En perfil productivo `POS_V2_REQUIRE_BRANCH_BINDING=True` es obligatorio; un bearer v2 anterior sin ese vínculo recibe 403 hasta rotarse con la identidad aprobada. La ruta v1 conserva su comportamiento para transición/rollback.
 
-La respuesta conserva los campos v1 y añade `codigo_publico` (UUID único del modelo `Pedido`) a cada pedido. El POS debe acordar y persistir este UUID como identidad remota estable tras migrar su consumidor; `id` entero se conserva por compatibilidad de la forma de respuesta, y el folio derivado de fecha no es una clave de identidad. Los ítems conservan `id` entero en esta versión. Es necesaria una correspondencia verificada entre `SucursalCliente.id` entero de Pedidos y el UUID/clave de sucursal del POS; no inferirla por nombre.
+La respuesta conserva los campos v1 y añade `codigo_publico` (UUID único del modelo `Pedido`) a cada pedido. El POS debe acordar y persistir este UUID como identidad remota estable tras migrar su consumidor; `id` entero se conserva por compatibilidad de la forma de respuesta, y el folio derivado de fecha no es una clave de identidad. Los ítems conservan `id` entero en esta versión. Cada `SucursalCliente.id` remitente requiere correspondencia verificada con ID y tipo del directorio local del POS; no inferirla por nombre.
 
 ```json
 {
@@ -41,14 +41,14 @@ Los importes son cadenas decimales. En una respuesta real, `items` contiene los 
 
 ## Orden, cursor y brechas
 
-El orden sigue siendo `(fecha_confirmacion, Pedido.id)` ascendente, de modo que dos pedidos con la misma marca temporal no se pierden. El cursor v2 está firmado y ligado a filtros y versión. Su época de purga es un HMAC opaco del último recibo de purga relevante para las sucursales consultadas: **no** expone `RegistroPurga.id` ni debe ser interpretado por el POS. El consumidor debe guardar y reenviar `next_cursor` sin decodificarlo. No se acepta un cursor v1 en v2 ni viceversa.
+El orden sigue siendo `(fecha_confirmacion, Pedido.id)` ascendente, de modo que dos pedidos con la misma marca temporal no se pierden. El cursor v2 está firmado y ligado a filtros y versión. Su época de purga es un HMAC opaco del último recibo de purga relevante para los remitentes consultados: **no** expone `RegistroPurga.id` ni debe ser interpretado por el POS. El consumidor debe guardar y reenviar `next_cursor` sin decodificarlo. No se acepta un cursor v1 en v2 ni viceversa.
 
 La v2 responde HTTP **410 Gone** con código estable `retention_gap` si:
 
-1. la ventana `[desde, hasta)` incluye la `fecha_confirmacion` exacta de un `PedidoPurgado` de una sucursal consultada y retornable por la API; o
-2. la época del cursor v2 difiere de la época vigente para esa sucursal, aunque la purga haya ocurrido fuera de la ventana solicitada. Un cursor v2 anterior, todavía firmado pero con época numérica, y el cursor legado numérico usado por el contrato POS también reciben 410 y requieren conciliación.
+1. la ventana `[desde, hasta)` incluye la `fecha_confirmacion` exacta de un `PedidoPurgado` de un remitente consultado y retornable por la API; o
+2. la época del cursor v2 difiere de la época vigente para ese remitente, aunque la purga haya ocurrido fuera de la ventana solicitada. Un cursor v2 anterior, todavía firmado pero con época numérica, y el cursor legado numérico usado por el contrato POS también reciben 410 y requieren conciliación.
 
-La comprobación usa tombstones por pedido, sucursal y fecha; una purga de otra sucursal, de un cliente mayorista o en un hueco entre dos fechas purgadas **no** produce 410 para esta consulta. Una purga sólo de eventos, sin pedido con `fecha_confirmacion`, tampoco altera la época POS. La época se comprueba de nuevo antes de responder para detectar purgas que terminen durante la consulta. La API no entrega una página vacía como sustituto de un 410 conocido. Sin tombstones que cubran la ventana, una página vacía significa que no hay pedidos *actualmente consultables* bajo esos filtros; no certifica historial completo anterior a la introducción del registro de purgas.
+La comprobación usa tombstones por pedido, remitente y fecha. Una purga de un remitente fuera de la tupla consultada o en un hueco entre dos fechas purgadas **no** produce 410 para esta consulta. Una purga de cliente mayorista incluido en la tupla sí produce 410 cuando afecta la ventana o el cursor. Una purga sólo de eventos, sin pedido con `fecha_confirmacion`, tampoco altera la época POS. La época se comprueba de nuevo antes de responder para detectar purgas que terminen durante la consulta. La API no entrega una página vacía como sustituto de un 410 conocido. Sin tombstones que cubran la ventana, una página vacía significa que no hay pedidos *actualmente consultables* bajo esos filtros; no certifica historial completo anterior a la introducción del registro de purgas.
 
 Los recibos `RegistroPurga` y tombstones `PedidoPurgado` son parte del estado necesario para recuperar el servicio: una restauración no puede omitirlos ni reiniciar la época de cursores sin conciliación y reemisión controlada. El HMAC evita revelar el ID secuencial, pero no sustituye el ledger técnico ni la reconciliación. Restaurar sólo filas de pedidos desde una copia antigua tampoco debe reintroducir contenido purgado.
 
@@ -80,9 +80,9 @@ La política de retención permite que un pedido salga del VPS tras descarga man
 - Paginar pedidos con `fecha_confirmacion` idéntica y repetir páginas sin duplicados.
 - Crear cursor, registrar purga fuera de ventana y comprobar 410 al reanudar; una consulta fresca de ventana no afectada puede continuar.
 - Consultar ventana que cubre la fecha exacta de un pedido purgado de la sucursal autorizada aunque ya no existan filas: 410, no 200 vacío.
-- Purgar una sucursal ajena o un mayorista: no filtrar esa actividad por 410 ni invalidar un cursor de la sucursal consultada. Un hueco entre dos fechas purgadas tampoco es una brecha conocida.
+- Purgar un remitente ajeno a la tupla: no invalidar el cursor; purgar un cliente mayorista incluido sí debe dar 410. Un hueco entre dos fechas purgadas tampoco es una brecha conocida.
 - Presentar un cursor v2 anterior con época numérica: 410 y conciliación, sin interpretar el contenido del token en el POS.
 - Simular Edge desconectado más de 30 días y completar el procedimiento de conciliación sin pérdida ni duplicación.
-- Verificar sucursal sin mapeo, mapeo duplicado y cambio de clave antes de abrir acceso productivo.
+- Verificar remitente sin mapeo, mapeo duplicado, cambio de tipo y cambio de clave antes de abrir acceso productivo.
 
 No activar purga ni sustituir el consumidor v1 por v2 en producción sin coordinar estos cambios con el agente POS y comprobar el contrato extremo a extremo.

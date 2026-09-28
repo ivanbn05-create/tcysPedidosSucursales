@@ -22,7 +22,9 @@ from .models import (
     ItemPedido, Pedido, PedidoPurgado, PosAggregatedCredential, Producto,
     RegistroPurga, SucursalCliente,
 )
-from .pos_recovery_v2 import _approved_senders
+from .pos_recovery_v2 import _approved_senders, _archive_to_api_v2
+from .retencion import contenido_pedido
+from .api_pos import _serialize_pedido
 
 
 SENDERS = list(range(1, 11))
@@ -170,6 +172,14 @@ class MixedSendersV2Tests(TestCase):
     def test_all_ten_sender_types_are_recovery_eligible(self):
         self.assertTrue(_approved_senders(SENDERS))
         self.assertFalse(_approved_senders(SENDERS + [12]))
+
+    def test_archived_majorista_order_retains_type_for_v2_recovery(self):
+        order = self._order(4)
+        archived = contenido_pedido(order)
+        self.assertEqual(archived["sucursal"]["tipo"], "cliente_mayorista")
+        self.assertEqual(_archive_to_api_v2(archived), _serialize_pedido(order, version=2))
+        archived["sucursal"] = {**archived["sucursal"], "tipo": "unexpected"}
+        self.assertIsNone(_archive_to_api_v2(archived))
 
     def test_aggregate_issuer_accepts_mixed_ids_and_rejects_unexpected_type(self):
         self.credential.delete()

@@ -1,5 +1,7 @@
 # Credenciales POS v2 por Edge y sucursal
 
+**Alcance histórico:** este documento describe la credencial singular de una sola sucursal remitente. Para Arboledas Production 1.0 se usa `PosAggregatedCredential`, ligada a `branch_uuid + edge_uuid` con scope `orders:v2:read` y allowlist de los diez remitentes activos (sucursales y mayoristas). Arboledas no tiene `SucursalCliente.id` consumidor. Ver [API v2](api_pos_v2.md) y [recovery agregado](retention_gap_recovery_v2_lab.md). No ejecutar el comando singular de este documento para el corte Arboledas.
+
 Esta revisión es candidata y privada. La migración `pedidos.0016` crea `PosApiCredential`; no se aplica a Pedidos productivo hasta un corte autorizado. `GET /api/v1/pos/pedidos/`, `POS_API_TOKENS` y `POS_API_ALLOWED_SUCURSAL_IDS` conservan su semántica anterior. V2 sólo acepta una credencial propia con `orders:v2:read`, UUID de instalación Edge y un `SucursalCliente.id` de tipo `sucursal` explícitamente aprobado. La tabla sólo guarda SHA-256 de un bearer aleatorio de 48 bytes, no el bearer.
 
 Antes de emitir una credencial, aprobar la matriz `Sucursal POS UUID/clave` ↔ `Edge UUID` ↔ `SucursalCliente.id` ↔ `Branch central`. No asociar por nombre. Una sucursal sin correspondencia permanece pendiente; el comando no deriva ninguna identidad del nombre.

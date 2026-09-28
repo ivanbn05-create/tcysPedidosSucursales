@@ -8,8 +8,9 @@ POS ejecuten el mismo fixture/E2E y confirmen los SHA publicados.
 
 Una credencial `PosAggregatedCredential` autentica **un** Edge UUID, **una**
 POS Branch UUID y una tupla ordenada exacta de `SucursalCliente.id` activos
-de tipo `sucursal`, con scope `orders:v2:read`. Para el ensayo de Arboledas la
-tupla aprobada sólo en laboratorio es `[1,2,3,7,8,9]` y la POS Branch UUID es
+de tipo `sucursal` o `cliente_mayorista`, con scope `orders:v2:read`. Para el
+ensayo mixto de Arboledas la tupla aprobada en este contrato es
+`[1,2,3,4,5,6,7,8,9,10]` y la POS Branch UUID es
 `93a42904-4d09-4a50-94cf-2edbf5aa0e51`. El Edge UUID se obtiene del
 registro técnico, no se infiere por nombre. El bearer antiguo singular y v1
 permanecen separados. La rotación de bearer no altera el cursor ni los IDs de
@@ -19,7 +20,7 @@ cierra recovery.
 
 Todas las identidades de pedido y tombstone son la **pareja**
 `(sender_id,codigo_publico)`. No se acepta un UUID sin remitente. El Edge
-solicita la tupla completa en `sucursal_id=1,2,3,7,8,9`; un subconjunto
+solicita la tupla completa en `sucursal_id=1,2,3,4,5,6,7,8,9,10`; un subconjunto
 puede servir a la API de lectura, pero **no** abre/cierra este recovery ni
 autoriza checkpoint parcial.
 
@@ -163,12 +164,12 @@ Ejecutar como operador OS autorizado, con directorio privado `0700`, archivos
 la base productiva ni copiar su `.env` a un release.
 
 1. Provisionar bearer agregado con `issue_pos_v2_aggregate_credential`
-   (`--edge-id`, `--pos-branch-id`, `--sender-ids 1,2,3,7,8,9`, `--output`,
+   (`--edge-id`, `--pos-branch-id`, `--sender-ids 1,2,3,4,5,6,7,8,9,10`, `--output`,
    `--reference`, `--confirm`). Registrar las públicas Ed25519 con
    `registrar_clave_agregada_pos_v2` (`--kind edge|pedidos`, `--key-id`,
    mismos IDs, `--public-key-file`, `--referencia`, `--confirm`).
 2. Congelar con `iniciar_freeze_pos_v2 --freeze-id UUID --sender-ids
-   1,2,3,7,8,9 --referencia TICKET --confirm`; comprobar que una escritura
+   1,2,3,4,5,6,7,8,9,10 --referencia TICKET --confirm`; comprobar que una escritura
    sintética dirigida al remitente se rechaza. Reproducir `410 retention_gap`
    con exactamente la misma tupla/ventana/cursor del POS.
 3. Ejecutar `preparar_recuperacion_agregada_pos_v2` con `--recovery-id`,
@@ -202,6 +203,11 @@ no es una autorización de cierre. Las pruebas PostgreSQL generan ZIP y
 archivos reales efímeros, y los negativos de precio histórico/mesa POS se
 resuelven en `unresolved`/manual; Pedidos jamás fuerza al POS a omitir esas
 validaciones.
+
+Los fixtures firmados publicados anteriormente contienen una tupla sintética
+de seis remitentes de tipo `sucursal`. Conservan sus hashes como vector de
+compatibilidad, pero no representan la allowlist productiva mixta de diez IDs
+ni sustituyen la prueba de recuperación mayorista sobre PostgreSQL/POSIX.
 
 Para el parser/E2E Edge se versiona además el paquete público sintético
 `schemas/recovery-v2-e2e-fixture/`: ZIP custodio, ZIP baseline de cuatro
