@@ -10,6 +10,7 @@ from django.db import transaction
 from django.utils import timezone
 
 from pedidos.models import PosAggregatedCredential, SucursalCliente
+from pedidos.api_pos import POS_V2_SENDER_TYPES
 from pedidos.pos_recovery_v2 import _sender_ids, _write_private
 
 
@@ -36,7 +37,7 @@ class Command(BaseCommand):
         except ValueError as exc:
             raise CommandError("Identidad inválida.") from exc
         if SucursalCliente.objects.filter(
-            pk__in=sender_ids, tipo=SucursalCliente.Tipo.SUCURSAL, activa=True
+            pk__in=sender_ids, tipo__in=POS_V2_SENDER_TYPES, activa=True
         ).count() != len(sender_ids):
             raise CommandError("Tupla contiene un remitente no aprobado/activo.")
         bearer = secrets.token_urlsafe(48)

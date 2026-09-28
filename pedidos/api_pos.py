@@ -26,6 +26,13 @@ from .models import (
 
 logger = logging.getLogger(__name__)
 
+# El Edge de Arboledas consume pedidos de remitentes activos de ambos tipos.
+# La credencial agregada conserva la tupla exacta de IDs como límite real.
+POS_V2_SENDER_TYPES = (
+    SucursalCliente.Tipo.SUCURSAL,
+    SucursalCliente.Tipo.CLIENTE_MAYORISTA,
+)
+
 CURSOR_SALT = "pedidos.api_pos.v1.cursor"
 CURSOR_SALT_V2 = "pedidos.api_pos.v2.cursor"
 REQUEST_ID_PATTERN = re.compile(r"^[A-Za-z0-9._-]{1,64}$")
@@ -139,7 +146,7 @@ def _authenticate_v2(request):
             request.headers.get("X-POS-Edge-ID") != str(aggregate.edge_id)
             or request.headers.get("X-POS-Branch-ID") != str(aggregate.pos_branch_id)
             or SucursalCliente.objects.filter(
-                pk__in=sender_ids, tipo=SucursalCliente.Tipo.SUCURSAL, activa=True
+                pk__in=sender_ids, tipo__in=POS_V2_SENDER_TYPES, activa=True
             ).count() != len(sender_ids)
         ):
             return None, (), "forbidden"
@@ -481,11 +488,11 @@ def _pedidos_pos(request, *, version):
         purge_epoch = None
         purge_scope_ids = ()
         if version == 2:
-            # La API sólo entrega sucursales, aunque la allowlist incluya por
-            # error el ID de un cliente mayorista.
+            # El epoch y la detección de huecos cubren cada remitente autorizado,
+            # incluidas sucursales y clientes mayoristas.
             purge_scope_ids = tuple(SucursalCliente.objects.filter(
                 pk__in=sucursal_ids,
-                tipo=SucursalCliente.Tipo.SUCURSAL,
+                tipo__in=POS_V2_SENDER_TYPES,
             ).values_list("pk", flat=True))
             purge_epoch = _latest_purge_epoch(purge_scope_ids)
             if _purge_range_intersects(desde, hasta, purge_scope_ids):
@@ -540,12 +547,15 @@ def _pedidos_pos(request, *, version):
             fecha_confirmacion__gte=desde,
             fecha_confirmacion__lt=hasta,
             sucursal_cliente_id__in=sucursal_ids,
-            sucursal_cliente__tipo=SucursalCliente.Tipo.SUCURSAL,
         )
         .select_related("sucursal_cliente")
         .prefetch_related(Prefetch("items", queryset=item_queryset))
         .order_by("fecha_confirmacion", "id")
     )
+    if version == 2:
+        pedidos = pedidos.filter(sucursal_cliente__tipo__in=POS_V2_SENDER_TYPES)
+    else:
+        pedidos = pedidos.filter(sucursal_cliente__tipo=SucursalCliente.Tipo.SUCURSAL)
     if cursor:
         cursor_timestamp, cursor_id = cursor
         pedidos = pedidos.filter(

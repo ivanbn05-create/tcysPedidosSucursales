@@ -154,7 +154,9 @@ def _active_grant(edge_id, pos_branch_id, sender_ids):
 
 def _approved_senders(sender_ids):
     return SucursalCliente.objects.filter(
-        pk__in=sender_ids, tipo=SucursalCliente.Tipo.SUCURSAL, activa=True
+        pk__in=sender_ids,
+        tipo__in=(SucursalCliente.Tipo.SUCURSAL, SucursalCliente.Tipo.CLIENTE_MAYORISTA),
+        activa=True,
     ).count() == len(sender_ids)
 
 
