@@ -2,7 +2,7 @@ from django.urls import path
 
 from . import views
 from . import mfa
-from .api_pos import pedidos_pos_v1, pedidos_pos_v2
+from .api_pos import catalogo_pos_v2, pedidos_pos_v1, pedidos_pos_v2
 
 urlpatterns = [
     path("", views.home, name="home"),
@@ -33,6 +33,7 @@ urlpatterns = [
     path("api/horarios/", views.info_horarios, name="info_horarios"),
     path("api/v1/pos/pedidos/", pedidos_pos_v1, name="api_pos_pedidos_v1"),
     path("api/v2/pos/pedidos/", pedidos_pos_v2, name="api_pos_pedidos_v2"),
+    path("api/v2/pos/catalogo/", catalogo_pos_v2, name="api_pos_catalogo_v2"),
     path("admin/", views.admin_dashboard, name="admin_dashboard"),
     path("admin/pedidos/nuevo/", views.admin_crear_pedido_view, name="admin_crear_pedido"),
     path("admin/api/pedidos/crear-item/", views.admin_crear_item, name="admin_api_crear_item"),

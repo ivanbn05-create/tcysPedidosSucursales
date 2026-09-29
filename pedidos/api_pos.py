@@ -10,17 +10,20 @@ import time
 import uuid
 from datetime import timezone as datetime_timezone
 
+from decimal import Decimal
+
 from django.conf import settings
 from django.core import signing
 from django.core.cache import cache
+from django.db import connection, transaction
 from django.db.models import Max, Prefetch, Q
-from django.http import JsonResponse
+from django.http import HttpResponse, JsonResponse
 from django.utils import timezone
 from django.utils.dateparse import parse_datetime
 
 from .models import (
     ItemPedido, Pedido, PedidoPurgado, PosAggregatedCredential,
-    PosApiCredential, SucursalCliente,
+    PosApiCredential, Precio, Producto, SucursalCliente,
 )
 
 
@@ -607,6 +610,162 @@ def _pedidos_pos(request, *, version):
         request_id=request_id,
         headers=rate_headers,
     )
+
+
+CATALOGO_POS_SCHEMA = "tcys.pedidos.catalogo-pos.v1"
+
+
+def _etiqueta_ticket(producto):
+    return ((producto.nombre_ticket or "").strip() or producto.nombre.strip())[:24]
+
+
+def _leer_catalogo_pos(sender_ids):
+    """Snapshot del catálogo mayorista del alcance: sin emails, usuarios ni pedidos."""
+
+    productos = list(Producto.objects.order_by("id"))
+    por_id = {producto.id: producto for producto in productos}
+    return {
+        "schema": CATALOGO_POS_SCHEMA,
+        "remitentes": [
+            {
+                "id": remitente.id,
+                "nombre": remitente.nombre.strip(),
+                "tipo": remitente.tipo,
+                "activa": bool(remitente.activa),
+            }
+            for remitente in SucursalCliente.objects.filter(pk__in=sender_ids).order_by("id")
+        ],
+        "productos": [
+            {
+                "id": producto.id,
+                "nombre": producto.nombre.strip(),
+                "nombre_ticket": _etiqueta_ticket(producto),
+                "unidad": (producto.unidad_abreviatura or "").strip(),
+                "cantidad_por_precio": str(
+                    Decimal(producto.cantidad_por_precio).quantize(Decimal("0.001"))
+                ),
+                "orden": int(producto.orden),
+                "activo": bool(producto.activo),
+            }
+            for producto in productos
+        ],
+        "precios": [
+            {
+                "remitente_id": precio.sucursal_cliente_id,
+                "producto_id": precio.producto_id,
+                "importe": str(Decimal(precio.precio_unitario).quantize(Decimal("0.01"))),
+                "nombre_ticket": (
+                    (precio.nombre_ticket or "").strip()
+                    or _etiqueta_ticket(por_id[precio.producto_id])
+                )[:24],
+                "vigente_desde": precio.fecha_vigencia.isoformat(),
+            }
+            for precio in Precio.objects.filter(sucursal_cliente_id__in=sender_ids).order_by(
+                "sucursal_cliente_id", "producto_id", "fecha_vigencia"
+            )
+        ],
+    }
+
+
+def _snapshot_catalogo_pos(sender_ids):
+    if connection.vendor == "postgresql" and not connection.in_atomic_block:
+        # Una sola instantánea coherente de productos y precios, sin escrituras.
+        with transaction.atomic():
+            with connection.cursor() as cursor:
+                cursor.execute("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ, READ ONLY")
+            return _leer_catalogo_pos(sender_ids)
+    return _leer_catalogo_pos(sender_ids)
+
+
+def catalogo_pos_v2(request):
+    """Catálogo mayorista para el POS consumidor con la misma credencial v2.
+
+    El cuerpo es JSON canónico y su ETag fuerte es el SHA-256 exacto de esos bytes;
+    ``If-None-Match`` igual devuelve 304 para que el POS refleje sólo cambios.
+    """
+
+    request_id = _request_id(request)
+    if request.method != "GET":
+        return _error(
+            "method_not_allowed",
+            "Este endpoint admite unicamente GET.",
+            status=405,
+            request_id=request_id,
+            headers={"Allow": "GET"},
+        )
+    if settings.POS_API_REQUIRE_HTTPS and not request.is_secure():
+        return _error(
+            "https_required", "La API POS requiere HTTPS.", status=426, request_id=request_id,
+        )
+    token_fingerprint, allowed_sucursal_ids, auth_error = _authenticate_v2(request)
+    if auth_error == "service_not_configured":
+        logger.error("pos_api_v2_catalogo request_id=%s resultado=no_configurada", request_id)
+        return _error(
+            "service_unavailable", "La API POS no esta configurada.", status=503,
+            request_id=request_id,
+        )
+    if auth_error:
+        logger.warning("pos_api_v2_catalogo request_id=%s resultado=no_autorizado", request_id)
+        return _error(
+            "forbidden" if auth_error == "forbidden" else "unauthorized",
+            "El acceso solicitado no esta autorizado." if auth_error == "forbidden"
+            else "Credencial de servicio ausente o invalida.",
+            status=403 if auth_error == "forbidden" else 401,
+            request_id=request_id,
+            headers={} if auth_error == "forbidden" else {"WWW-Authenticate": "Bearer"},
+        )
+    rate_error, rate_headers = _rate_limit(token_fingerprint, version=2)
+    if rate_error:
+        return _error(
+            "rate_limited", "Se excedio el limite temporal de solicitudes.", status=429,
+            request_id=request_id, headers=rate_headers,
+        )
+    if set(request.GET) - {"sucursal_id"}:
+        return _error(
+            "invalid_parameter", "La solicitud contiene un parametro no reconocido.",
+            status=400, request_id=request_id, headers=rate_headers,
+        )
+    try:
+        sucursal_ids = _parse_sucursal_ids(
+            request.GET.get("sucursal_id"), allowed_ids=allowed_sucursal_ids, version=2,
+        )
+    except PermissionError:
+        return _error(
+            "forbidden", "El acceso solicitado no esta autorizado.", status=403,
+            request_id=request_id, headers=rate_headers,
+        )
+    except RuntimeError:
+        return _error(
+            "service_unavailable", "La API POS no esta configurada.", status=503,
+            request_id=request_id, headers=rate_headers,
+        )
+    except ValueError as exc:
+        return _error(
+            "invalid_parameter", str(exc), status=400, request_id=request_id,
+            headers=rate_headers,
+        )
+
+    snapshot = _snapshot_catalogo_pos(sucursal_ids)
+    body = json.dumps(
+        snapshot, ensure_ascii=False, sort_keys=True, separators=(",", ":")
+    ).encode("utf-8")
+    etag = f'"{hashlib.sha256(body).hexdigest()}"'
+    if request.headers.get("If-None-Match", "").strip() == etag:
+        response = HttpResponse(status=304)
+        resultado = "sin_cambios"
+    else:
+        response = HttpResponse(body, content_type="application/json", status=200)
+        resultado = "ok"
+    response["ETag"] = etag
+    response["Cache-Control"] = "no-store"
+    response["X-Request-ID"] = request_id
+    for name, value in rate_headers.items():
+        response[name] = str(value)
+    logger.info(
+        "pos_api_v2_catalogo request_id=%s resultado=%s remitentes=%s precios=%s",
+        request_id, resultado, len(snapshot["remitentes"]), len(snapshot["precios"]),
+    )
+    return response
 
 
 def pedidos_pos_v1(request):
