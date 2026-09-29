@@ -1119,6 +1119,32 @@ button.password-toggle:active {
     font-size: 14px;
 }
 
+.item-meta.item-amount strong {
+    color: var(--blue);
+    font-weight: 800;
+}
+
+.display-product-wrap {
+    display: grid;
+    min-width: 0;
+    gap: 2px;
+    line-height: 1.15;
+}
+
+.calculator-display .display-price {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: var(--muted);
+    font-size: 13px;
+    font-weight: 700;
+}
+
+.calculator-display.confirmed .display-price {
+    color: #fff;
+}
+
 .summary-footer {
     display: grid;
     gap: 6px;

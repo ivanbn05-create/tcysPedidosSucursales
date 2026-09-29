@@ -17,6 +17,7 @@ document.addEventListener("DOMContentLoaded", () => {
     const orderShell = document.querySelector(".order-shell");
     const productButtons = [...document.querySelectorAll(".product-button")];
     const selectedName = document.getElementById("selectedName");
+    const selectedPrice = document.getElementById("selectedPrice");
     const selectedUnit = document.getElementById("selectedUnit");
     const quantityDisplay = document.getElementById("quantityDisplay");
     const calculatorPanel = document.querySelector(".calculator-panel");
@@ -76,6 +77,40 @@ document.addEventListener("DOMContentLoaded", () => {
 
     function productUnit(product) {
         return product?.unidad || "PZA";
+    }
+
+    // Enteros exactos (milésimas y centavos) con redondeo bancario, igual que
+    // ItemPedido.subtotal: cantidad / cantidad_por_precio * precio a 0.01.
+    function scaledInt(value, scale) {
+        const numberValue = Number(value);
+        return Number.isFinite(numberValue) ? Math.round(numberValue * scale) : NaN;
+    }
+
+    function amountFor(product, quantityValue) {
+        if (product?.precio_unitario === null || product?.precio_unitario === undefined) return null;
+        const cents = scaledInt(product.precio_unitario, 100);
+        const qty = scaledInt(quantityValue, 1000);
+        const perPrice = scaledInt(product.cantidad_por_precio || "1", 1000);
+        if (!Number.isFinite(cents) || !Number.isFinite(qty) || !(perPrice > 0) || qty <= 0) return null;
+        const numerator = qty * cents;
+        let result = Math.floor(numerator / perPrice);
+        const twiceRemainder = 2 * (numerator - result * perPrice);
+        if (twiceRemainder > perPrice || (twiceRemainder === perPrice && result % 2 !== 0)) result += 1;
+        return result / 100;
+    }
+
+    // Sólo dos cifras para no saturar: precio unitario y total de la cantidad.
+    function renderSelectedPrice() {
+        if (!selectedPrice) return;
+        const unitPrice = selectedProduct?.precio_unitario;
+        if (unitPrice === null || unitPrice === undefined) {
+            selectedPrice.textContent = "";
+            return;
+        }
+        const amount = amountFor(selectedProduct, quantityInput);
+        selectedPrice.textContent = amount === null
+            ? money(unitPrice)
+            : `${money(unitPrice)} · ${money(amount)}`;
     }
 
     function itemById(itemId) {
@@ -307,6 +342,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
     function renderQuantity() {
         quantityDisplay.textContent = quantityInput || "0";
+        renderSelectedPrice();
     }
 
     function setQuantityConfirmed(isConfirmed) {
@@ -388,6 +424,16 @@ document.addEventListener("DOMContentLoaded", () => {
             meta.className = "item-meta";
             meta.textContent = `Cantidad: ${quantity(item.cantidad)} ${item.unidad}`;
             content.append(name, meta);
+            if (item.precio_unitario !== undefined && item.subtotal !== undefined) {
+                // Sólo dos cifras: precio unitario y total de la cantidad pedida.
+                const cifras = document.createElement("div");
+                const total = document.createElement("strong");
+                cifras.className = "item-meta item-amount";
+                cifras.textContent = `${money(item.precio_unitario)} · `;
+                total.textContent = money(item.subtotal);
+                cifras.append(total);
+                content.append(cifras);
+            }
             row.append(content);
             itemsList.appendChild(row);
         });

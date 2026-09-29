@@ -296,6 +296,10 @@
         font-size: 12px;
     }
 
+    .calculator-display .display-price {
+        font-size: 11px;
+    }
+
     .calculator-display strong {
         font-size: 26px;
     }
@@ -804,6 +808,10 @@
 
     body.order-page .display-unit {
         font-size: 12px;
+    }
+
+    body.order-page .calculator-display .display-price {
+        font-size: 11px;
     }
 
     body.order-page .calculator-display strong {

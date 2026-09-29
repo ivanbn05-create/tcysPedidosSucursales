@@ -31,7 +31,7 @@ pedidos/
   management/commands/enviar_recordatorios.py  recordatorio diario por correo (--test, --sucursal, --fuerza)
   tests.py         suite única, cubre el flujo completo end-to-end (ver sección Tests)
   templates/pedidos/
-    pedidos.html + static/js/pedidos.js     captura de pedido (SPA-like, fetch), sin precios unitarios en la UI
+    pedidos.html + static/js/pedidos.js     captura de pedido (SPA-like, fetch); muestra sólo dos cifras de la lista PROPIA: precio unitario y total de la cantidad
     admin_dashboard.html + static/js/admin.js  panel de matriz (filtros, detalle, impresión y estados)
     admin_configuracion.html                CRUD de productos/precios/sucursales/admin + horarios/recordatorios
     ticket_print.html                       HTML/CSS @page 72mm, window.print() automático
@@ -158,7 +158,7 @@ No hay linter, `pyproject.toml`, `pre-commit` ni CI configurados en el repo. Si 
 
 ## Tests — qué cubren y qué no romper
 
-`pedidos/tests.py` es la única fuente de verdad de comportamiento esperado: login por nombre de sucursal, crear/reemplazar item, agrupación diaria, máximo de cinco pedidos, impresión acumulada e individual, cambios y reversión del estado del macro, selección de reportes, ocultamiento de precios unitarios en `/pedidos/`, control de acceso admin vs. no-admin vs. operador de impresión, y el flujo completo de `/admin/configuracion/`. Antes de dar por buena cualquier modificación en `views.py`, `models.py` o `tickets.py`, corre `python manage.py test pedidos`.
+`pedidos/tests.py` es la única fuente de verdad de comportamiento esperado: login por nombre de sucursal, crear/reemplazar item, agrupación diaria, máximo de cinco pedidos, impresión acumulada e individual, cambios y reversión del estado del macro, selección de reportes, precios de `/pedidos/` sólo de la lista propia de cada sucursal/cliente (nunca cruzados), control de acceso admin vs. no-admin vs. operador de impresión, y el flujo completo de `/admin/configuracion/`. Antes de dar por buena cualquier modificación en `views.py`, `models.py` o `tickets.py`, corre `python manage.py test pedidos`.
 
 `PedidoFlowTests.setUp()` deja el horario de pedidos completamente abierto (`abrir_horario_completo()`) para que esos tests no dependan de la hora real en que corre la suite. `RestriccionHorariaTests` prueba explícitamente el bloqueo dentro/fuera de horario y el endpoint `/api/horarios/` usando ventanas de tiempo calculadas respecto a "ahora" (no horas fijas), precisamente para no ser flaky según la hora del día. `EnviarRecordatoriosCommandTests` prueba el management command (`--test` no manda correos reales, `--fuerza` ignora día/`recordatorios_habilitados`, sucursales sin correo quedan `saltado`) usando el backend de correo en memoria de Django (`django.core.mail.outbox`). Si tocas horarios o recordatorios, mantén ese patrón — no hardcodees horas absolutas en aserciones nuevas.
 

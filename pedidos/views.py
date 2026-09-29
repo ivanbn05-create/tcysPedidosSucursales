@@ -339,7 +339,7 @@ def productos_data_para_sucursal(sucursal, productos):
             sucursal_cliente_id=sucursal.id,
             fecha_vigencia__lte=fecha,
         )
-        .only("producto_id", "nombre_ticket", "fecha_vigencia")
+        .only("producto_id", "nombre_ticket", "fecha_vigencia", "precio_unitario")
         .order_by("producto_id", "-fecha_vigencia")
     ):
         precios_por_producto.setdefault(precio.producto_id, precio)
@@ -355,6 +355,10 @@ def productos_data_para_sucursal(sucursal, productos):
                 if precio
                 else producto.etiqueta_ticket,
                 "unidad": producto.unidad_corta,
+                # Sólo la lista de esta sucursal/cliente: el filtro por
+                # sucursal_cliente_id impide mostrar precios de otra lista.
+                "precio_unitario": decimal_to_str(precio.precio_unitario) if precio else None,
+                "cantidad_por_precio": decimal_to_str(producto.cantidad_por_precio, "0.001"),
             }
         )
     return productos_data
@@ -388,7 +392,7 @@ def pedido_page_context(sucursal, pedido, admin_order_mode=False, sucursales=Non
         "admin_sucursales": sucursales or [],
         "initial_data": {
             "productos": productos_data_para_sucursal(sucursal, productos),
-            "pedido": serializar_pedido(pedido),
+            "pedido": serializar_pedido(pedido, incluir_precios=True),
             "sucursal_id": sucursal.id,
             "admin_order_mode": admin_order_mode,
             "api_urls": api_urls,
@@ -876,7 +880,7 @@ def guardar_item_pedido(sucursal, payload):
             "mensaje": "Cantidad guardada.",
             "item_id": item.id,
             "total_pedido": decimal_to_str(pedido.total),
-            "pedido": serializar_pedido(pedido),
+            "pedido": serializar_pedido(pedido, incluir_precios=True),
             "progreso_diario": progreso,
         }
     )
@@ -898,7 +902,7 @@ def eliminar_item_pedido(sucursal, payload):
         {
             "success": True,
             "total_pedido": decimal_to_str(pedido.total),
-            "pedido": serializar_pedido(pedido),
+            "pedido": serializar_pedido(pedido, incluir_precios=True),
         }
     )
 

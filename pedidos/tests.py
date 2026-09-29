@@ -527,7 +527,13 @@ class PedidoFlowTests(TestCase):
         self.assertFalse(Precio.objects.filter(id=precio_redundante.id).exists())
         self.assertTrue(Precio.objects.filter(id=precio_vigente.id).exists())
 
-    def test_pantalla_pedidos_no_muestra_precios_unitarios(self):
+    def _productos_iniciales(self, response):
+        inicio = response.content.decode().index('id="initial-data"')
+        bloque = response.content.decode()[inicio:]
+        datos = json.loads(bloque[bloque.index(">") + 1:bloque.index("</script>")])
+        return {producto["nombre"]: producto for producto in datos["productos"]}, datos
+
+    def test_pantalla_pedidos_muestra_solo_precios_de_su_propia_lista(self):
         self.assertTrue(self.client.login(username="aguilas", password="Aguilas8445"))
         response = self.client.get("/pedidos/")
 
@@ -539,13 +545,44 @@ class PedidoFlowTests(TestCase):
         self.assertNotContains(response, 'id="dailyOrderProgress"')
         self.assertNotContains(response, 'data-daily-segment="5"')
         self.assertNotContains(response, '<span class="brand-title">Pedidos</span>')
-        self.assertNotContains(response, "$193.00")
-        self.assertNotContains(response, "precio_unitario")
+        self.assertContains(response, 'id="selectedPrice"')
         self.assertContains(response, 'id="keyboardToggle"')
         self.assertContains(response, 'id="calculatorControls"')
         self.assertNotContains(response, 'id="scheduleStatus"')
         self.assertContains(response, '"dentro_horario": true')
         self.assertNotContains(response, "Total tentativo")
+        productos, _datos = self._productos_iniciales(response)
+        self.assertEqual(productos["LITRO DE BARBACOA"]["precio_unitario"], "193.00")
+        self.assertEqual(productos["LITRO DE BARBACOA"]["cantidad_por_precio"], "1.000")
+        # El precio de mayoreo del mismo producto nunca aparece en la lista de la sucursal.
+        self.assertNotContains(response, "203.00")
+
+    def test_mayorista_ve_su_lista_y_nunca_la_de_sucursales(self):
+        self.assertTrue(
+            self.client.login(username="brot_nueva_galicia", password="Brot Nueva Galicia0846")
+        )
+        response = self.client.get("/pedidos/")
+
+        self.assertEqual(response.status_code, 200)
+        productos, _datos = self._productos_iniciales(response)
+        self.assertEqual(productos["LITRO DE BARBACOA"]["precio_unitario"], "203.00")
+        self.assertNotContains(response, "193.00")
+
+    def test_guardar_item_devuelve_precio_importe_y_total_de_su_lista(self):
+        self.assertTrue(self.client.login(username="aguilas", password="Aguilas8445"))
+        barbacoa = Producto.objects.get(nombre="LITRO DE BARBACOA")
+        response = self.client.post(
+            "/api/pedidos/crear-item/",
+            data=json.dumps({"producto_id": barbacoa.id, "cantidad": "2.5"}),
+            content_type="application/json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        pedido = response.json()["pedido"]
+        item = next(item for item in pedido["items"] if item["producto_id"] == barbacoa.id)
+        self.assertEqual(item["precio_unitario"], "193.00")
+        self.assertEqual(item["subtotal"], "482.50")
+        self.assertEqual(pedido["total"], "482.50")
 
     def test_paginas_de_sesion_no_se_pueden_cachear(self):
         """Sin `Cache-Control: no-store` el WebView in-app puede volver a mostrar
