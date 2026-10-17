@@ -416,7 +416,12 @@ def planificar_purga(*, ahora=None):
     macros_en_candidatos = set()
     items = 0
     for pedido in candidatos:
-        vencido = pedido.first_received_at is not None and pedido.first_received_at <= vencimiento
+        # Un carrito viejo confirmado hoy cuenta desde su confirmación: borrarlo ya abriría un
+        # hueco en la ventana reciente que el POS sigue consultando.
+        vencido = (
+            pedido.first_received_at is not None and pedido.first_received_at <= vencimiento
+            and (pedido.fecha_confirmacion is None or pedido.fecha_confirmacion <= vencimiento)
+        )
         miembros = confirmados.get(pedido.pk, ())
         exportacion_valida = bool(miembros) and any(
             firma_pedido(pedido) == miembro.sha256_contenido for miembro in miembros

@@ -342,6 +342,14 @@ class RetencionTests(TransactionTestCase):
         macro.refresh_from_db()
         self.assertEqual(macro.total, Decimal("10.00"))
 
+    def test_carrito_viejo_confirmado_hace_poco_espera_quince_dias_desde_la_confirmacion(self):
+        pedido = self.pedido(dias=20, estado=Pedido.Estado.CONFIRMADO)
+        Pedido.objects.filter(pk=pedido.pk).update(fecha_confirmacion=self.ahora - timedelta(days=2))
+
+        plan = planificar_purga(ahora=self.ahora)
+
+        self.assertNotIn(pedido.pk, plan.pedidos_por_edad)
+
     @override_settings(RETENTION_PURGE_ENABLED=True)
     def test_pedido_vencido_se_purga_en_cualquier_estado(self):
         vencidos = [self.pedido(dias=16, estado=estado) for estado in Pedido.Estado.values]
