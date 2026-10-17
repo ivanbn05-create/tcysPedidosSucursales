@@ -281,8 +281,10 @@ def revalidar_mfa(request):
             username=request.user.get_username(),
             password=request.POST.get("password", ""),
         )
-        if usuario and usuario.pk == request.user.pk:
-            dispositivo, recuperacion = verificar_factor(usuario, request.POST.get("codigo", ""))
+        codigo = request.POST.get("codigo", "")
+        # Un código de recuperación no revalida: rechazarlo antes evita gastarlo en silencio.
+        if usuario and usuario.pk == request.user.pk and not _codigo_normalizado(codigo).startswith("RC-"):
+            dispositivo, recuperacion = verificar_factor(usuario, codigo)
             if dispositivo and not recuperacion:
                 marcar_sesion_verificada(request, usuario, dispositivo)
                 return redirect(destino)

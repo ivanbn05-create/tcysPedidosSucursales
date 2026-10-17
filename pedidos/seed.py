@@ -10,7 +10,8 @@ from .models import Configuracion, Precio, Producto, SucursalCliente
 
 PRINT_GROUP_NAME = "Operador de impresion"
 DEBUG_USER_USERNAME = "ivanprueba"
-DEBUG_USER_PASSWORD = "prueba8989"
+# Solo para datos de demostración (seed_demo está prohibido en producción); ninguna cuenta real la usa.
+DEMO_PASSWORD = "Demo-Local-Solo-Pruebas-2026"
 DEFAULT_REMINDER_FROM = "Los Tocayos <tocayos.tacos@gmail.com>"
 
 
@@ -189,18 +190,6 @@ CLIENTES_DEMO = [
     ("Eventos Edgar", SucursalCliente.Tipo.CLIENTE_MAYORISTA, "mayoreo"),
 ]
 
-CLIENTE_PASSWORD_SUFFIXES = {
-    "Aguilas": "8445",
-    "Fortin": "9481",
-    "Estancia": "7608",
-    "Eventos MO": "6924",
-    "Plaza del Sol": "3186",
-    "Santa Anita": "5702",
-    "Brot Nueva Galicia": "0846",
-    "Brot CAT": "7721",
-    "Rakebela": "4349",
-    "Eventos Edgar": "4437",
-}
 
 
 def username_for_name(nombre):
@@ -208,7 +197,7 @@ def username_for_name(nombre):
 
 
 def password_for_cliente(nombre):
-    return f"{nombre}{CLIENTE_PASSWORD_SUFFIXES[nombre]}"
+    return DEMO_PASSWORD
 
 
 def ensure_password(user, password):
@@ -271,7 +260,7 @@ def seed_demo_data():
     admin.is_superuser = True
     admin.is_active = True
     admin.first_name = "Juan Carlos"
-    admin.set_password("TocayosMO2026")
+    admin.set_password(DEMO_PASSWORD)
     admin.save()
     User.objects.filter(username="admin").exclude(pk=admin.pk).update(
         is_staff=False,
@@ -285,7 +274,7 @@ def seed_demo_data():
     printer_user.is_staff = False
     printer_user.is_superuser = False
     printer_user.is_active = True
-    printer_user.set_password("imprimir")
+    printer_user.set_password(DEMO_PASSWORD)
     printer_user.save()
     printer_user.groups.add(print_group)
 
@@ -294,7 +283,7 @@ def seed_demo_data():
     debug_user.is_staff = True
     debug_user.is_superuser = True
     debug_user.is_active = True
-    debug_user.set_password(DEBUG_USER_PASSWORD)
+    debug_user.set_password(DEMO_PASSWORD)
     debug_user.save()
 
     productos = {}

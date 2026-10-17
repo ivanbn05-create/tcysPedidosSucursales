@@ -101,9 +101,9 @@ class RetencionTests(TransactionTestCase):
         )
         return lote, archivo
 
-    def test_menos_de_30_dias_no_purga_y_30_dias_si(self):
-        reciente = self.pedido(dias=29)
-        vencido = self.pedido(dias=30)
+    def test_menos_de_15_dias_no_purga_y_15_dias_si(self):
+        reciente = self.pedido(dias=14)
+        vencido = self.pedido(dias=15)
 
         plan = planificar_purga(ahora=self.ahora)
 
@@ -343,15 +343,14 @@ class RetencionTests(TransactionTestCase):
         self.assertEqual(macro.total, Decimal("10.00"))
 
     @override_settings(RETENTION_PURGE_ENABLED=True)
-    def test_pedido_abierto_vencido_bloquea_purga(self):
-        abierto = self.pedido(dias=31, estado=Pedido.Estado.CONFIRMADO)
+    def test_pedido_vencido_se_purga_en_cualquier_estado(self):
+        vencidos = [self.pedido(dias=16, estado=estado) for estado in Pedido.Estado.values]
+        reciente = self.pedido(dias=14, estado=Pedido.Estado.ENVIADO)
 
-        plan = planificar_purga(ahora=self.ahora)
+        aplicar_purga(ahora=self.ahora)
 
-        self.assertIn(abierto.pk, plan.pedidos_bloqueados_abiertos)
-        with self.assertRaisesRegex(RuntimeError, "decisión del dueño"):
-            aplicar_purga(ahora=self.ahora)
-        self.assertTrue(Pedido.objects.filter(pk=abierto.pk).exists())
+        self.assertFalse(Pedido.objects.filter(pk__in=[p.pk for p in vencidos]).exists())
+        self.assertTrue(Pedido.objects.filter(pk=reciente.pk).exists())
 
     def test_purga_real_inhabilitada_por_defecto(self):
         self.pedido(dias=31)

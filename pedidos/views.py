@@ -10,6 +10,7 @@ from django.contrib import messages
 from django.contrib.auth import authenticate, logout, update_session_auth_hash
 from django.contrib.auth.decorators import login_required
 from django.contrib.auth.models import User
+from django.contrib.auth.password_validation import validate_password
 from django.core.cache import cache
 from django.core.exceptions import ValidationError
 from django.core.paginator import Paginator
@@ -837,7 +838,7 @@ def sucursal_desde_payload(payload):
 
 
 def guardar_item_pedido(sucursal, payload):
-    producto = get_object_or_404(Producto, pk=payload.get("producto_id"))
+    producto = get_object_or_404(Producto, pk=payload.get("producto_id"), activo=True)
     cantidad = parse_cantidad(payload.get("cantidad"))
     if cantidad is None:
         return JsonResponse({"success": False, "mensaje": "Cantidad inválida."}, status=400)
@@ -1164,7 +1165,7 @@ def imprimir_historial_macropedido(request, codigo_publico):
 @require_POST
 @login_required
 def crear_item(request):
-    if is_admin_user(request.user):
+    if can_view_admin_dashboard(request.user):
         return JsonResponse({"success": False, "mensaje": "Admin no puede crear pedidos."}, status=403)
 
     sucursal = sucursal_para_usuario(request.user)
@@ -1181,6 +1182,8 @@ def crear_item(request):
 @require_POST
 @login_required
 def eliminar_item(request):
+    if can_view_admin_dashboard(request.user):
+        return JsonResponse({"success": False, "mensaje": "Esta cuenta no edita pedidos de sucursal."}, status=403)
     sucursal = sucursal_para_usuario(request.user)
     payload = parse_json_body(request)
     if sucursal is None or payload is None:
@@ -1192,6 +1195,8 @@ def eliminar_item(request):
 @require_POST
 @login_required
 def limpiar_pedido(request):
+    if can_view_admin_dashboard(request.user):
+        return JsonResponse({"success": False, "mensaje": "Esta cuenta no edita pedidos de sucursal."}, status=403)
     sucursal = sucursal_para_usuario(request.user)
     if sucursal is None:
         return JsonResponse({"success": False, "mensaje": "Usuario sin sucursal activa."}, status=403)
@@ -1256,6 +1261,18 @@ def log_cliente(request):
     """Persiste una cola idempotente de eventos del navegador."""
     if len(request.body) > 64 * 1024:
         return JsonResponse({"success": False, "mensaje": "Bitácora demasiado grande."}, status=413)
+    # Tope por cuenta: una sesión comprometida no debe poder llenar la base con bitácora.
+    clave_tope = f"log-cliente:{request.user.pk}:{int(timezone.now().timestamp() // 60)}"
+    if cache.add(clave_tope, 1, timeout=70):
+        envios = 1
+    else:
+        try:
+            envios = cache.incr(clave_tope)
+        except ValueError:
+            cache.set(clave_tope, 1, timeout=70)
+            envios = 1
+    if envios > 30:
+        return JsonResponse({"success": False, "mensaje": "Demasiados envíos de bitácora."}, status=429)
 
     payload = parse_json_body(request) or {}
     if not isinstance(payload, dict):
@@ -1277,6 +1294,9 @@ def log_cliente(request):
         if not isinstance(entrada, dict):
             continue
         evento = str(entrada.get("evento") or "desconocido")[:80]
+        if evento.endswith("_servidor"):
+            # Los nombres *_servidor sólo los escribe el servidor: el navegador no puede imitarlos.
+            evento = f"cliente_{evento}"[:80]
         registro = registrar_evento_persistente(request, evento, payload=entrada)
         if registro is not None:
             guardados += 1
@@ -1492,6 +1512,8 @@ def update_branches_from_post(request):
         user.is_superuser = False
         user.is_active = active
         if password:
+            # Los validadores de settings rechazan claves cortas, comunes o parecidas al usuario.
+            validate_password(password, user)
             user.set_password(password)
         user.full_clean()
         user.save()
@@ -1525,6 +1547,7 @@ def create_branch_from_post(request):
         is_staff=False,
         is_superuser=False,
     )
+    validate_password(password, user)
     user.set_password(password)
     user.full_clean()
     user.save()
@@ -1551,6 +1574,7 @@ def update_admin_account_from_post(request):
     user.username = username
     user.first_name = display_name
     if password:
+        validate_password(password, user)
         user.set_password(password)
     user.full_clean()
     user.save()

@@ -1,0 +1,11 @@
+[Unit]
+Description=TCYS Pedidos Sucursales: borrado diario de pedidos vencidos
+
+[Timer]
+# Fuera del horario de pedidos (08-16 h). Persistent corre al volver si el servidor estuvo apagado.
+OnCalendar=*-*-* 04:30:00 America/Mexico_City
+Persistent=true
+RandomizedDelaySec=10min
+
+[Install]
+WantedBy=timers.target

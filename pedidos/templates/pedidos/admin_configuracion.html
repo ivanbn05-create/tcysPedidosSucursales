@@ -1,4 +1,5 @@
 {% extends "pedidos/base.html" %}
+{% load static %}
 {% load l10n %}
 
 {% block title %}Configuraci&oacute;n | Los Tocayos{% endblock %}
@@ -87,6 +88,7 @@
             <div>
                 <span class="eyebrow">Matriz vigente</span>
                 <h2>Precios</h2>
+                <p class="settings-help">Lo que escribas en <strong>Todas</strong> se copia a toda la fila; después puedes ajustar cada sucursal por separado.</p>
             </div>
         </div>
 
@@ -98,6 +100,7 @@
                     <thead>
                         <tr>
                             <th>Producto</th>
+                            <th class="price-all-column" title="Copia el valor a todas las sucursales de la fila">Todas</th>
                             {% for sucursal in sucursales %}
                             <th>{{ sucursal.nombre }}</th>
                             {% endfor %}
@@ -107,6 +110,28 @@
                         {% for row in price_rows %}
                         <tr>
                             <th scope="row">{{ row.product.nombre }}</th>
+                            {# Sin name: no se envía; sólo copia su valor a las celdas de la fila. #}
+                            <td class="price-all-column">
+                                <div class="price-cell">
+                                    <label class="currency-input">
+                                        <span>$</span>
+                                        <input
+                                            data-fila-precio
+                                            type="number"
+                                            min="0"
+                                            max="9999.99"
+                                            step="0.01"
+                                            aria-label="Precio de {{ row.product.nombre }} para todas las sucursales"
+                                        >
+                                    </label>
+                                    <input
+                                        data-fila-ticket
+                                        maxlength="24"
+                                        placeholder="Ticket (todas)"
+                                        aria-label="Nombre de ticket de {{ row.product.nombre }} para todas las sucursales"
+                                    >
+                                </div>
+                            </td>
                             {% for price in row.prices %}
                             <td>
                                 <div class="price-cell">
@@ -288,4 +313,8 @@
         </form>
     </section>
 </main>
+{% endblock %}
+
+{% block scripts %}
+<script src="{% static 'js/admin_config_precios.js' %}?v=20261016-1" defer></script>
 {% endblock %}

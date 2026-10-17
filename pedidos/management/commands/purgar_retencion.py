@@ -3,7 +3,7 @@ import logging
 
 from django.core.management.base import BaseCommand, CommandError
 
-from pedidos.retencion import aplicar_purga, planificar_purga
+from pedidos.retencion import aplicar_purga, compactar_tablas_purgadas, planificar_purga
 from pedidos.pos_recovery import operator_name
 
 
@@ -11,7 +11,7 @@ logger = logging.getLogger(__name__)
 
 
 class Command(BaseCommand):
-    help = "Muestra dry-run de retención; --apply exige habilitación y autorización manual."
+    help = "Muestra dry-run de retención; --apply borra lo vencido (15 días) y compacta las tablas."
 
     def add_arguments(self, parser):
         parser.add_argument("--apply", action="store_true")
@@ -29,6 +29,8 @@ class Command(BaseCommand):
         except RuntimeError as exc:
             raise CommandError(str(exc)) from exc
         salida = {"modo": "real" if opciones["apply"] else "dry-run", **plan.como_dict()}
+        if opciones["apply"]:
+            salida["tablas_compactadas"] = compactar_tablas_purgadas()
         self.stdout.write(json.dumps(salida, ensure_ascii=False, sort_keys=True))
         logger.info("retencion_purga modo=%s operacion=%s operador_os=%s pedidos_edad=%s pedidos_export=%s eventos=%s",
                     salida["modo"], reference or "dry-run", operator_name(),

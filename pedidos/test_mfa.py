@@ -209,6 +209,17 @@ class MFASeguridadTests(TestCase):
             )
         self.assertRedirects(respuesta, "/admin/")
 
+    def test_revalidacion_rechaza_codigo_de_recuperacion_sin_gastarlo(self):
+        self.login_completo()
+        codigo = generar_codigos_recuperacion(self.usuario, cantidad=1)[0]
+        respuesta = self.client.post(
+            "/mfa/revalidar/", {"password": "ClaveFuerte-Ensayo-123", "codigo": codigo}
+        )
+        self.assertEqual(respuesta.status_code, 200)
+        self.assertTrue(
+            MFACodigoRecuperacion.objects.filter(usuario=self.usuario, usado_en__isnull=True).exists()
+        )
+
     def test_toma_de_sesion_exige_otp_y_expulsa_sesion_anterior(self):
         instante = time.time()
         anterior = Client()

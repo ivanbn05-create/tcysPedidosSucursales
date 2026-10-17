@@ -107,8 +107,9 @@ release/rollback están en [`deploy/vps/`](deploy/vps/README.md).
 
 La siguiente etapa, aún sin desplegar, prepara PostgreSQL productivo local del
 VPS, exportación manual y retención física de pedidos. La política usa el
-primero entre descarga verificada/confirmada y 30 días desde la primera
-recepción en el VPS; no incluye maestros ni clientes del POS. Véanse la
+primero entre descarga verificada/confirmada y 15 días desde la primera
+recepción en el VPS, en cualquier estado, con un temporizador diario; no
+incluye maestros ni clientes del POS. Véanse la
 [matriz de datos](docs/retencion/matriz_datos.md), el
 [runbook de retención](deploy/vps/runbooks/retencion.md) y el
 [runbook de migración](deploy/vps/runbooks/migracion_postgresql_local.md).

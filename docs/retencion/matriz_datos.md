@@ -33,7 +33,7 @@ El código candidato ya incluye `Pedido.first_received_at` y `EventoCliente.firs
 
 Aunque la marca del evento ya está definida en la migración candidata, no habilitar su purga automática hasta ensayar el trigger en PostgreSQL local y resolver el backfill de eventos históricos. La asociación por `detalle.pedido_id` sólo cubre una parte de los eventos y no demuestra ausencia de payload transaccional en otros. Tampoco hay evidencia en Git de que alguno de los triggers esté instalado o probado en PostgreSQL productivo; las pruebas sobre SQLite no los ejercitan.
 
-La política de 30 días alcanza potencialmente a pedidos `pendiente`, `confirmado` y `enviado`, mientras la UI permite seguir atendiéndolos y pasar de `confirmado` a `enviado` o revertir (`pedidos/views.py:2198-2249, 2274-2319`). Antes de activar el timer, medir en la base productiva el número y la edad por estado y sucursal, el máximo tiempo de atención y los macropedidos mixtos. Presentar el volumen y acordar con el dueño cómo continuará un pedido aún abierto cuando llegue el plazo; el código no debe introducir una excepción tácita ni borrarlo automáticamente sin esa decisión.
+Decisión del dueño (16/10/2026): todo pedido sale a los **15 días** de `first_received_at`, en cualquier estado (`pendiente`, `confirmado`, `enviado`, `recibido` o eliminado); un pedido abierto ya no detiene la purga. Al momento de la decisión, 285 de 373 pedidos estaban en `enviado` porque las sucursales no marcan `recibido`. El temporizador diario y la compactación están en `deploy/vps/runbooks/retencion.md`.
 
 ## Descarga operativa y trazas auxiliares
 

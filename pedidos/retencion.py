@@ -12,13 +12,14 @@ from datetime import timedelta, timezone as utc_timezone
 from pathlib import Path
 
 from django.conf import settings
-from django.db import transaction
+from django.db import connection, transaction
 from django.db.models import Q
 from django.utils import timezone
 
 from .models import (
     EventoCliente,
     ExportacionRetencion,
+    ItemPedido,
     MacroPedido,
     Pedido,
     PedidoEnExportacion,
@@ -27,13 +28,9 @@ from .models import (
 )
 
 
-DIAS_RETENCION = 30
+# Decisión del dueño (16/10/2026): todo pedido sale a los 15 días, en cualquier estado.
+DIAS_RETENCION = 15
 VERSION_EXPORTACION = 1
-ESTADOS_OPERATIVAMENTE_ABIERTOS = {
-    Pedido.Estado.PENDIENTE,
-    Pedido.Estado.CONFIRMADO,
-    Pedido.Estado.ENVIADO,
-}
 
 
 def _instante(valor):
@@ -379,7 +376,6 @@ class PlanPurga:
     vencimiento: str
     pedidos_por_edad: tuple[int, ...]
     pedidos_por_exportacion: tuple[int, ...]
-    pedidos_bloqueados_abiertos: tuple[int, ...]
     pedidos_sin_marca: int
     eventos_sin_marca: int
     pedidos_exportacion_no_confirmada: int
@@ -416,7 +412,6 @@ def planificar_purga(*, ahora=None):
     )
     por_edad = []
     por_exportacion = []
-    abiertos = []
     obsoletos = []
     macros_en_candidatos = set()
     items = 0
@@ -429,9 +424,6 @@ def planificar_purga(*, ahora=None):
         if miembros and not exportacion_valida:
             obsoletos.append(pedido.pk)
         if not vencido and not exportacion_valida:
-            continue
-        if not pedido.eliminado and pedido.estado in ESTADOS_OPERATIVAMENTE_ABIERTOS:
-            abiertos.append(pedido.pk)
             continue
         if vencido:
             por_edad.append(pedido.pk)
@@ -455,7 +447,6 @@ def planificar_purga(*, ahora=None):
         vencimiento=_instante(vencimiento),
         pedidos_por_edad=tuple(por_edad),
         pedidos_por_exportacion=tuple(por_exportacion),
-        pedidos_bloqueados_abiertos=tuple(abiertos),
         pedidos_sin_marca=Pedido.objects.filter(first_received_at__isnull=True).count(),
         eventos_sin_marca=EventoCliente.objects.filter(first_received_at__isnull=True).count(),
         pedidos_exportacion_no_confirmada=PedidoEnExportacion.objects.filter(
@@ -470,7 +461,7 @@ def planificar_purga(*, ahora=None):
 
 
 def aplicar_purga(*, ahora=None):
-    """Borrado manual atómico; exige configuración y cero pedidos abiertos vencidos."""
+    """Borrado atómico de lo vencido; exige RETENTION_PURGE_ENABLED."""
 
     if not getattr(settings, "RETENTION_PURGE_ENABLED", False):
         raise RuntimeError("La purga real está deshabilitada por configuración.")
@@ -478,8 +469,6 @@ def aplicar_purga(*, ahora=None):
         # Serializa la purga y los cambios de pedidos durante la selección.
         list(Pedido.objects.select_for_update().order_by("id").values_list("id", flat=True))
         plan = planificar_purga(ahora=ahora)
-        if plan.pedidos_bloqueados_abiertos:
-            raise RuntimeError("Hay pedidos operativamente abiertos elegibles; requiere decisión del dueño.")
         ids = set(plan.pedidos_por_edad) | set(plan.pedidos_por_exportacion)
         instante = ahora or timezone.now()
         eventos = EventoCliente.objects.filter(first_received_at__lte=instante - timedelta(days=DIAS_RETENCION))
@@ -539,6 +528,19 @@ def aplicar_purga(*, ahora=None):
         for macro_id in sorted(macro_ids - set(macros_vacios)):
             MacroPedido.objects.get(pk=macro_id).recalcular_resumen()
         return plan
+
+
+def compactar_tablas_purgadas():
+    """VACUUM FULL reescribe las tablas: lo borrado (y las versiones viejas de cada
+    edición) deja de estar en los archivos de PostgreSQL. No puede ir en una transacción."""
+
+    if connection.vendor != "postgresql":
+        return []
+    tablas = [modelo._meta.db_table for modelo in (Pedido, ItemPedido, MacroPedido, EventoCliente)]
+    with connection.cursor() as cursor:
+        for tabla in tablas:
+            cursor.execute(f"VACUUM FULL {connection.ops.quote_name(tabla)}")
+    return tablas
 
 
 def conciliar_restauracion(*, aplicar=False):

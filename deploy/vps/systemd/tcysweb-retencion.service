@@ -1,0 +1,24 @@
+[Unit]
+Description=TCYS Pedidos Sucursales: borrado diario de pedidos con 15 dias o mas
+Wants=network-online.target
+After=network-online.target postgresql.service
+
+[Service]
+Type=oneshot
+User=deploy
+Group=deploy
+WorkingDirectory=/home/deploy/apps/tcysPedidosSucursales/current
+EnvironmentFile=/home/deploy/apps/tcysPedidosSucursales/shared/.env
+EnvironmentFile=/home/deploy/secrets/tcysweb-prod-local-db.env
+Environment=PYTHONUNBUFFERED=1
+# Borra lo vencido y compacta las tablas (VACUUM FULL). Exige RETENTION_PURGE_ENABLED=True en shared/.env.
+ExecStart=/home/deploy/apps/tcysPedidosSucursales/current/.venv/bin/python manage.py purgar_retencion --apply --confirm-irreversible --referencia-operacion temporizador-diario
+UMask=0027
+PrivateTmp=true
+NoNewPrivileges=true
+ProtectSystem=full
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+LockPersonality=true

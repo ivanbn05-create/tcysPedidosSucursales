@@ -218,6 +218,9 @@ if any(len(token) < 32 or len(token) > 512 for token in POS_API_TOKENS):
     raise ImproperlyConfigured(
         "Cada token de POS_API_TOKENS debe tener entre 32 y 512 caracteres."
     )
+# El valor de ejemplo del repositorio (<...>) o uno repetitivo no es un secreto.
+if any("<" in token or ">" in token or len(set(token)) < 16 for token in POS_API_TOKENS):
+    raise ImproperlyConfigured("POS_API_TOKENS contiene un token de ejemplo o poco aleatorio.")
 
 try:
     POS_API_ALLOWED_SUCURSAL_IDS = tuple(

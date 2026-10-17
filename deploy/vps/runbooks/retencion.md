@@ -19,6 +19,24 @@ archivos temporales. La ingesta de un evento tardío con `pedido_id` o UUID ya
 purgado sustituye su detalle por un marcador, pero textos sin vínculo
 inequívoco siguen siendo un bloqueo hasta auditarlos.
 
+## Decisión vigente (16/10/2026)
+
+El dueño decidió: todo pedido sale **a los 15 días** de `first_received_at`, en
+cualquier estado (`pendiente`, `confirmado`, `enviado`, `recibido` o eliminado).
+Un pedido abierto ya no bloquea la purga. El temporizador
+`deploy/vps/systemd/tcysweb-retencion.timer` corre cada día a las 04:30 (hora de
+México, fuera del horario de pedidos) `purgar_retencion --apply`, que borra lo
+vencido y después compacta `pedidos_pedido`, `pedidos_itempedido`,
+`pedidos_macropedido` y `pedidos_eventocliente` con `VACUUM FULL` para que lo
+borrado y las versiones viejas de cada edición no queden en los archivos de la
+base. Requiere `RETENTION_PURGE_ENABLED=True` en `shared/.env`. Los pedidos y
+eventos históricos sin marca se fechan una sola vez con `backfill_first_received_at`
+(fecha del corte al VPS) para que también venzan. Pedidos no tiene respaldos
+periódicos; cualquier volcado manual debe borrarse antes de 15 días.
+
+Lo que sigue describe el procedimiento manual original y sigue sirviendo para
+ensayos y exportaciones.
+
 ## 0. Preflight y decisión operativa
 
 En el VPS, registra sin datos de clientes el volumen por estado y edad en la
@@ -181,12 +199,10 @@ sudo systemd-run --unit=tcys-retencion-dry-run --wait --pipe --collect \
 ```
 
 La salida JSON incluye IDs técnicos y conteos de pedidos por edad/exportación,
-pedidos abiertos bloqueados, pedidos/eventos históricos sin marca, tickets no confirmados o
+pedidos/eventos históricos sin marca, tickets no confirmados o
 obsoletos, ítems dependientes, macropedidos que quedarían vacíos y eventos.
 Repite el dry-run: el conjunto debe ser idéntico si nadie cambió datos. Un
-pedido modificado tras el export no entra por confirmación; reexporta. Un
-pedido abierto vencido bloquea toda ejecución real y exige la decisión
-operativa documentada. Revisa FK y los backups antes de pasar a `--apply`.
+pedido modificado tras el export no entra por confirmación; reexporta. Revisa FK y los backups antes de pasar a `--apply`.
 
 **Sólo tras autorización final específica**, en ventana controlada, se puede
 ejecutar el mismo comando con `--apply` y el override de esa ejecución
