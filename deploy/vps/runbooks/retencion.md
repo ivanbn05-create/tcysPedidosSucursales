@@ -31,7 +31,7 @@ vencido y después compacta `pedidos_pedido`, `pedidos_itempedido`,
 borrado y las versiones viejas de cada edición no queden en los archivos de la
 base. Requiere `RETENTION_PURGE_ENABLED=True` en `shared/.env`. Los pedidos y
 eventos históricos sin marca se fechan una sola vez con `backfill_first_received_at`
-(fecha del corte al VPS) para que también venzan. Pedidos no tiene respaldos
+(fecha del corte al servidor) para que también venzan. Pedidos no tiene respaldos
 periódicos; cualquier volcado manual debe borrarse antes de 15 días.
 
 Lo que sigue describe el procedimiento manual original y sigue sirviendo para
