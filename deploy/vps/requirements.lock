@@ -1,6 +1,6 @@
 # Runtime validado para CPython 3.13.12.
 # Regeneracion documentada en deploy/vps/README.md.
-Django==6.0.8
+Django==6.0.9
 asgiref==3.12.1
 cffi==2.1.1
 cryptography==50.0.1
